@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "incubator-v3-dev"
 version = "0.1.0"
@@ -11,6 +15,12 @@ dependencies = [
   "pyserial>=3.5",
   "email-validator>=2.2.0"
 ]
+
+[tool.setuptools]
+packages = ["app"]
+
+[tool.setuptools.package-dir]
+"" = "."
 
 [tool.uvicorn]
 factory = false
