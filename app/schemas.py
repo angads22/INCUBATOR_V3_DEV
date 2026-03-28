@@ -20,21 +20,3 @@ class OnboardingPayload(BaseModel):
 class HardwareCommand(BaseModel):
     action: str
     value: str | int | float | None = None
-
-
-class LoginPayload(BaseModel):
-    username: str
-    password: str
-
-
-class SettingsPayload(BaseModel):
-    target_temp_c: float
-    target_humidity_pct: float
-    heater_enabled: bool
-    fan_enabled: bool
-    turner_enabled: bool
-    alarm_enabled: bool
-
-
-class ControlPayload(BaseModel):
-    enabled: bool
