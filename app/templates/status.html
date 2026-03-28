@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>System Status</h1>
+<section class="card">
+  <pre id="status-json">Loading...</pre>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  async function refreshStatus() {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    document.getElementById('status-json').textContent = JSON.stringify(data, null, 2);
+  }
+  refreshStatus();
+  setInterval(refreshStatus, 5000);
+</script>
+{% endblock %}
