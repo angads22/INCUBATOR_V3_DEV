@@ -4,11 +4,10 @@
 <div class="grid">
   <section class="card">
     <h2>Environment</h2>
-    <div class="metric"><span>Mode</span><strong id="mode">--</strong></div>
     <div class="metric"><span>Temp</span><strong id="temp">--</strong></div>
     <div class="metric"><span>Humidity</span><strong id="humidity">--</strong></div>
-    <div class="metric"><span>Setpoint Temp</span><strong id="set-temp">--</strong></div>
-    <div class="metric"><span>Setpoint RH</span><strong id="set-humidity">--</strong></div>
+    <div class="metric"><span>Setpoint Temp</span><strong id="set-temp">{{ settings.target_temp_c }}°C</strong></div>
+    <div class="metric"><span>Setpoint RH</span><strong id="set-humidity">{{ settings.target_humidity_pct }}%</strong></div>
     <div class="metric"><span>Last Updated</span><strong id="last-updated">--</strong></div>
   </section>
 
@@ -18,7 +17,6 @@
     <div class="metric"><span>Fan</span><strong id="fan-state">--</strong></div>
     <div class="metric"><span>Turner</span><strong id="turner-state">--</strong></div>
     <div class="metric"><span>Hardware Link</span><strong id="hw-state">--</strong></div>
-    <div class="metric"><span>Sensors</span><strong id="sensor-state">--</strong></div>
     <div class="metric"><span>Alarm State</span><strong id="alarm-state">--</strong></div>
     <div id="alarms" class="alarms"></div>
   </section>
@@ -31,7 +29,6 @@
       <button class="touch" onclick="toggleControl('fan', true)">Fan ON</button>
       <button class="touch muted" onclick="toggleControl('fan', false)">Fan OFF</button>
       <button class="touch" onclick="runTurn()">Run Turn Cycle</button>
-      <button class="touch muted" onclick="resetAlarm()">Reset Alarm</button>
     </div>
     <p id="control-msg" class="hint"></p>
   </section>
@@ -51,12 +48,11 @@
   function onOff(v) { return v ? 'ON' : 'OFF'; }
 
   async function refreshDashboard() {
-    const [status, env, mode] = await Promise.all([getJson('/api/status'), getJson('/api/environment'), getJson('/api/device-mode')]);
-    if (!status || !env || !mode) return;
+    const [status, env] = await Promise.all([getJson('/api/status'), getJson('/api/environment')]);
+    if (!status || !env) return;
 
-    document.getElementById('mode').textContent = mode.simulated_mode ? 'SIMULATED' : 'HARDWARE';
-    document.getElementById('temp').textContent = `${env.temperature_c.toFixed(2)}°C`;
-    document.getElementById('humidity').textContent = `${env.humidity_pct.toFixed(2)}%`;
+    document.getElementById('temp').textContent = env.temperature_c == null ? '--' : `${env.temperature_c}°C`;
+    document.getElementById('humidity').textContent = env.humidity_pct == null ? '--' : `${env.humidity_pct}%`;
     document.getElementById('set-temp').textContent = `${env.target_temp_c}°C`;
     document.getElementById('set-humidity').textContent = `${env.target_humidity_pct}%`;
     document.getElementById('last-updated').textContent = env.captured_at ? new Date(env.captured_at).toLocaleString() : 'No data yet';
@@ -65,7 +61,6 @@
     document.getElementById('fan-state').textContent = onOff(status.fan);
     document.getElementById('turner-state').textContent = onOff(status.turner);
     document.getElementById('hw-state').textContent = status.hardware_online ? 'ONLINE' : 'OFFLINE';
-    document.getElementById('sensor-state').textContent = status.sensor_online ? 'ONLINE' : 'OFFLINE';
     document.getElementById('alarm-state').textContent = status.state.toUpperCase();
 
     const alarmBox = document.getElementById('alarms');
@@ -87,25 +82,18 @@
       body: JSON.stringify({enabled})
     });
     const data = await res.json();
-    document.getElementById('control-msg').textContent = data.ok ? data.message : (data.error || 'Control failed');
+    document.getElementById('control-msg').textContent = data.ok ? `Updated ${name}` : (data.error || 'Control failed');
     refreshDashboard();
   }
 
   async function runTurn() {
     const res = await fetch('/api/control/turn', {method: 'POST'});
     const data = await res.json();
-    document.getElementById('control-msg').textContent = data.ok ? data.message : (data.error || 'Turn failed');
-    refreshDashboard();
-  }
-
-  async function resetAlarm() {
-    const res = await fetch('/api/control/reset-alarm', {method: 'POST'});
-    const data = await res.json();
-    document.getElementById('control-msg').textContent = data.ok ? data.message : (data.error || 'Reset failed');
+    document.getElementById('control-msg').textContent = data.ok ? 'Turn cycle sent' : (data.error || 'Turn failed');
     refreshDashboard();
   }
 
   refreshDashboard();
-  setInterval(refreshDashboard, Number("{{ settings.get('refresh_interval_sec', '5') }}") * 1000);
+  setInterval(refreshDashboard, {{ poll_seconds * 1000 }});
 </script>
 {% endblock %}
