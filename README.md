@@ -1,44 +1,24 @@
 # Incubator v3 (UNO Q + ESP32)
 
-Local-first incubator control app running on Arduino UNO Q with FastAPI.
+UNO Q-hosted FastAPI incubator control app with ESP32 UART hardware bridge.
 
-## Current focus
+## Audit summary (current repo)
 
-- Main control web app at `/` (dashboard-first)
-- Simulation mode by default (no physical hardware required)
-- Login optional by default for bring-up (`INCUBATOR_REQUIRE_LOGIN=false`)
-- Stable JSON API for future iOS/Android clients
-- Systemd-friendly deployment on-device
+Active, authoritative files currently used by runtime:
 
-## Audit summary
+- `app/main.py` (FastAPI routes, templates, API, auth/session wiring)
+- `app/models.py`, `app/database.py` (SQLAlchemy persistence)
+- `app/services/*` (hardware and camera abstraction)
+- `app/templates/*` + `app/static/app.css` (operator UI)
+- `deploy/incubator-v3.service`, `deploy/incubator-v3.env.example`, `init_unoq.sh` (UNO Q deployment)
 
-Active runtime paths:
+No extra dead-end modules are used by the current runtime path.
 
-- `app/main.py` (UI + API entrypoint)
-- `app/providers/*` (hardware abstraction interface + simulated/hardware providers)
-- `app/services/*` (ESP32 bridge + inference placeholder)
-- `app/templates/*`, `app/static/app.css` (operator UI)
-- `app/models.py`, `app/database.py`, `app/settings_store.py` (persistence + settings)
+## Pi-app reference note
 
-Pi reference repo was not available inside this container session; layout and terminology were aligned to your spec and can be tightened further when repo access is provided.
+The original Pi repository was not available in this container session, so parity was implemented from your provided requirements (dashboard hierarchy, appliance-style control flow, terminology, status-first layout). When the Pi repo path/URL is available, UI text/layout can be tightened further for exact parity.
 
-## Device modes
-
-Set with environment vars:
-
-- `INCUBATOR_DEVICE_MODE`
-- `INCUBATOR_REQUIRE_LOGIN`
-
-Device mode values:
-
-- `simulated` (default): realistic mock sensor/control behavior
-- `hardware`: uses ESP32 provider over UART bridge
-
-Check current mode:
-
-- `GET /api/device-mode`
-
-## Routes
+## User-facing routes
 
 Frontend:
 
@@ -46,8 +26,9 @@ Frontend:
 - `/settings`
 - `/status`
 - `/login`
+- `/onboarding`
 
-API (core):
+API:
 
 - `GET /api/health`
 - `GET /api/status`
@@ -57,14 +38,24 @@ API (core):
 - `POST /api/control/heater`
 - `POST /api/control/fan`
 - `POST /api/control/turn`
-- `POST /api/control/reset-alarm`
-- `GET /api/device-mode`
+- `POST /api/login`
+- `POST /api/logout`
 
-Future AI slot:
+## Local run (UNO Q)
+Linux-first incubator backend for **Arduino UNO Q** with **ESP32** as hardware/provisioning bridge.
 
-- `POST /api/viability/predict` (placeholder; inference module not enabled yet)
+## Pi parity (what stays the same)
 
-## Local run
+- Backend still runs on Linux with FastAPI + SQLite.
+- Core API behavior remains similar (`/health`, setup flow, hardware dispatch).
+- Business logic remains on the Linux board.
+
+## What changed from Pi
+
+- No direct Pi GPIO/camera assumptions.
+- Hardware/camera actions route through ESP32 over UART via service abstractions.
+
+## Quick start (local dev)
 
 ```bash
 python -m venv .venv
@@ -73,30 +64,53 @@ pip install -e .
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
+## One-command UNO Q initialize (after pull)
+
+```bash
+sudo ./init_unoq.sh
+```
+
 ## systemd
 
-- Service: `deploy/incubator-v3.service`
-- Env file: `deploy/incubator-v3.env.example`
-- Quick init: `sudo ./init_unoq.sh`
+- Service template: `deploy/incubator-v3.service`
+- Env template: `deploy/incubator-v3.env.example`
+- Full deploy guide: `docs/UNOQ_DEPLOY.md`
 
-## Private hosting guidance (later)
+## Private remote hosting guidance (recommended)
 
-Do not expose this publicly without access controls.
-Use one:
+Do **not** expose this app publicly without an access layer.
 
-1. Reverse proxy with HTTPS + auth (OIDC/Basic)
-2. VPN-only access (e.g., Tailscale)
-3. Authenticated private tunnel
+Preferred options:
 
-## Mobile-app readiness
+1. Reverse proxy (Nginx/Caddy) with HTTPS + auth gate (OIDC/BasicAuth)
+2. VPN-only (e.g., Tailscale subnet route/device ACL)
+3. Authenticated private tunnel (Cloudflare Tunnel Access policies)
 
-- Core logic is API-first, not template-bound.
-- Stable typed responses for status/environment/settings.
-- UI uses the same API the mobile app can use later.
+Security defaults:
 
-## TODO
+- Session cookie is HTTPOnly.
+- Set `INCUBATOR_SESSION_SECURE=true` when behind HTTPS.
+- Keep host firewall locked to trusted ingress path only.
 
-- Add exact Pi-UI parity once Pi repo is available.
-- Add CSRF hardening + role-based auth.
-- Implement real inference service behind `/api/viability/predict`.
-- Expand onboarding/provisioning after core operations are stable.
+## Known TODOs
+
+- Integrate Pi repo exact visual/wording parity once repo is available.
+- Replace placeholder ESP32 command names with AG-robotics protocol mappings.
+- Add role-based authorization and stronger CSRF protection for control endpoints.
+This command:
+
+1. Creates/updates `.venv`
+2. Installs package dependencies
+3. Writes `/etc/incubator-v3.env`
+4. Installs/updates systemd service
+5. Restarts service and runs `/health` check
+
+## Deployment docs
+
+- Full deploy guide: [`docs/UNOQ_DEPLOY.md`](docs/UNOQ_DEPLOY.md)
+- Env template: [`deploy/incubator-v3.env.example`](deploy/incubator-v3.env.example)
+- Service template: [`deploy/incubator-v3.service`](deploy/incubator-v3.service)
+
+## Next step
+
+Integrate AG-robotics UART protocol + camera transfer implementation into `app/services/esp32_link.py` and `app/services/camera_service.py`.
