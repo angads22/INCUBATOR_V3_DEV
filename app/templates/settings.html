@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Settings</h1>
+<form id="settings-form" class="card form">
+  <label>Target Temp (°C)<input type="number" step="0.1" name="target_temp_c" value="{{ settings.target_temp_c }}" required></label>
+  <label>Target Humidity (%)<input type="number" step="0.1" name="target_humidity_pct" value="{{ settings.target_humidity_pct }}" required></label>
+  <label><input type="checkbox" name="heater_enabled" {% if settings.heater_enabled == 'true' %}checked{% endif %}> Heater Enabled</label>
+  <label><input type="checkbox" name="fan_enabled" {% if settings.fan_enabled == 'true' %}checked{% endif %}> Fan Enabled</label>
+  <label><input type="checkbox" name="turner_enabled" {% if settings.turner_enabled == 'true' %}checked{% endif %}> Turner Enabled</label>
+  <label><input type="checkbox" name="alarm_enabled" {% if settings.alarm_enabled == 'true' %}checked{% endif %}> Alarm Enabled</label>
+  <button class="touch" type="submit">Save Settings</button>
+  <p id="settings-msg" class="hint"></p>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.getElementById('settings-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const payload = {
+      target_temp_c: parseFloat(f.target_temp_c.value),
+      target_humidity_pct: parseFloat(f.target_humidity_pct.value),
+      heater_enabled: f.heater_enabled.checked,
+      fan_enabled: f.fan_enabled.checked,
+      turner_enabled: f.turner_enabled.checked,
+      alarm_enabled: f.alarm_enabled.checked,
+    };
+
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    document.getElementById('settings-msg').textContent = data.ok ? 'Saved.' : (data.error || 'Save failed');
+  });
+</script>
+{% endblock %}

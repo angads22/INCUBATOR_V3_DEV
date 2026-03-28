@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "incubator-v3-dev"
+version = "0.1.0"
+description = "UNO Q + ESP32 incubator backend scaffold"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+  "sqlalchemy>=2.0.0",
+  "pydantic>=2.7.0",
+  "pyserial>=3.5",
+  "email-validator>=2.2.0",
+  "jinja2>=3.1.0"
+]
+
+[tool.setuptools]
+packages = ["app"]
+
+[tool.setuptools.package-dir]
+"" = "."
+
+[tool.uvicorn]
+factory = false
+host = "0.0.0.0"
+port = 8000
