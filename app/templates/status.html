@@ -2,29 +2,15 @@
 {% block content %}
 <h1>System Status</h1>
 <section class="card">
-  <div class="metric"><span>API</span><strong id="api">--</strong></div>
-  <div class="metric"><span>Hardware Bridge</span><strong id="bridge">--</strong></div>
-  <div class="metric"><span>Sensors</span><strong id="sensors">--</strong></div>
-  <div class="metric"><span>Mode</span><strong id="mode">--</strong></div>
-  <div class="metric"><span>Version</span><strong id="version">--</strong></div>
   <pre id="status-json">Loading...</pre>
 </section>
 {% endblock %}
 {% block scripts %}
 <script>
   async function refreshStatus() {
-    const [health, status, mode, settings] = await Promise.all([
-      fetch('/api/health').then(r => r.json()),
-      fetch('/api/status').then(r => r.json()),
-      fetch('/api/device-mode').then(r => r.json()),
-      fetch('/api/settings').then(r => r.json())
-    ]);
-    document.getElementById('api').textContent = health.ok ? 'ONLINE' : 'OFFLINE';
-    document.getElementById('bridge').textContent = status.hardware_online ? 'ONLINE' : 'OFFLINE';
-    document.getElementById('sensors').textContent = status.sensor_online ? 'ONLINE' : 'OFFLINE';
-    document.getElementById('mode').textContent = mode.simulated_mode ? 'SIMULATED' : 'HARDWARE';
-    document.getElementById('version').textContent = settings?.app_version || 'n/a';
-    document.getElementById('status-json').textContent = JSON.stringify({health, status, mode}, null, 2);
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    document.getElementById('status-json').textContent = JSON.stringify(data, null, 2);
   }
   refreshStatus();
   setInterval(refreshStatus, 5000);

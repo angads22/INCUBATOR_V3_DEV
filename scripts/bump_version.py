@@ -3,10 +3,6 @@ from pathlib import Path
 import re
 import sys
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 from app.version import VERSION, bump_bugfix, bump_feature, bump_major
 
 
@@ -22,12 +18,12 @@ elif mode == "feature":
 else:
     new_version = bump_major(VERSION)
 
-version_file = ROOT / "app" / "version.py"
+version_file = Path("app/version.py")
 text = version_file.read_text()
 text = re.sub(r'VERSION = "[0-9]+\.[0-9]{2}"', f'VERSION = "{new_version}"', text)
 version_file.write_text(text)
 
-pyproject = ROOT / "pyproject.toml"
+pyproject = Path("pyproject.toml")
 ptxt = pyproject.read_text()
 ptxt = re.sub(r'version = "[0-9]+\.[0-9]{2}"', f'version = "{new_version}"', ptxt)
 pyproject.write_text(ptxt)

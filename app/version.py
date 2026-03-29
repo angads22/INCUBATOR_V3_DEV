@@ -7,7 +7,7 @@ Version scheme:
 - 2.00 major
 """
 
-VERSION = "1.30"
+VERSION = "1.20"
 
 
 def parse_version(version: str) -> tuple[int, int, int]:
