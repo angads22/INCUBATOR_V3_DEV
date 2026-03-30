@@ -4,6 +4,11 @@ UNO Q-hosted FastAPI incubator control app with ESP32 UART hardware bridge.
 
 ## Audit summary (current repo)
 
+## Version history
+
+- **1.30 (feature, current)**: Registered the web router in `app/main.py`, mounted static files, and restored the `/` HTML dashboard route while keeping `/docs` available.
+- **1.20 (previous)**: API-focused baseline release for UNO Q + ESP32 backend scaffolding and deployment flow, before the web router was wired into the FastAPI app.
+
 Active, authoritative files currently used by runtime:
 
 - `app/main.py` (FastAPI routes, templates, API, auth/session wiring)
