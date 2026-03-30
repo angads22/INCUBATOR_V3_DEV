@@ -63,10 +63,18 @@ Linux-first incubator backend for **Arduino UNO Q** with **ESP32** as hardware/p
 ## Quick start (local dev)
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+python -m pip install -e .
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+If you see `No module named uvicorn`, your virtualenv is not active or dependencies are not installed yet. Re-run:
+
+```bash
+source .venv/bin/activate
+python -m pip install -e .
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ## One-command UNO Q initialize (after pull)
