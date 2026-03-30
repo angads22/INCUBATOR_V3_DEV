@@ -4,6 +4,11 @@ UNO Q-hosted FastAPI incubator control app with ESP32 UART hardware bridge.
 
 ## Audit summary (current repo)
 
+## Version history
+
+- **1.30 (feature, current)**: Registered the web router in `app/main.py`, mounted static files, and restored the `/` HTML dashboard route while keeping `/docs` available.
+- **1.20 (previous)**: API-focused baseline release for UNO Q + ESP32 backend scaffolding and deployment flow, before the web router was wired into the FastAPI app.
+
 Active, authoritative files currently used by runtime:
 
 - `app/main.py` (FastAPI routes, templates, API, auth/session wiring)
@@ -58,10 +63,18 @@ Linux-first incubator backend for **Arduino UNO Q** with **ESP32** as hardware/p
 ## Quick start (local dev)
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+python -m pip install -e .
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+If you see `No module named uvicorn`, your virtualenv is not active or dependencies are not installed yet. Re-run:
+
+```bash
+source .venv/bin/activate
+python -m pip install -e .
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ## One-command UNO Q initialize (after pull)
