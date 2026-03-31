@@ -14,7 +14,7 @@ Active, authoritative files currently used by runtime:
 - `app/main.py` (FastAPI routes, templates, API, auth/session wiring)
 - `app/models.py`, `app/database.py` (SQLAlchemy persistence)
 - `app/services/*` (hardware and camera abstraction)
-- `app/templates/*` + `app/static/app.css` (operator UI)
+- `app/templates/*` + `app/static/css/*` + `app/static/js/*` (operator UI)
 - `deploy/incubator-v3.service`, `deploy/incubator-v3.env.example`, `init_unoq.sh` (UNO Q deployment)
 
 No extra dead-end modules are used by the current runtime path.
@@ -30,6 +30,7 @@ Frontend:
 - `/` dashboard
 - `/settings`
 - `/status`
+- `/hardware`
 - `/login`
 - `/onboarding`
 
