@@ -4,30 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{{ title or 'Incubator v3' }}</title>
-  <link rel="stylesheet" href="/static/app.css" />
+  <link rel="stylesheet" href="/static/css/tokens.css" />
+  <link rel="stylesheet" href="/static/css/layout.css" />
+  <link rel="stylesheet" href="/static/css/components.css" />
+  <link rel="stylesheet" href="/static/css/pages.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">Incubator v3</div>
-    <nav>
-      <a href="/">Dashboard</a>
-      <a href="/settings">Settings</a>
-      <a href="/status">Status</a>
-      <button id="logoutBtn" class="ghost">Logout</button>
-    </nav>
-  </header>
-  <main class="container">
+  {% include 'partials/nav.html' %}
+  <main class="app-main container">
     {% block content %}{% endblock %}
   </main>
-  <script>
-    const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) {
-      logoutBtn.addEventListener('click', async () => {
-        await fetch('/api/logout', {method: 'POST'});
-        location.href = '/login';
-      });
-    }
-  </script>
+  <script src="/static/js/base.js"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
