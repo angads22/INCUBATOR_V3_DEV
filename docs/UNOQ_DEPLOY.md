@@ -2,7 +2,59 @@
 
 This guide documents the **local-run first** workflow for UNO Q.
 
-## Normal workflow
+## Fast path (single command after pull)
+
+If your repo is already on the UNO Q and you want a one-shot initialize/update, run:
+
+```bash
+sudo ./init_unoq.sh
+```
+
+This script installs dependencies, writes runtime env config, installs/updates the systemd unit, restarts service, and checks `/health`.
+
+## 1) Copy code to UNO Q
+
+From your dev machine:
+
+```bash
+git clone <your-repo-url>
+# or
+rsync -avz ./INCUBATOR_V3_DEV/ user@<unoq-ip>:/opt/incubator-v3/
+```
+
+On UNO Q, target directory example:
+
+```bash
+sudo mkdir -p /opt/incubator-v3
+sudo chown -R "$USER":"$USER" /opt/incubator-v3
+cd /opt/incubator-v3
+```
+
+## 2) Create runtime env
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+```
+
+If `python3 -m uvicorn ...` returns `No module named uvicorn`, run it from the activated venv instead:
+
+```bash
+source .venv/bin/activate
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+## 3) Configure serial path and database location
+
+Set environment values that match your UNO Q + ESP32 wiring:
+
+- `INCUBATOR_SERIAL_PORT` (example `/dev/ttyUSB0` or `/dev/ttyACM0`)
+- `INCUBATOR_SERIAL_BAUD` (example `115200`)
+- `INCUBATOR_DB_URL` (default `sqlite:///./incubator.db`)
+
+Create env file:
 
 ```bash
 ./init_unoq.sh
