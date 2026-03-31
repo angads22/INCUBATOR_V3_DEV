@@ -6,8 +6,8 @@ UNO Q-hosted FastAPI incubator control app with ESP32 UART hardware bridge.
 
 ## Version history
 
-- **1.53 (bugfix, current)**: Completed stabilization pass by fixing dashboard render/runtime blockers, validating all page routes, and hardening JS fallbacks for partially wired auth/settings APIs.
-- **1.52 (previous)**: Restored full startup by adding the missing `AppSetting` model and updating template rendering calls for current FastAPI/Starlette compatibility.
+- **1.30 (feature, current)**: Registered the web router in `app/main.py`, mounted static files, and restored the `/` HTML dashboard route while keeping `/docs` available.
+- **1.20 (previous)**: API-focused baseline release for UNO Q + ESP32 backend scaffolding and deployment flow, before the web router was wired into the FastAPI app.
 
 Active, authoritative files currently used by runtime:
 
@@ -15,7 +15,7 @@ Active, authoritative files currently used by runtime:
 - `app/models.py`, `app/database.py` (SQLAlchemy persistence)
 - `app/services/*` (hardware and camera abstraction)
 - `app/templates/*` + `app/static/css/*` + `app/static/js/*` (operator UI)
-- `init_unoq.sh`, `scripts/start.sh`, `scripts/update.sh`, and optional `deploy/incubator-v3.service` (UNO Q deployment)
+- `deploy/incubator-v3.service`, `deploy/incubator-v3.env.example`, `init_unoq.sh` (UNO Q deployment)
 
 No extra dead-end modules are used by the current runtime path.
 
@@ -61,6 +61,14 @@ Linux-first incubator backend for **Arduino UNO Q** with **ESP32** as hardware/p
 
 ```bash
 python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+If you see `No module named uvicorn`, your virtualenv is not active or dependencies are not installed yet. Re-run:
+
+```bash
 source .venv/bin/activate
 python -m pip install -e .
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
