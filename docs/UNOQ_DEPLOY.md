@@ -35,8 +35,15 @@ cd /opt/incubator-v3
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install --upgrade pip
-pip install -e .
+python -m pip install --upgrade pip
+python -m pip install -e .
+```
+
+If `python3 -m uvicorn ...` returns `No module named uvicorn`, run it from the activated venv instead:
+
+```bash
+source .venv/bin/activate
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ## 3) Configure serial path and database location
