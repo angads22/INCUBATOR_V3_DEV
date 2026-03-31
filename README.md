@@ -36,16 +36,12 @@ Frontend:
 
 API:
 
-- `GET /api/health`
-- `GET /api/status`
-- `GET /api/environment`
-- `GET /api/settings`
-- `POST /api/settings`
-- `POST /api/control/heater`
-- `POST /api/control/fan`
-- `POST /api/control/turn`
-- `POST /api/login`
-- `POST /api/logout`
+- `GET /health`
+- `GET /setup/status`
+- `POST /setup/complete`
+- `POST /hardware/send`
+- `GET /docs`
+- `GET /openapi.json`
 
 ## Local run (UNO Q)
 Linux-first incubator backend for **Arduino UNO Q** with **ESP32** as hardware/provisioning bridge.
@@ -78,16 +74,27 @@ python -m pip install -e .
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-## One-command UNO Q initialize (after pull)
+If you see `No module named uvicorn`, your virtualenv is not active or dependencies are not installed yet. Re-run:
 
 ```bash
-sudo ./init_unoq.sh
+source .venv/bin/activate
+python -m pip install -e .
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-## systemd
+## UNO Q local workflow (recommended)
 
-- Service template: `deploy/incubator-v3.service`
-- Env template: `deploy/incubator-v3.env.example`
+```bash
+./init_unoq.sh
+./scripts/start.sh
+# later updates:
+./scripts/update.sh
+```
+
+## Optional systemd (later)
+
+- Optional service template: `deploy/incubator-v3.service`
+- Optional env template: `deploy/incubator-v3.env.example`
 - Full deploy guide: `docs/UNOQ_DEPLOY.md`
 
 ## Private remote hosting guidance (recommended)
@@ -111,14 +118,6 @@ Security defaults:
 - Integrate Pi repo exact visual/wording parity once repo is available.
 - Replace placeholder ESP32 command names with AG-robotics protocol mappings.
 - Add role-based authorization and stronger CSRF protection for control endpoints.
-This command:
-
-1. Creates/updates `.venv`
-2. Installs package dependencies
-3. Writes `/etc/incubator-v3.env`
-4. Installs/updates systemd service
-5. Restarts service and runs `/health` check
-
 ## Deployment docs
 
 - Full deploy guide: [`docs/UNOQ_DEPLOY.md`](docs/UNOQ_DEPLOY.md)

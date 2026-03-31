@@ -1,6 +1,6 @@
 # Deploying incubator-v3 to Arduino UNO Q (Debian)
 
-This guide shows a practical Linux deployment path for UNO Q.
+This guide documents the **local-run first** workflow for UNO Q.
 
 ## Fast path (single command after pull)
 
@@ -57,44 +57,46 @@ Set environment values that match your UNO Q + ESP32 wiring:
 Create env file:
 
 ```bash
-sudo cp deploy/incubator-v3.env.example /etc/incubator-v3.env
-sudo nano /etc/incubator-v3.env
+./init_unoq.sh
+./scripts/start.sh
+# later, after new commits:
+./scripts/update.sh
 ```
 
-## 4) Install and start systemd service
+## What each command does
+
+### `./init_unoq.sh`
+- Installs minimal OS packages when `apt-get` is available (`python3`, `python3-pip`, `python3-venv`, `git`, `curl`).
+- Creates `.venv` if missing.
+- Upgrades pip and installs project dependencies with `python -m pip install -e .`.
+- Marks runtime scripts executable.
+- Prints next-step commands.
+
+### `./scripts/start.sh`
+- Changes to project root.
+- Activates `.venv`.
+- Starts the app with:
+  - `python -m uvicorn app.main:app --host 0.0.0.0 --port 8000`
+
+### `./scripts/update.sh`
+- Changes to project root.
+- Runs `git pull`.
+- Activates `.venv`.
+- Reinstalls project dependencies with `python -m pip install -e .`.
+
+## Validate
 
 ```bash
-sudo cp deploy/incubator-v3.service /etc/systemd/system/incubator-v3.service
-sudo systemctl daemon-reload
-sudo systemctl enable incubator-v3.service
-sudo systemctl start incubator-v3.service
-```
-
-Check status/logs:
-
-```bash
-systemctl status incubator-v3.service
-journalctl -u incubator-v3.service -f
-```
-
-## 5) Validate
-
-```bash
+curl http://127.0.0.1:8000/
+curl http://127.0.0.1:8000/docs
 curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8000/setup/status
 ```
 
-## OTA/update pattern for new code
+## Optional systemd for later
 
-```bash
-cd /opt/incubator-v3
-git pull
-source .venv/bin/activate
-pip install -e .
-sudo systemctl restart incubator-v3.service
-```
+If/when you want background startup via service manager, use these optional templates:
 
-## Notes
+- `deploy/incubator-v3.service`
+- `deploy/incubator-v3.env.example`
 
-- Keep ESP32 firmware and UART command protocol versioned in lockstep with this backend.
-- For BLE onboarding, ESP32 provisioning implementation will forward payload to UNO Q `/setup/complete` equivalent flow.
+(systemd is intentionally not forced by `init_unoq.sh` in this workflow)
