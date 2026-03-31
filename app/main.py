@@ -1,6 +1,10 @@
+from pathlib import Path
+
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+from fastapi.staticfiles import StaticFiles
 
 from .auth import hash_password
 from .config import settings
@@ -10,8 +14,13 @@ from .schemas import HardwareCommand, OnboardingPayload, SetupStatus
 from .services.camera_service import CameraService
 from .services.esp32_link import ESP32Link
 from .services.hardware_service import HardwareService
+from .routes.web import router as web_router
 
 app = FastAPI(title="Incubator v3 API")
+
+BASE_DIR = Path(__file__).resolve().parent
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+app.include_router(web_router)
 
 link = ESP32Link(settings.serial_port, settings.serial_baud, settings.serial_timeout)
 camera_service = CameraService(link)

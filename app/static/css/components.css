@@ -1,0 +1,51 @@
+.card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 100%), var(--panel);
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 2px);
+  padding: 16px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(2px);
+}
+.brand { margin: 0; font-size: 1.2rem; }
+.eyebrow { margin: 0; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.72rem; }
+.muted { color: var(--muted); }
+.section-header { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 16px; }
+.section-header h2 { margin: 4px 0 0; font-size: 1.75rem; line-height: 1.15; }
+.metric-card { min-height: 128px; }
+.metric-label { margin: 0; color: var(--muted); font-size: 0.85rem; }
+.metric-value { margin: 10px 0 6px; font-size: 1.8rem; font-weight: 700; }
+.metric-hint { margin: 0; color: var(--muted); }
+.btn {
+  touch-action: manipulation;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 14px;
+  min-height: 44px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-primary { background: var(--primary); color: var(--primary-ink); }
+.btn-secondary { background: #2f3f59; color: var(--text); }
+.btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+.hint { color: var(--muted); margin: 8px 0 0; min-height: 20px; }
+.stack-list { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 8px; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.status-chip { padding: 6px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 700; border: 1px solid transparent; }
+.status-ok { color: #052c1b; background: rgba(52, 211, 153, 0.9); }
+.status-info { color: #d9f3ff; background: rgba(56, 189, 248, 0.2); border-color: rgba(56, 189, 248, 0.5); }
+.status-warn { color: #422006; background: rgba(245, 158, 11, 0.9); }
+.form-panel label { display: grid; gap: 6px; color: var(--muted); }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.toggle-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 14px 0; }
+input {
+  width: 100%;
+  background: #0c1624;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  min-height: 44px;
+  padding: 10px;
+}
+.button-row { display: flex; justify-content: space-between; align-items: center; }
+.auth-wrap { min-height: 70vh; display: grid; place-items: center; }
+.auth-card { width: min(460px, 92vw); display: grid; gap: 12px; }
