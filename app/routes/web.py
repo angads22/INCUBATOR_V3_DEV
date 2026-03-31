@@ -46,9 +46,9 @@ def dashboard(
     ai_insight = ai_service.generate_dashboard_insight(mock_snapshot["temperature_c"], mock_snapshot["humidity_pct"])
 
     return templates.TemplateResponse(
-        request=request,
-        name="dashboard/index.html",
-        context={
+        "dashboard/index.html",
+        {
+            "request": request,
             "settings": app_settings,
             "version": settings.app_version,
             "mock": mock_snapshot,
@@ -72,7 +72,7 @@ def settings_page(
     redirect = _auth_redirect(db, session_token)
     if redirect:
         return redirect
-    return templates.TemplateResponse(request=request, name="settings.html", context={"settings": get_settings(db), "version": settings.app_version})
+    return templates.TemplateResponse("settings.html", {"request": request, "settings": get_settings(db), "version": settings.app_version})
 
 
 @router.get("/status", response_class=HTMLResponse)
@@ -85,9 +85,9 @@ def status_page(
     if redirect:
         return redirect
     return templates.TemplateResponse(
-        request=request,
-        name="status.html",
-        context={
+        "status.html",
+        {
+            "request": request,
             "version": settings.app_version,
             "health": {"hardware": "online", "sensors": "online", "alarms": "none", "link": "uart-stable"},
         },
@@ -103,14 +103,14 @@ def hardware_page(
     redirect = _auth_redirect(db, session_token)
     if redirect:
         return redirect
-    return templates.TemplateResponse(request=request, name="hardware.html", context={"version": settings.app_version})
+    return templates.TemplateResponse("hardware.html", {"request": request, "version": settings.app_version})
 
 
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    return templates.TemplateResponse(request=request, name="login.html", context={"version": settings.app_version})
+    return templates.TemplateResponse("login.html", {"request": request, "version": settings.app_version})
 
 
 @router.get("/onboarding", response_class=HTMLResponse)
 def onboarding_page(request: Request):
-    return templates.TemplateResponse(request=request, name="onboarding.html", context={"version": settings.app_version})
+    return templates.TemplateResponse("onboarding.html", {"request": request, "version": settings.app_version})

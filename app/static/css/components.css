@@ -1,22 +1,20 @@
 .card {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 100%), var(--panel);
   border: 1px solid var(--line);
-  border-radius: calc(var(--radius) + 2px);
+  border-radius: var(--radius);
   padding: 16px;
   box-shadow: var(--shadow);
-  backdrop-filter: blur(2px);
 }
 .brand { margin: 0; font-size: 1.2rem; }
 .eyebrow { margin: 0; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.72rem; }
 .muted { color: var(--muted); }
 .section-header { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 16px; }
-.section-header h2 { margin: 4px 0 0; font-size: 1.75rem; line-height: 1.15; }
+.section-header h2 { margin: 4px 0 0; font-size: 1.6rem; }
 .metric-card { min-height: 128px; }
 .metric-label { margin: 0; color: var(--muted); font-size: 0.85rem; }
 .metric-value { margin: 10px 0 6px; font-size: 1.8rem; font-weight: 700; }
 .metric-hint { margin: 0; color: var(--muted); }
 .btn {
-  touch-action: manipulation;
   border: none;
   border-radius: 10px;
   padding: 12px 14px;
