@@ -1,44 +1,20 @@
 {% extends 'base.html' %}
 {% block content %}
-{% with eyebrow='Hotspot Setup', title='Onboarding via Local AP', subtitle='Press and hold pin 2 for 3-5 seconds (or hold during boot) to force setup mode.' %}{% include 'partials/section_header.html' %}{% endwith %}
-
+{% with eyebrow='Provisioning', title='Device Onboarding', subtitle='Claim and pair this incubator with your operator account.' %}{% include 'partials/section_header.html' %}{% endwith %}
 <section class="two-col">
   <article class="card">
-    <h3>Step 1 · Enter setup mode</h3>
-    <p>When setup mode is active, connect your phone to the device hotspot and open <code>http://192.168.4.1</code>.</p>
-    <p class="muted">Current setup mode: {{ 'ON' if setup_state.setup_mode else 'OFF' }} ({{ setup_state.reason }})</p>
-    <button class="btn btn-primary" type="button" id="startSetupBtn">Start setup mode now</button>
+    <h3>Provisioning Steps</h3>
+    <ol class="stack-list">
+      <li>Connect mobile app to ESP32 BLE provisioning mode.</li>
+      <li>Set Wi-Fi credentials and submit claim code.</li>
+      <li>Complete backend setup through <code>/setup/complete</code>.</li>
+      <li>Return to <a href="/login">Login</a> when claimed.</li>
+    </ol>
   </article>
-
   <article class="card">
-    <h3>Step 2 · Choose Wi-Fi</h3>
-    <form id="onboardingForm" class="form-panel">
-      <label>Network (SSID)
-        <select name="ssid" required>
-          {% for net in networks %}
-          <option value="{{ net.ssid }}">{{ net.ssid }} ({{ net.strength }}%)</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Wi-Fi password<input name="password" type="password" /></label>
-      <label>Device name<input name="device_name" value="Incubator" required /></label>
-      <label><input type="checkbox" name="create_account" /> Create account now (optional)</label>
-      <label>Username (optional)<input name="username" /></label>
-      <button class="btn btn-primary" type="submit">Complete setup</button>
-      <p id="onboardingMsg" class="hint"></p>
-    </form>
+    <h3>Status</h3>
+    <p class="muted">This onboarding screen is a product UX placeholder until BLE flow finalization.</p>
+    {% with label='Provisioning-ready', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
   </article>
 </section>
-
-<section class="card">
-  <h3>Step 3 · First-use quick guide</h3>
-  <ul class="stack-list">
-    <li>Home tab: monitor temp/humidity and run quick actions.</li>
-    <li>Status tab: confirm hardware, sensors, and alarms are healthy.</li>
-    <li>Profile bubble: open account/settings/network/device controls and future account linking.</li>
-  </ul>
-</section>
-{% endblock %}
-{% block scripts %}
-<script src="/static/js/onboarding.js"></script>
 {% endblock %}

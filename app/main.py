@@ -5,6 +5,8 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from fastapi.staticfiles import StaticFiles
+
 from .auth import hash_password
 from .config import settings
 from .database import Base, engine, get_db
@@ -15,8 +17,7 @@ from .services.button_service import SetupButtonService
 from .services.camera_service import CameraService
 from .services.esp32_link import ESP32Link
 from .services.hardware_service import HardwareService
-from .services.setup_mode_service import SetupModeService
-from .services.wifi_service import WiFiService
+from .routes.web import router as web_router
 
 app = FastAPI(title="Incubator v3 API")
 

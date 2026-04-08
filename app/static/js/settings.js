@@ -10,20 +10,13 @@ document.getElementById('settings-form')?.addEventListener('submit', async (e) =
     alarm_enabled: f.alarm_enabled.checked,
   };
   const msg = document.getElementById('settings-msg');
-
   try {
     const res = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-
-    if (res.status === 404) {
-      msg.textContent = 'Settings API is not wired yet in this build.';
-      return;
-    }
-
-    const data = await res.json().catch(() => ({}));
+    const data = await res.json();
     msg.textContent = data.ok ? 'Settings saved.' : (data.error || data.detail || 'Save failed.');
   } catch (err) {
     msg.textContent = `Request failed: ${err}`;

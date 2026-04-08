@@ -2,9 +2,6 @@
 {% block content %}
 {% with eyebrow='Configuration', title='Incubator Settings', subtitle='Control defaults and safety preferences.' %}{% include 'partials/section_header.html' %}{% endwith %}
 <form id="settings-form" class="card form-panel">
-  <h3 id="account">Account</h3>
-  <p class="muted">Account linking can be completed later from this screen.</p>
-  <h3 id="network">Network Settings</h3>
   <div class="form-grid">
     <label>Target Temp (°C)<input type="number" step="0.1" name="target_temp_c" value="{{ settings.target_temp_c }}" required></label>
     <label>Target Humidity (%)<input type="number" step="0.1" name="target_humidity_pct" value="{{ settings.target_humidity_pct }}" required></label>
@@ -15,7 +12,6 @@
     <label><input type="checkbox" name="turner_enabled" {% if settings.turner_enabled == 'true' %}checked{% endif %}> Turner Enabled</label>
     <label><input type="checkbox" name="alarm_enabled" {% if settings.alarm_enabled == 'true' %}checked{% endif %}> Alarm Enabled</label>
   </div>
-  <h3 id="device">Device Settings</h3>
   <div class="button-row">
     <button class="btn btn-primary" type="submit">Save Settings</button>
     <span class="muted">v{{ version }}</span>

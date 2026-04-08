@@ -30,7 +30,6 @@
         {% with label='Hardware Online', tone='ok' %}{% include 'partials/status_chip.html' %}{% endwith %}
         {% with label='Sensors Stable', tone='ok' %}{% include 'partials/status_chip.html' %}{% endwith %}
         {% with label='Alarm Clear', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
-        {% with label='Setup Mode ' ~ ('ON' if setup_state.setup_mode else 'OFF'), tone='warn' if setup_state.setup_mode else 'info' %}{% include 'partials/status_chip.html' %}{% endwith %}
       </div>
       <p class="muted">Version {{ version }}</p>
     </article>

@@ -11,6 +11,58 @@ This guide documents the **local-run first** workflow for UNO Q.
 ./scripts/update.sh
 ```
 
+On UNO Q, target directory example:
+
+```bash
+sudo mkdir -p /opt/incubator-v3
+sudo chown -R "$USER":"$USER" /opt/incubator-v3
+cd /opt/incubator-v3
+```
+
+## 2) Create runtime env
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+```
+
+If `python3 -m uvicorn ...` returns `No module named uvicorn`, run it from the activated venv instead:
+
+```bash
+source .venv/bin/activate
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### `./init_unoq.sh`
+- Installs minimal OS packages when `apt-get` is available (`python3`, `python3-pip`, `python3-venv`, `git`, `curl`).
+- Creates `.venv` if missing.
+- Upgrades pip and installs project dependencies with `python -m pip install -e .`.
+- Marks runtime scripts executable.
+- Prints next-step commands.
+
+### `./scripts/start.sh`
+- Changes to project root.
+- Activates `.venv`.
+- Starts the app with:
+  - `python -m uvicorn app.main:app --host 0.0.0.0 --port 8000`
+
+### `./scripts/update.sh`
+- Changes to project root.
+- Runs `git pull`.
+- Activates `.venv`.
+- Reinstalls project dependencies with `python -m pip install -e .`.
+
+## Validate
+
+```bash
+./init_unoq.sh
+./scripts/start.sh
+# later, after new commits:
+./scripts/update.sh
+```
+
 ## What each command does
 
 ### `./init_unoq.sh`
@@ -48,11 +100,3 @@ If/when you want background startup via service manager, use these optional temp
 - `deploy/incubator-v3.env.example`
 
 (systemd is intentionally not forced by `init_unoq.sh` in this workflow)
-
-
-## AP onboarding trigger (local-first)
-
-- Hardware setup mode trigger is mapped to **pin 2** with long-press protection (~4s default).
-- On trigger, device enters setup mode and attempts hotspot/AP bring-up.
-- Onboarding UI is served locally and expected to be opened at `http://192.168.4.1`.
-- Completing onboarding saves Wi-Fi/device settings and exits setup mode.

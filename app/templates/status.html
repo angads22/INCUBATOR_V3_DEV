@@ -9,7 +9,6 @@
       {% with label='Sensors: ' ~ health.sensors, tone='ok' %}{% include 'partials/status_chip.html' %}{% endwith %}
       {% with label='Alarms: ' ~ health.alarms, tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
       {% with label='Link: ' ~ health.link, tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
-      {% with label='Setup Mode: ' ~ health.setup_mode, tone='warn' if health.setup_mode == 'on' else 'info' %}{% include 'partials/status_chip.html' %}{% endwith %}
     </div>
     <p class="muted">Version {{ version }}</p>
   </article>
@@ -19,7 +18,6 @@
       <li>Use <a href="/hardware">Hardware</a> for immediate manual commands.</li>
       <li>Use <a href="/settings">Settings</a> to adjust targets and toggles.</li>
       <li>Review AI panel insights from the dashboard for advisory context.</li>
-      <li>Use <a href="/help">Help</a> for first-use guidance and local setup notes.</li>
     </ul>
   </article>
 </section>
