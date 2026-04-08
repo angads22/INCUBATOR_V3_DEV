@@ -1,0 +1,17 @@
+README.md
+pyproject.toml
+./app/__init__.py
+./app/auth.py
+./app/config.py
+./app/database.py
+./app/domain.py
+./app/main.py
+./app/models.py
+./app/schemas.py
+./app/settings_store.py
+./app/version.py
+incubator_v3_dev.egg-info/PKG-INFO
+incubator_v3_dev.egg-info/SOURCES.txt
+incubator_v3_dev.egg-info/dependency_links.txt
+incubator_v3_dev.egg-info/requires.txt
+incubator_v3_dev.egg-info/top_level.txt
