@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block content %}
+{% with eyebrow='Manual Control', title='Hardware Control Panel', subtitle='Direct command access with explicit operator actions.' %}{% include 'partials/section_header.html' %}{% endwith %}
+<section class="card">
+  <div class="action-grid">
+    {% with title='Open Lock', description='Unlock actuator for maintenance.', button_text='Open Lock', action="sendHardware('open_lock')" %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Close Lock', description='Lock actuator after servicing.', button_text='Close Lock', action="sendHardware('close_lock')", button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Capture Image', description='Trigger camera capture pipeline.', button_text='Capture', action="sendHardware('capture_image')" %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Motor Step', description='Move turning motor by one unit.', button_text='Move', action="sendHardware('move_motor', 1)" %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Candle ON', description='Enable candle actuator safely.', button_text='Enable', action="sendHardware('set_candle', true)" %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Candle OFF', description='Disable candle actuator safely.', button_text='Disable', action="sendHardware('set_candle', false)", button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
+  </div>
+  <p id="hardware-msg" class="hint">Awaiting command…</p>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/hardware.js"></script>
+{% endblock %}

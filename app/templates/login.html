@@ -1,35 +1,16 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Login | Incubator v3</title>
-  <link rel="stylesheet" href="/static/app.css" />
-</head>
-<body class="auth-page">
-  <form id="login-form" class="card form auth">
-    <h1>Incubator Login</h1>
+{% extends 'base.html' %}
+{% block content %}
+<section class="auth-wrap">
+  <form id="login-form" class="card auth-card">
+    <h2>Secure Operator Login</h2>
+    <p class="muted">Sign in to access manual controls and configuration panels.</p>
     <label>Username<input name="username" required /></label>
     <label>Password<input name="password" type="password" required /></label>
-    <button class="touch" type="submit">Login</button>
+    <button class="btn btn-primary" type="submit">Login</button>
     <p id="login-msg" class="hint"></p>
   </form>
-  <script>
-    document.getElementById('login-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const f = e.target;
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({username: f.username.value, password: f.password.value})
-      });
-      if (res.ok) {
-        location.href = '/';
-        return;
-      }
-      const data = await res.json();
-      document.getElementById('login-msg').textContent = data.detail || data.error || 'Login failed';
-    });
-  </script>
-</body>
-</html>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/login.js"></script>
+{% endblock %}

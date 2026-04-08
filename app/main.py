@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -6,16 +9,31 @@ from .auth import hash_password
 from .config import settings
 from .database import Base, engine, get_db
 from .models import ActionLog, DeviceConfig, User
+from .routes.web import router as web_router, set_runtime_services
 from .schemas import HardwareCommand, OnboardingPayload, SetupStatus
+from .services.button_service import SetupButtonService
 from .services.camera_service import CameraService
 from .services.esp32_link import ESP32Link
 from .services.hardware_service import HardwareService
+from .services.setup_mode_service import SetupModeService
+from .services.wifi_service import WiFiService
 
 app = FastAPI(title="Incubator v3 API")
+
+BASE_DIR = Path(__file__).resolve().parent
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+app.include_router(web_router)
 
 link = ESP32Link(settings.serial_port, settings.serial_baud, settings.serial_timeout)
 camera_service = CameraService(link)
 hardware_service = HardwareService(link, camera_service)
+setup_mode_service = SetupModeService()
+wifi_service = WiFiService()
+button_service = SetupButtonService(
+    hold_seconds=settings.setup_button_hold_seconds,
+    callback=lambda reason: setup_mode_service.enter_setup_mode(reason),
+)
+set_runtime_services(setup_mode_service=setup_mode_service, wifi_service=wifi_service)
 
 
 @app.on_event("startup")
@@ -30,10 +48,12 @@ def startup() -> None:
     finally:
         db.close()
 
+    button_service.start()
+
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "service": "incubator-v3"}
+    return {"ok": True, "service": "incubator-v3", "setup_mode": setup_mode_service.is_setup_mode()}
 
 
 @app.get("/setup/status", response_model=SetupStatus)

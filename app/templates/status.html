@@ -1,18 +1,26 @@
 {% extends 'base.html' %}
 {% block content %}
-<h1>System Status</h1>
-<section class="card">
-  <pre id="status-json">Loading...</pre>
+{% with eyebrow='Operations', title='System Status', subtitle='Current connectivity and safety posture.' %}{% include 'partials/section_header.html' %}{% endwith %}
+<section class="two-col">
+  <article class="card">
+    <h3>Runtime Health</h3>
+    <div class="chip-row">
+      {% with label='Hardware: ' ~ health.hardware, tone='ok' %}{% include 'partials/status_chip.html' %}{% endwith %}
+      {% with label='Sensors: ' ~ health.sensors, tone='ok' %}{% include 'partials/status_chip.html' %}{% endwith %}
+      {% with label='Alarms: ' ~ health.alarms, tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+      {% with label='Link: ' ~ health.link, tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+      {% with label='Setup Mode: ' ~ health.setup_mode, tone='warn' if health.setup_mode == 'on' else 'info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+    </div>
+    <p class="muted">Version {{ version }}</p>
+  </article>
+  <article class="card">
+    <h3>Operator Guidance</h3>
+    <ul class="stack-list">
+      <li>Use <a href="/hardware">Hardware</a> for immediate manual commands.</li>
+      <li>Use <a href="/settings">Settings</a> to adjust targets and toggles.</li>
+      <li>Review AI panel insights from the dashboard for advisory context.</li>
+      <li>Use <a href="/help">Help</a> for first-use guidance and local setup notes.</li>
+    </ul>
+  </article>
 </section>
-{% endblock %}
-{% block scripts %}
-<script>
-  async function refreshStatus() {
-    const res = await fetch('/api/status');
-    const data = await res.json();
-    document.getElementById('status-json').textContent = JSON.stringify(data, null, 2);
-  }
-  refreshStatus();
-  setInterval(refreshStatus, 5000);
-</script>
 {% endblock %}

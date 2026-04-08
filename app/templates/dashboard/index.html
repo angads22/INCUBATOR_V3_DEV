@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% block content %}
+{% with eyebrow='Device Dashboard', title='Live Incubator Overview', subtitle='Modular panels designed for future mobile parity.' %}{% include 'partials/section_header.html' %}{% endwith %}
+
+<section class="dashboard-grid">
+  <div class="panel-group">
+    <div class="metrics-grid">
+      {% with label='Temperature', value='%.1f°C'|format(mock.temperature_c), hint='Target %.1f°C'|format(mock.target_temp_c) %}{% include 'partials/metric_card.html' %}{% endwith %}
+      {% with label='Humidity', value='%.1f%%'|format(mock.humidity_pct), hint='Target %.1f%%'|format(mock.target_humidity_pct) %}{% include 'partials/metric_card.html' %}{% endwith %}
+      {% with label='Heater', value='ON' if mock.heater else 'OFF', hint='Manual override ready' %}{% include 'partials/metric_card.html' %}{% endwith %}
+      {% with label='Fan + Turner', value=('ON' if mock.fan else 'OFF') ~ ' / ' ~ ('ON' if mock.turner else 'OFF'), hint='Cycle-safe state' %}{% include 'partials/metric_card.html' %}{% endwith %}
+    </div>
+
+    <article class="card">
+      <h3>Quick Hardware Actions</h3>
+      <div class="action-grid">
+        {% with title='Open Door', description='Issue immediate open command.', button_text='Open', action="sendHardware('open_door')" %}{% include 'partials/action_card.html' %}{% endwith %}
+        {% with title='Close Door', description='Issue immediate close command.', button_text='Close', action="sendHardware('close_door')", button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
+        {% with title='Read Temperature', description='Fetch a fresh hardware reading.', button_text='Read Temp', action="sendHardware('read_temp')" %}{% include 'partials/action_card.html' %}{% endwith %}
+        {% with title='Read Humidity', description='Fetch a fresh humidity reading.', button_text='Read RH', action="sendHardware('read_humidity')" %}{% include 'partials/action_card.html' %}{% endwith %}
+      </div>
+      <p id="actionResult" class="hint">Actions are safe placeholders until ESP32 mapping is finalized.</p>
+    </article>
+  </div>
+
+  <div class="panel-group">
+    <article class="card">
+      <h3>System Status</h3>
+      <div class="chip-row">
+        {% with label='Hardware Online', tone='ok' %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label='Sensors Stable', tone='ok' %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label='Alarm Clear', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label='Setup Mode ' ~ ('ON' if setup_state.setup_mode else 'OFF'), tone='warn' if setup_state.setup_mode else 'info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+      </div>
+      <p class="muted">Version {{ version }}</p>
+    </article>
+
+    <article class="card">
+      <h3>AI Insight (Stub)</h3>
+      <p><strong>{{ ai_insight.summary }}</strong></p>
+      <p class="muted">Risk: {{ ai_insight.risk_level }} · Confidence: {{ ai_insight.confidence }}</p>
+      <p>{{ ai_insight.recommendation }}</p>
+      <ul class="stack-list">
+        {% for finding in ai_findings %}
+        <li><strong>{{ finding.title }}:</strong> {{ finding.detail }}</li>
+        {% endfor %}
+      </ul>
+    </article>
+
+    <article class="card">
+      <h3>Recent Activity</h3>
+      <ul class="stack-list">
+        {% for item in recent_activity %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </article>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/dashboard.js"></script>
+{% endblock %}

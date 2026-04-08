@@ -1,16 +1,44 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Onboarding | Incubator v3</title>
-  <link rel="stylesheet" href="/static/app.css" />
-</head>
-<body class="auth-page">
-  <section class="card form auth">
-    <h1>Onboarding</h1>
-    <p>This device onboarding is expected to be completed through BLE provisioning and <code>/setup/complete</code>.</p>
-    <p>Once claimed, log in at <a href="/login">/login</a>.</p>
-  </section>
-</body>
-</html>
+{% extends 'base.html' %}
+{% block content %}
+{% with eyebrow='Hotspot Setup', title='Onboarding via Local AP', subtitle='Press and hold pin 2 for 3-5 seconds (or hold during boot) to force setup mode.' %}{% include 'partials/section_header.html' %}{% endwith %}
+
+<section class="two-col">
+  <article class="card">
+    <h3>Step 1 · Enter setup mode</h3>
+    <p>When setup mode is active, connect your phone to the device hotspot and open <code>http://192.168.4.1</code>.</p>
+    <p class="muted">Current setup mode: {{ 'ON' if setup_state.setup_mode else 'OFF' }} ({{ setup_state.reason }})</p>
+    <button class="btn btn-primary" type="button" id="startSetupBtn">Start setup mode now</button>
+  </article>
+
+  <article class="card">
+    <h3>Step 2 · Choose Wi-Fi</h3>
+    <form id="onboardingForm" class="form-panel">
+      <label>Network (SSID)
+        <select name="ssid" required>
+          {% for net in networks %}
+          <option value="{{ net.ssid }}">{{ net.ssid }} ({{ net.strength }}%)</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Wi-Fi password<input name="password" type="password" /></label>
+      <label>Device name<input name="device_name" value="Incubator" required /></label>
+      <label><input type="checkbox" name="create_account" /> Create account now (optional)</label>
+      <label>Username (optional)<input name="username" /></label>
+      <button class="btn btn-primary" type="submit">Complete setup</button>
+      <p id="onboardingMsg" class="hint"></p>
+    </form>
+  </article>
+</section>
+
+<section class="card">
+  <h3>Step 3 · First-use quick guide</h3>
+  <ul class="stack-list">
+    <li>Home tab: monitor temp/humidity and run quick actions.</li>
+    <li>Status tab: confirm hardware, sensors, and alarms are healthy.</li>
+    <li>Profile bubble: open account/settings/network/device controls and future account linking.</li>
+  </ul>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/onboarding.js"></script>
+{% endblock %}

@@ -4,13 +4,18 @@ UNO Q-hosted FastAPI incubator control app with ESP32 UART hardware bridge.
 
 ## Audit summary (current repo)
 
+## Version history
+
+- **1.60 (feature, current)**: Added local-first AP/hotspot onboarding flow with pin-2 long-press setup trigger, onboarding wizard routes, and Home/Status/Help UX updates.
+- **1.53 (previous)**: Completed stabilization pass by fixing dashboard render/runtime blockers, validating all page routes, and hardening JS fallbacks for partially wired auth/settings APIs.
+
 Active, authoritative files currently used by runtime:
 
 - `app/main.py` (FastAPI routes, templates, API, auth/session wiring)
 - `app/models.py`, `app/database.py` (SQLAlchemy persistence)
 - `app/services/*` (hardware and camera abstraction)
-- `app/templates/*` + `app/static/app.css` (operator UI)
-- `deploy/incubator-v3.service`, `deploy/incubator-v3.env.example`, `init_unoq.sh` (UNO Q deployment)
+- `app/templates/*` + `app/static/css/*` + `app/static/js/*` (operator UI)
+- `init_unoq.sh`, `scripts/start.sh`, `scripts/update.sh`, and optional `deploy/incubator-v3.service` (UNO Q deployment)
 
 No extra dead-end modules are used by the current runtime path.
 
@@ -25,21 +30,19 @@ Frontend:
 - `/` dashboard
 - `/settings`
 - `/status`
+- `/hardware`
 - `/login`
 - `/onboarding`
+- `/help`
 
 API:
 
-- `GET /api/health`
-- `GET /api/status`
-- `GET /api/environment`
-- `GET /api/settings`
-- `POST /api/settings`
-- `POST /api/control/heater`
-- `POST /api/control/fan`
-- `POST /api/control/turn`
-- `POST /api/login`
-- `POST /api/logout`
+- `GET /health`
+- `GET /setup/status`
+- `POST /setup/complete`
+- `POST /hardware/send`
+- `GET /docs`
+- `GET /openapi.json`
 
 ## Local run (UNO Q)
 Linux-first incubator backend for **Arduino UNO Q** with **ESP32** as hardware/provisioning bridge.
@@ -58,22 +61,33 @@ Linux-first incubator backend for **Arduino UNO Q** with **ESP32** as hardware/p
 ## Quick start (local dev)
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+python -m pip install -e .
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-## One-command UNO Q initialize (after pull)
+If you see `No module named uvicorn`, your virtualenv is not active or dependencies are not installed yet. Re-run:
 
 ```bash
-sudo ./init_unoq.sh
+source .venv/bin/activate
+python -m pip install -e .
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-## systemd
+## UNO Q local workflow (recommended)
 
-- Service template: `deploy/incubator-v3.service`
-- Env template: `deploy/incubator-v3.env.example`
+```bash
+./init_unoq.sh
+./scripts/start.sh
+# later updates:
+./scripts/update.sh
+```
+
+## Optional systemd (later)
+
+- Optional service template: `deploy/incubator-v3.service`
+- Optional env template: `deploy/incubator-v3.env.example`
 - Full deploy guide: `docs/UNOQ_DEPLOY.md`
 
 ## Private remote hosting guidance (recommended)
@@ -97,14 +111,6 @@ Security defaults:
 - Integrate Pi repo exact visual/wording parity once repo is available.
 - Replace placeholder ESP32 command names with AG-robotics protocol mappings.
 - Add role-based authorization and stronger CSRF protection for control endpoints.
-This command:
-
-1. Creates/updates `.venv`
-2. Installs package dependencies
-3. Writes `/etc/incubator-v3.env`
-4. Installs/updates systemd service
-5. Restarts service and runs `/health` check
-
 ## Deployment docs
 
 - Full deploy guide: [`docs/UNOQ_DEPLOY.md`](docs/UNOQ_DEPLOY.md)
@@ -114,3 +120,11 @@ This command:
 ## Next step
 
 Integrate AG-robotics UART protocol + camera transfer implementation into `app/services/esp32_link.py` and `app/services/camera_service.py`.
+
+
+## Pin 2 setup trigger (AP onboarding)
+
+- Hold button on **pin 2** for ~4 seconds while running to enter setup mode.
+- Device can also be forced into setup mode via onboarding endpoint for local testing.
+- Setup mode brings up hotspot/AP onboarding at `http://192.168.4.1` and guides Wi-Fi + device setup.
+- Local operation does not depend on internet/domain availability.
