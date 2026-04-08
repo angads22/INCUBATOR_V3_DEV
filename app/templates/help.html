@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block content %}
+{% with eyebrow='Guidance', title='How to Use Your Incubator', subtitle='Quick local-first walkthrough of the main tabs and settings.' %}{% include 'partials/section_header.html' %}{% endwith %}
+<section class="two-col">
+  <article class="card">
+    <h3>Main Tabs</h3>
+    <ul class="stack-list">
+      <li><strong>Home:</strong> Snapshot of temperature, humidity, status chips, and quick actions.</li>
+      <li><strong>Status:</strong> Current health view for hardware link, sensors, alarms, and setup mode state.</li>
+      <li><strong>Help:</strong> Local onboarding support and operating tips.</li>
+    </ul>
+  </article>
+  <article class="card">
+    <h3>Where settings live</h3>
+    <p>Use the top-right profile bubble to open account, network settings, and device settings.</p>
+    <p class="muted">You can also link/add an account later from the same menu.</p>
+  </article>
+</section>
+{% endblock %}

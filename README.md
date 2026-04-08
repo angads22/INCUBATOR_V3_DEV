@@ -33,6 +33,7 @@ Frontend:
 - `/hardware`
 - `/login`
 - `/onboarding`
+- `/help`
 
 API:
 
@@ -127,3 +128,11 @@ Security defaults:
 ## Next step
 
 Integrate AG-robotics UART protocol + camera transfer implementation into `app/services/esp32_link.py` and `app/services/camera_service.py`.
+
+
+## Pin 2 setup trigger (AP onboarding)
+
+- Hold button on **pin 2** for ~4 seconds while running to enter setup mode.
+- Device can also be forced into setup mode via onboarding endpoint for local testing.
+- Setup mode brings up hotspot/AP onboarding at `http://192.168.4.1` and guides Wi-Fi + device setup.
+- Local operation does not depend on internet/domain availability.

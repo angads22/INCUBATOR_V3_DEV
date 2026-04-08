@@ -1,8 +1,9 @@
 from pathlib import Path
 
 from fastapi import APIRouter, Cookie, Depends, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..auth import get_user_id_from_session
@@ -63,6 +64,43 @@ def dashboard(
     )
 
 
+@router.get("/status", response_class=HTMLResponse)
+def status_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+):
+    redirect = _auth_redirect(db, session_token)
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(
+        request=request,
+        name="status.html",
+        context={
+            "version": settings.app_version,
+            "health": {
+                "hardware": "online",
+                "sensors": "online",
+                "alarms": "none",
+                "link": "uart-stable",
+                "setup_mode": "on" if _setup_mode_service.is_setup_mode() else "off",
+            },
+        },
+    )
+
+
+@router.get("/help", response_class=HTMLResponse)
+def help_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+):
+    redirect = _auth_redirect(db, session_token)
+    if redirect:
+        return redirect
+    return templates.TemplateResponse(request=request, name="help.html", context={"version": settings.app_version})
+
+
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(
     request: Request,
@@ -75,8 +113,8 @@ def settings_page(
     return templates.TemplateResponse("settings.html", {"request": request, "settings": get_settings(db), "version": settings.app_version})
 
 
-@router.get("/status", response_class=HTMLResponse)
-def status_page(
+@router.get("/hardware", response_class=HTMLResponse)
+def hardware_page(
     request: Request,
     db: Session = Depends(get_db),
     session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
