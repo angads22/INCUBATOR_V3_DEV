@@ -60,7 +60,21 @@ def dashboard(
     if redirect:
         return redirect
 
+    config = db.scalar(select(DeviceConfig).limit(1))
     app_settings = get_settings(db)
+    setup_mode = _setup_mode_service.is_setup_mode() if _setup_mode_service else False
+    device_name = (config.device_name if config and config.device_name else None) or "UNO Q Device"
+    device_id = (config.device_id if config else None) or "UNOQ-UNCLAIMED"
+    is_claimed = bool(config.claimed) if config else False
+    setup_complete = bool(config and config.device_name and config.wifi_ssid and config.claimed)
+    network_state = "Connected"
+    network_detail = f"SSID: {config.wifi_ssid}" if config and config.wifi_ssid else "No Wi-Fi configured yet."
+    if setup_mode:
+        network_state = "Setup hotspot active"
+        network_detail = "Hotspot onboarding mode is enabled for local setup."
+    elif not (config and config.wifi_ssid):
+        network_state = "Not configured"
+
     mock_snapshot = {
         "temperature_c": 37.4,
         "humidity_pct": 54.8,
@@ -81,6 +95,15 @@ def dashboard(
             "mock": mock_snapshot,
             "ai_insight": ai_insight,
             "ai_findings": ai_service.recent_findings(),
+            "home_summary": {
+                "device_name": device_name,
+                "device_id": device_id,
+                "setup_complete": setup_complete,
+                "is_claimed": is_claimed,
+                "setup_mode": setup_mode,
+                "network_state": network_state,
+                "network_detail": network_detail,
+            },
             "recent_activity": [
                 "Setup completed by owner account.",
                 "Heater toggled ON (manual).",
