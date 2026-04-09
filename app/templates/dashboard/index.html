@@ -8,7 +8,7 @@
       <p class="eyebrow">Device</p>
       <p class="device-name">{{ home_summary.device_name }}</p>
       <p class="muted">Device ID: {{ home_summary.device_id }}</p>
-      <h3 class="hero-state">{{ home_summary.current_state_summary }}</h3>
+      <h2 class="hero-state">{{ home_summary.current_state_summary }}</h2>
       <p class="muted">{{ home_summary.state_detail }}</p>
       <div class="chip-row">
         {% with label=('Setup complete' if home_summary.setup_complete else 'Setup pending'), tone=('ok' if home_summary.setup_complete else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}

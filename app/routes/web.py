@@ -54,6 +54,10 @@ def _is_setup_complete(config: DeviceConfig | None) -> bool:
     return bool(config and config.device_name and config.wifi_ssid and config.claimed)
 
 
+def _get_bool_setting(app_settings: dict[str, str], key: str, default: bool) -> bool:
+    return app_settings.get(key, "true" if default else "false") == "true"
+
+
 @router.get("/", response_class=HTMLResponse)
 def dashboard(
     request: Request,
@@ -92,10 +96,10 @@ def dashboard(
         "humidity_pct": 54.8,
         "target_temp_c": float(app_settings.get("target_temp_c", "37.5")),
         "target_humidity_pct": float(app_settings.get("target_humidity_pct", "55")),
-        "door_closed": app_settings.get("door_closed", "true") == "true",
-        "heater": app_settings.get("heater_enabled", "false") == "true",
-        "fan": app_settings.get("fan_enabled", "true") == "true",
-        "turner": app_settings.get("turner_enabled", "true") == "true",
+        "door_closed": _get_bool_setting(app_settings, "door_closed", default=True),
+        "heater": _get_bool_setting(app_settings, "heater_enabled", default=False),
+        "fan": _get_bool_setting(app_settings, "fan_enabled", default=True),
+        "turner": _get_bool_setting(app_settings, "turner_enabled", default=True),
     }
     ai_insight = ai_service.generate_dashboard_insight(mock_snapshot["temperature_c"], mock_snapshot["humidity_pct"])
 
