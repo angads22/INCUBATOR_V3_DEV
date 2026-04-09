@@ -50,6 +50,10 @@ def _render(request: Request, name: str, context: dict[str, Any]):
         return templates.TemplateResponse(name=name, context=merged_context)
 
 
+def _is_setup_complete(config: DeviceConfig | None) -> bool:
+    return bool(config and config.device_name and config.wifi_ssid and config.claimed)
+
+
 @router.get("/", response_class=HTMLResponse)
 def dashboard(
     request: Request,
@@ -72,15 +76,16 @@ def dashboard(
     is_claimed = bool(config and config.claimed)
     wifi_ssid = config.wifi_ssid if config else None
     has_wifi_config = bool(wifi_ssid)
-    setup_complete = bool(config and config.device_name and has_wifi_config and config.claimed)
-    network_state = "Not configured"
-    network_detail = "No Wi-Fi configured yet."
-    if has_wifi_config:
-        network_state = "Connected"
-        network_detail = f"SSID: {wifi_ssid}"
+    setup_complete = _is_setup_complete(config)
     if setup_mode:
         network_state = "Setup hotspot active"
         network_detail = "Hotspot onboarding mode is enabled for local setup."
+    elif has_wifi_config:
+        network_state = "Connected"
+        network_detail = f"SSID: {wifi_ssid}"
+    else:
+        network_state = "Not configured"
+        network_detail = "No Wi-Fi configured yet."
 
     mock_snapshot = {
         "temperature_c": 37.4,
