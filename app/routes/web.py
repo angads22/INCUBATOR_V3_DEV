@@ -43,10 +43,10 @@ def _auth_redirect(db: Session, session_token: str | None):
 
 
 def _render(request: Request, name: str, context: dict[str, Any]):
-    merged_context = {"request": request, **context}
     try:
         return templates.TemplateResponse(request=request, name=name, context=context)
     except TypeError:
+        merged_context = {"request": request, **context}
         return templates.TemplateResponse(name=name, context=merged_context)
 
 
