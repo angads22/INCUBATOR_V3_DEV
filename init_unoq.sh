@@ -83,22 +83,26 @@ chmod +x init_unoq.sh scripts/start.sh scripts/update.sh scripts/deploy_local_un
 
 # ── 7. Install systemd service (if systemd is available) ─────────────────────
 if command -v systemctl >/dev/null 2>&1; then
-  # Write env file if missing
+  # Write env file if missing (mode 600 so only root can read it)
   if [[ ! -f "$ENV_FILE" ]]; then
     echo "[INFO] Writing default env file to $ENV_FILE..."
-    _run_as_root bash -c "cat > '$ENV_FILE'" <<EOF
+    _run_as_root bash -c "
+      umask 177
+      cat > '$ENV_FILE' <<'ENVEOF'
 INCUBATOR_DB_URL=sqlite:///${INSTALL_DIR}/incubator.db
 INCUBATOR_SERIAL_PORT=/dev/ttyUSB0
 INCUBATOR_SERIAL_BAUD=115200
 INCUBATOR_SERIAL_TIMEOUT=1.0
-EOF
+ENVEOF
+"
   fi
 
   echo "[INFO] Installing systemd service to $SERVICE_DEST..."
-  # Replace placeholder paths in service template
-  sed "s|__INSTALL_DIR__|${INSTALL_DIR}|g" deploy/incubator-v3.service > /tmp/${SERVICE_NAME}.service.tmp
-  _run_as_root cp /tmp/${SERVICE_NAME}.service.tmp "$SERVICE_DEST"
-  rm -f /tmp/${SERVICE_NAME}.service.tmp
+  # Use mktemp to avoid /tmp symlink attacks
+  _TMP_SERVICE=$(mktemp)
+  sed "s|__INSTALL_DIR__|${INSTALL_DIR}|g" deploy/incubator-v3.service > "$_TMP_SERVICE"
+  _run_as_root cp "$_TMP_SERVICE" "$SERVICE_DEST"
+  rm -f "$_TMP_SERVICE"
 
   _run_as_root systemctl daemon-reload
   _run_as_root systemctl enable "${SERVICE_NAME}.service"
