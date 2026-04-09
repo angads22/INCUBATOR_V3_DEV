@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -9,20 +10,24 @@ from .auth import hash_password
 from .config import settings
 from .database import Base, engine, get_db
 from .models import ActionLog, DeviceConfig, User
+from .routes.ai import router as ai_router
 from .routes.web import router as web_router, set_runtime_services
 from .schemas import HardwareCommand, OnboardingPayload, SetupStatus
 from .services.button_service import SetupButtonService
 from .services.camera_service import CameraService
+from .services.cloud_service import CloudService
 from .services.esp32_link import ESP32Link
 from .services.hardware_service import HardwareService
 from .services.setup_mode_service import SetupModeService
 from .services.wifi_service import WiFiService
 
 app = FastAPI(title="Incubator v3 API")
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 app.include_router(web_router)
+app.include_router(ai_router)
 
 link = ESP32Link(settings.serial_port, settings.serial_baud, settings.serial_timeout)
 camera_service = CameraService(link)
@@ -34,6 +39,7 @@ button_service = SetupButtonService(
     callback=lambda reason: setup_mode_service.enter_setup_mode(reason),
 )
 set_runtime_services(setup_mode_service=setup_mode_service, wifi_service=wifi_service)
+cloud_service = CloudService()
 
 
 @app.on_event("startup")
@@ -42,9 +48,21 @@ def startup() -> None:
     db = next(get_db())
     try:
         config = db.scalar(select(DeviceConfig).limit(1))
+        device_id = config.device_id if config else "UNOQ-UNCLAIMED"
         if not config:
-            db.add(DeviceConfig(device_id="UNOQ-UNCLAIMED", claimed=False, claim_code="PAIR-1234"))
+            config = DeviceConfig(device_id=device_id, claimed=False, claim_code="PAIR-1234")
+            db.add(config)
             db.commit()
+        cloud_result = cloud_service.register_device(device_id)
+        logger.info(
+            "cloud_register_device",
+            extra={
+                "enabled": cloud_result.get("enabled"),
+                "configured": cloud_result.get("configured"),
+                "ok": cloud_result.get("ok"),
+                "operation": cloud_result.get("operation"),
+            },
+        )
     finally:
         db.close()
 
