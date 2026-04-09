@@ -92,11 +92,58 @@ def dashboard(
         "humidity_pct": 54.8,
         "target_temp_c": float(app_settings.get("target_temp_c", "37.5")),
         "target_humidity_pct": float(app_settings.get("target_humidity_pct", "55")),
+        "door_closed": app_settings.get("door_closed", "true") == "true",
         "heater": app_settings.get("heater_enabled", "false") == "true",
         "fan": app_settings.get("fan_enabled", "true") == "true",
         "turner": app_settings.get("turner_enabled", "true") == "true",
     }
     ai_insight = ai_service.generate_dashboard_insight(mock_snapshot["temperature_c"], mock_snapshot["humidity_pct"])
+
+    if setup_mode:
+        current_state_summary = "Setup mode active"
+        state_detail = "Hotspot onboarding is active. Finish local setup from a nearby phone."
+        next_step = {
+            "title": "Finish onboarding in hotspot mode",
+            "body": "Complete local setup now, then continue using the device with or without an account.",
+            "cta_label": "Continue setup",
+            "cta_href": "/onboarding",
+        }
+    elif not setup_complete:
+        current_state_summary = "Setup not complete"
+        state_detail = "Device is usable locally, but naming, Wi-Fi, and claim flow are still pending."
+        next_step = {
+            "title": "Start local setup",
+            "body": "Use guided onboarding to set device name and Wi-Fi; account creation is optional.",
+            "cta_label": "Start setup",
+            "cta_href": "/onboarding",
+        }
+    elif not is_claimed:
+        current_state_summary = "Running locally (unclaimed)"
+        state_detail = "Incubator is ready for local use. You can link an account later if you want remote identity."
+        next_step = {
+            "title": "Use now, link account later",
+            "body": "You can continue fully local operation and add account linking in a later step.",
+            "cta_label": "Link account",
+            "cta_href": "/onboarding",
+        }
+    else:
+        current_state_summary = "Running and claimed"
+        state_detail = "Core setup is complete. Monitor health and adjust controls from Status and Settings."
+        next_step = {
+            "title": "Review incubator health",
+            "body": "Check status readings and confirm heater, fan, and turner behavior.",
+            "cta_label": "Open status",
+            "cta_href": "/status",
+        }
+
+    quick_actions = [
+        {"label": "Start Setup", "detail": "Local hotspot onboarding", "href": "/onboarding", "tone": "primary"},
+        {"label": "Open Status", "detail": "Live incubator health", "href": "/status", "tone": "secondary"},
+        {"label": "Open Help", "detail": "Guides and troubleshooting", "href": "/help", "tone": "secondary"},
+        {"label": "Network Settings", "detail": "Wi-Fi and connectivity", "href": "/settings#network", "tone": "ghost"},
+        {"label": "Device Settings", "detail": "Targets and controls", "href": "/settings#device", "tone": "ghost"},
+        {"label": "Link Account", "detail": "Optional now, can be done later", "href": "/onboarding", "tone": "ghost"},
+    ]
 
     return _render(
         request=request,
@@ -115,7 +162,11 @@ def dashboard(
                 "setup_mode": setup_mode,
                 "network_state": network_state,
                 "network_detail": network_detail,
+                "current_state_summary": current_state_summary,
+                "state_detail": state_detail,
             },
+            "next_step": next_step,
+            "quick_actions": quick_actions,
             "recent_activity": [
                 "Setup completed by owner account.",
                 "Heater toggled ON (manual).",

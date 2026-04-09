@@ -1,75 +1,93 @@
 {% extends 'base.html' %}
 {% block content %}
-{% with eyebrow='Home', title='UNO Q Appliance Dashboard', subtitle='Local-first overview for setup, claim state, network, and incubator status.' %}{% include 'partials/section_header.html' %}{% endwith %}
+{% with eyebrow='Home', title='Incubator Home', subtitle='Local-first appliance dashboard for setup, health, and daily operation.' %}{% include 'partials/section_header.html' %}{% endwith %}
 
-<section class="dashboard-grid home-dashboard">
+<section class="dashboard-grid home-dashboard appliance-home">
   <div class="panel-group">
-    <article class="card">
-      <h3>Device Overview</h3>
+    <article class="card home-hero">
+      <p class="eyebrow">Device</p>
       <p class="device-name">{{ home_summary.device_name }}</p>
       <p class="muted">Device ID: {{ home_summary.device_id }}</p>
+      <h3 class="hero-state">{{ home_summary.current_state_summary }}</h3>
+      <p class="muted">{{ home_summary.state_detail }}</p>
       <div class="chip-row">
-        {% with label=('Setup complete' if home_summary.setup_complete else 'Setup not complete'), tone=('ok' if home_summary.setup_complete else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
-        {% with label=('Claimed' if home_summary.is_claimed else 'Unclaimed'), tone=('ok' if home_summary.is_claimed else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label=('Setup complete' if home_summary.setup_complete else 'Setup pending'), tone=('ok' if home_summary.setup_complete else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label=('Claimed' if home_summary.is_claimed else 'Using without account'), tone=('ok' if home_summary.is_claimed else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label=('Setup hotspot active' if home_summary.setup_mode else 'Setup hotspot off'), tone=('warn' if home_summary.setup_mode else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
       </div>
     </article>
 
     <article class="card">
-      <h3>Current setup and claim state</h3>
-      <ul class="stack-list">
-        <li>Setup mode: <strong>{{ 'On' if home_summary.setup_mode else 'Off' }}</strong></li>
-        <li>Setup completion: <strong>{{ 'Complete' if home_summary.setup_complete else 'Pending' }}</strong></li>
-        <li>Claim status: <strong>{{ 'Claimed' if home_summary.is_claimed else 'Unclaimed' }}</strong></li>
-      </ul>
+      <h3>What should I do next?</h3>
+      <p><strong>{{ next_step.title }}</strong></p>
+      <p class="muted">{{ next_step.body }}</p>
+      <a class="btn btn-primary next-step-btn" href="{{ next_step.cta_href }}">{{ next_step.cta_label }}</a>
     </article>
 
     <article class="card">
-      <h3>Wi-Fi / network state</h3>
-      <p><strong>{{ home_summary.network_state }}</strong></p>
-      <p class="muted">{{ home_summary.network_detail }}</p>
-      <p class="muted">Design mode: local-first operation with hotspot onboarding path.</p>
-    </article>
-
-    <article class="card">
-      <h3>Incubator status summary</h3>
+      <h3>Overview / incubator health</h3>
       <div class="metrics-grid compact-metrics">
         {% with label='Temperature', value='%.1f°C'|format(mock.temperature_c), hint='Target %.1f°C'|format(mock.target_temp_c) %}{% include 'partials/metric_card.html' %}{% endwith %}
         {% with label='Humidity', value='%.1f%%'|format(mock.humidity_pct), hint='Target %.1f%%'|format(mock.target_humidity_pct) %}{% include 'partials/metric_card.html' %}{% endwith %}
       </div>
-      <p class="muted">Hardware live data placeholder: sensor pipeline can replace these values when fully wired.</p>
+      <div class="chip-row key-state-row">
+        {% with label=('Door closed' if mock.door_closed else 'Door open'), tone=('ok' if mock.door_closed else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label=('Heater on' if mock.heater else 'Heater off'), tone=('ok' if mock.heater else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label=('Fan on' if mock.fan else 'Fan off'), tone=('ok' if mock.fan else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label=('Turner on' if mock.turner else 'Turner off'), tone=('ok' if mock.turner else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
+      </div>
+      <p class="muted">Usable now even before full wiring; live sensor feeds can replace placeholders as hardware comes online.</p>
     </article>
   </div>
 
   <div class="panel-group">
     <article class="card">
       <h3>Quick actions</h3>
-      <div class="quick-link-grid">
-        <a class="btn btn-primary quick-link" href="/onboarding">Start setup</a>
-        <a class="btn btn-secondary quick-link" href="/status">View status</a>
-        <a class="btn btn-secondary quick-link" href="/help">Open help</a>
-        <a class="btn btn-ghost quick-link" href="/settings">Open settings</a>
+      <div class="quick-actions-grid">
+        {% for action in quick_actions %}
+        <a class="quick-action-item tone-{{ action.tone }}" href="{{ action.href }}">
+          <span class="quick-action-label">{{ action.label }}</span>
+          <span class="quick-action-detail">{{ action.detail }}</span>
+        </a>
+        {% endfor %}
       </div>
-      <p class="muted">Top navigation remains Home, Status, and Help. Account actions stay in the top-right profile bubble.</p>
     </article>
 
     <article class="card">
-      <h3>System posture</h3>
+      <h3>Setup / onboarding status</h3>
+      <ul class="stack-list">
+        <li>Setup mode: <strong>{{ 'On' if home_summary.setup_mode else 'Off' }}</strong></li>
+        <li>Setup completion: <strong>{{ 'Complete' if home_summary.setup_complete else 'Pending' }}</strong></li>
+        <li>Account/claim state: <strong>{{ 'Claimed' if home_summary.is_claimed else 'Optional and not linked yet' }}</strong></li>
+      </ul>
+      <p class="muted">Local setup works through hotspot onboarding and does not require internet/domain.</p>
+    </article>
+
+    <article class="card">
+      <h3>Network / connectivity summary</h3>
+      <p><strong>{{ home_summary.network_state }}</strong></p>
+      <p class="muted">{{ home_summary.network_detail }}</p>
       <div class="chip-row">
         {% with label='Local-first', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
-        {% with label='Account optional', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
-        {% with label='Hotspot onboarding ready', tone='ok' %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label='Domain optional', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label='Internet optional', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
       </div>
-      <p class="muted">Reserved room for future chat and vision model panels.</p>
     </article>
 
     <article class="card">
-      <h3>Recent activity</h3>
+      <h3>Recent events</h3>
       <ul class="stack-list">
         {% for item in recent_activity %}
         <li>{{ item }}</li>
         {% endfor %}
       </ul>
       <p class="muted">Version {{ version }}</p>
+    </article>
+
+    <article class="card future-card">
+      <h3>Future AI assistant (preview)</h3>
+      <p class="muted">{{ ai_insight }}</p>
+      <p class="muted">Reserved space for future chat + vision features without changing the core local-first flow.</p>
     </article>
   </div>
 </section>

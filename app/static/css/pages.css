@@ -4,8 +4,13 @@
 
 /* Dashboard home */
 .home-dashboard { align-items: start; }
+.appliance-home .card { display: grid; gap: 10px; }
 .device-name { margin: 0 0 8px; font-size: 1.25rem; font-weight: 700; }
+.home-hero .device-name { font-size: 1.45rem; margin-bottom: 2px; }
+.hero-state { margin: 4px 0 0; }
+.next-step-btn { width: 100%; text-align: center; text-decoration: none; margin-top: 4px; }
 .compact-metrics .metric-card { min-height: 0; }
+.key-state-row { margin-top: 4px; }
 .quick-link-grid { display: grid; gap: 10px; }
 .quick-link {
   display: inline-flex;
@@ -13,9 +18,29 @@
   justify-content: center;
   text-decoration: none;
 }
+.quick-actions-grid { display: grid; gap: 10px; }
+.quick-action-item {
+  display: grid;
+  gap: 3px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  text-decoration: none;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.02);
+}
+.quick-action-item:hover { background: var(--panel-soft); }
+.quick-action-label { font-weight: 700; }
+.quick-action-detail { color: var(--muted); font-size: 0.85rem; }
+.quick-action-item.tone-primary { border-color: rgba(88, 196, 255, 0.7); }
+.quick-action-item.tone-secondary { border-color: rgba(151, 168, 195, 0.8); }
+.future-card { opacity: 0.95; }
+
 @media (max-width: 680px) {
   .section-header { flex-direction: column; align-items: flex-start; }
   .section-header h2 { font-size: 1.35rem; }
+  .device-name { font-size: 1.2rem; }
+  .home-hero .device-name { font-size: 1.3rem; }
 }
 
 /* Onboarding wizard */
