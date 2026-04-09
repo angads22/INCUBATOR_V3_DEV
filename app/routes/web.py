@@ -67,7 +67,7 @@ def dashboard(
     config = db.scalar(select(DeviceConfig).limit(1))
     app_settings = get_settings(db)
     setup_mode = _setup_mode_service.is_setup_mode() if _setup_mode_service else False
-    device_name = "UNO Q Device"
+    device_name = "UNO Q Appliance"
     device_id = "UNOQ-UNCLAIMED"
     if config and config.device_name:
         device_name = config.device_name
