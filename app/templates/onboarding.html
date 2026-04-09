@@ -1,20 +1,113 @@
 {% extends 'base.html' %}
 {% block content %}
-{% with eyebrow='Provisioning', title='Device Onboarding', subtitle='Claim and pair this incubator with your operator account.' %}{% include 'partials/section_header.html' %}{% endwith %}
-<section class="two-col">
-  <article class="card">
-    <h3>Provisioning Steps</h3>
-    <ol class="stack-list">
-      <li>Connect mobile app to ESP32 BLE provisioning mode.</li>
-      <li>Set Wi-Fi credentials and submit claim code.</li>
-      <li>Complete backend setup through <code>/setup/complete</code>.</li>
-      <li>Return to <a href="/login">Login</a> when claimed.</li>
-    </ol>
-  </article>
-  <article class="card">
-    <h3>Status</h3>
-    <p class="muted">This onboarding screen is a product UX placeholder until BLE flow finalization.</p>
-    {% with label='Provisioning-ready', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
-  </article>
-</section>
+{% with eyebrow='Device Setup', title='Incubator Setup Wizard', subtitle='Follow the steps to connect and configure your device.' %}{% include 'partials/section_header.html' %}{% endwith %}
+
+<div class="wizard-wrap">
+
+  <!-- Step 0: Welcome -->
+  <div class="wizard-step active" data-step="0">
+    <article class="card">
+      <h3>Welcome to Your Incubator</h3>
+      <p>This wizard will guide you through connecting your incubator to Wi-Fi, naming your device, and optionally creating an operator account.</p>
+      <p class="muted">Your device must be in setup mode. If the <strong>IncubatorSetup</strong> hotspot is active, connect to it and open <strong>http://192.168.4.1</strong>. Otherwise press and hold the <strong>setup button</strong> on your device for 4&nbsp;seconds to enter setup mode.</p>
+      <div class="button-row">
+        <button class="btn btn-primary" id="beginSetupBtn" type="button">Begin Setup</button>
+      </div>
+      <p id="setupStartMsg" class="hint"></p>
+    </article>
+  </div>
+
+  <!-- Step 1: Wi-Fi Selection -->
+  <div class="wizard-step" data-step="1">
+    <article class="card">
+      <h3>Select Your Wi-Fi Network</h3>
+      <p class="muted">Choose the network your incubator should use for normal operation.</p>
+      <p id="wifiScanMsg" class="hint">Scanning for networks&hellip;</p>
+      <div id="wifiList" class="wifi-list"></div>
+      <div class="wizard-nav">
+        <button class="btn btn-ghost" type="button" data-prev>Back</button>
+        <button class="btn btn-primary" type="button" data-next id="wifiNextBtn" disabled>Next</button>
+      </div>
+    </article>
+  </div>
+
+  <!-- Step 2: Wi-Fi Password -->
+  <div class="wizard-step" data-step="2">
+    <article class="card">
+      <h3>Enter Wi-Fi Password</h3>
+      <p class="muted">Leave blank for open networks.</p>
+      <label>Password for <strong id="selectedSsidLabel">&mdash;</strong>
+        <input id="wifiPassword" type="password" placeholder="Wi-Fi password" autocomplete="off" />
+      </label>
+      <div class="wizard-nav">
+        <button class="btn btn-ghost" type="button" data-prev>Back</button>
+        <button class="btn btn-primary" type="button" data-next>Next</button>
+      </div>
+    </article>
+  </div>
+
+  <!-- Step 3: Account Creation (optional) -->
+  <div class="wizard-step" data-step="3">
+    <article class="card">
+      <h3>Create Operator Account <span class="badge-optional">Optional</span></h3>
+      <p class="muted">Create a local account to restrict access and unlock future features. You can skip and add one later from the profile menu.</p>
+      <label><input type="checkbox" id="createAccountCheck" /> Create an account now</label>
+      <div id="accountFields" class="account-fields">
+        <label>Username<input id="acctUsername" type="text" autocomplete="username" /></label>
+        <label>Email<input id="acctEmail" type="email" autocomplete="email" /></label>
+        <label>Password<input id="acctPassword" type="password" autocomplete="new-password" /></label>
+      </div>
+      <div class="wizard-nav">
+        <button class="btn btn-ghost" type="button" data-prev>Back</button>
+        <button class="btn btn-primary" type="button" data-next>Next</button>
+      </div>
+    </article>
+  </div>
+
+  <!-- Step 4: Device Naming -->
+  <div class="wizard-step" data-step="4">
+    <article class="card">
+      <h3>Name Your Device</h3>
+      <p class="muted">Give your incubator a friendly name.</p>
+      <label>Device Name
+        <input id="deviceName" type="text" placeholder="e.g. Coop Incubator 1" value="My Incubator" />
+      </label>
+      <div class="wizard-nav">
+        <button class="btn btn-ghost" type="button" data-prev>Back</button>
+        <button class="btn btn-primary" type="button" data-next>Next</button>
+      </div>
+    </article>
+  </div>
+
+  <!-- Step 5: Quick Tour -->
+  <div class="wizard-step" data-step="5">
+    <article class="card">
+      <h3>Quick Tour</h3>
+      <ul class="stack-list">
+        <li><strong>Home:</strong> Live temperature, humidity, quick actions, and system status at a glance.</li>
+        <li><strong>Status:</strong> Hardware link health, sensor state, alarms, and setup mode indicator.</li>
+        <li><strong>Help:</strong> Operating tips and guidance for common tasks.</li>
+      </ul>
+      <p class="muted tour-hint">Use the <strong>profile bubble</strong> (&#9679; top-right) anytime to access settings, network configuration, and account management.</p>
+      <div class="wizard-nav">
+        <button class="btn btn-ghost" type="button" data-prev>Back</button>
+        <button class="btn btn-primary" type="button" id="finishSetupBtn">Finish Setup</button>
+      </div>
+    </article>
+  </div>
+
+  <!-- Step 6: Completing -->
+  <div class="wizard-step" data-step="6">
+    <article class="card wizard-finish">
+      <h3 id="finishTitle">Saving setup&hellip;</h3>
+      <p id="finishMsg" class="muted">Please wait while your device saves configuration and reconnects.</p>
+      <p id="finishResult" class="hint"></p>
+      <a id="finishLink" href="/" class="btn btn-primary" hidden>Go to Dashboard</a>
+    </article>
+  </div>
+
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/onboarding.js"></script>
 {% endblock %}

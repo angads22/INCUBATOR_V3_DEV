@@ -1,7 +1,25 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import dataclass
+
+_SAFE_SSID_RE = re.compile(r"^[\w\s\-\.@#!]{1,32}$")
+_SAFE_PASS_RE = re.compile(r"^[\x20-\x7E]{0,63}$")
+
+
+def _validate_ssid(ssid: str) -> str:
+    """Raise ValueError if ssid contains characters unsafe for nmcli args."""
+    if not _SAFE_SSID_RE.match(ssid):
+        raise ValueError(f"SSID contains unsafe characters: {ssid!r}")
+    return ssid
+
+
+def _validate_password(password: str) -> str:
+    """Raise ValueError if password contains non-printable ASCII characters."""
+    if password and not _SAFE_PASS_RE.match(password):
+        raise ValueError("Wi-Fi password contains unsafe characters")
+    return password
 
 
 @dataclass(frozen=True)
@@ -58,6 +76,8 @@ class WiFiService:
 
     def connect_client(self, ssid: str, password: str) -> bool:
         try:
+            ssid = _validate_ssid(ssid)
+            password = _validate_password(password)
             cmd = ["nmcli", "device", "wifi", "connect", ssid]
             if password:
                 cmd += ["password", password]

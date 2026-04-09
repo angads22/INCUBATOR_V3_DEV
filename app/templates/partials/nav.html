@@ -4,11 +4,23 @@
     <h1 class="brand">UNO Q Device Panel</h1>
   </div>
   <nav class="nav-links">
-    <a href="/">Dashboard</a>
-    <a href="/hardware">Hardware</a>
+    <a href="/">Home</a>
     <a href="/status">Status</a>
-    <a href="/settings">Settings</a>
-    <a href="/onboarding">Onboarding</a>
-    <button id="logoutBtn" class="btn btn-ghost" type="button">Logout</button>
+    <a href="/help">Help</a>
   </nav>
+  <div class="profile-wrap">
+    <button id="profileBtn" class="btn btn-ghost profile-btn" type="button" aria-haspopup="true" aria-expanded="false">
+      <span class="profile-icon">&#9679;</span>
+      <span class="profile-caret">&#9660;</span>
+    </button>
+    <div id="profileMenu" class="profile-dropdown" hidden>
+      <a href="/settings">Settings</a>
+      <a href="/settings#network">Network Settings</a>
+      <a href="/settings#device">Device Settings</a>
+      <hr class="menu-divider" />
+      <a href="/onboarding">Setup / Onboarding</a>
+      <hr class="menu-divider" />
+      <button id="logoutBtn" class="menu-item menu-logout" type="button">Logout</button>
+    </div>
+  </div>
 </header>

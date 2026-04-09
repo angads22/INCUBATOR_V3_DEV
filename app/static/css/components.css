@@ -47,3 +47,42 @@ input {
 .button-row { display: flex; justify-content: space-between; align-items: center; }
 .auth-wrap { min-height: 70vh; display: grid; place-items: center; }
 .auth-card { width: min(460px, 92vw); display: grid; gap: 12px; }
+
+/* Profile bubble */
+.profile-wrap { position: relative; }
+.profile-btn { display: flex; align-items: center; gap: 6px; }
+.profile-icon { font-size: 1.2rem; color: var(--primary); }
+.profile-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 200px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  z-index: 100;
+  display: grid;
+  gap: 0;
+}
+.profile-dropdown a,
+.menu-item {
+  display: block;
+  padding: 10px 14px;
+  color: var(--text);
+  text-decoration: none;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.95rem;
+  border-radius: 0;
+}
+.profile-dropdown a:hover,
+.menu-item:hover { background: var(--panel-soft); }
+.profile-dropdown a:first-child,
+.profile-dropdown > *:first-child { border-radius: var(--radius) var(--radius) 0 0; }
+.profile-dropdown a:last-child,
+.profile-dropdown > *:last-child { border-radius: 0 0 var(--radius) var(--radius); }
+.menu-divider { border: none; border-top: 1px solid var(--line); margin: 0; }
