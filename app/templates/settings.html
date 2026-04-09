@@ -1,23 +1,31 @@
 {% extends 'base.html' %}
 {% block content %}
 {% with eyebrow='Configuration', title='Incubator Settings', subtitle='Control defaults and safety preferences.' %}{% include 'partials/section_header.html' %}{% endwith %}
-<form id="settings-form" class="card form-panel">
-  <div class="form-grid">
-    <label>Target Temp (°C)<input type="number" step="0.1" name="target_temp_c" value="{{ settings.target_temp_c }}" required></label>
-    <label>Target Humidity (%)<input type="number" step="0.1" name="target_humidity_pct" value="{{ settings.target_humidity_pct }}" required></label>
-  </div>
-  <div class="toggle-grid">
-    <label><input type="checkbox" name="heater_enabled" {% if settings.heater_enabled == 'true' %}checked{% endif %}> Heater Enabled</label>
-    <label><input type="checkbox" name="fan_enabled" {% if settings.fan_enabled == 'true' %}checked{% endif %}> Fan Enabled</label>
-    <label><input type="checkbox" name="turner_enabled" {% if settings.turner_enabled == 'true' %}checked{% endif %}> Turner Enabled</label>
-    <label><input type="checkbox" name="alarm_enabled" {% if settings.alarm_enabled == 'true' %}checked{% endif %}> Alarm Enabled</label>
-  </div>
-  <div class="button-row">
-    <button class="btn btn-primary" type="submit">Save Settings</button>
-    <span class="muted">v{{ version }}</span>
-  </div>
-  <p id="settings-msg" class="hint"></p>
-</form>
+<section class="panel-group">
+  <article id="network" class="card form-panel">
+    <h3>Network</h3>
+    <p class="muted">Wi-Fi onboarding and local hotspot setup are managed from guided setup.</p>
+    <a class="btn btn-ghost" href="/onboarding">Open onboarding</a>
+  </article>
+  <form id="settings-form" class="card form-panel">
+    <h3 id="device">Device Controls</h3>
+    <div class="form-grid">
+      <label>Target Temp (°C)<input type="number" step="0.1" name="target_temp_c" value="{{ settings.target_temp_c }}" required></label>
+      <label>Target Humidity (%)<input type="number" step="0.1" name="target_humidity_pct" value="{{ settings.target_humidity_pct }}" required></label>
+    </div>
+    <div class="toggle-grid">
+      <label><input type="checkbox" name="heater_enabled" {% if settings.heater_enabled == 'true' %}checked{% endif %}> Heater Enabled</label>
+      <label><input type="checkbox" name="fan_enabled" {% if settings.fan_enabled == 'true' %}checked{% endif %}> Fan Enabled</label>
+      <label><input type="checkbox" name="turner_enabled" {% if settings.turner_enabled == 'true' %}checked{% endif %}> Turner Enabled</label>
+      <label><input type="checkbox" name="alarm_enabled" {% if settings.alarm_enabled == 'true' %}checked{% endif %}> Alarm Enabled</label>
+    </div>
+    <div class="button-row">
+      <button class="btn btn-primary" type="submit">Save Settings</button>
+      <span class="muted">v{{ version }}</span>
+    </div>
+    <p id="settings-msg" class="hint"></p>
+  </form>
+</section>
 {% endblock %}
 {% block scripts %}
 <script src="/static/js/settings.js"></script>
