@@ -59,6 +59,9 @@ _run_as_root() { [[ "${EUID:-$(id -u)}" -eq 0 ]] && "$@" || sudo "$@"; }
 if command -v systemctl >/dev/null 2>&1; then
   # Stop every known service name variant
   for svc in "$SERVICE_NAME" incubator-v3-dev incubator_v3; do
+    if ! systemctl list-unit-files --type=service | grep -qE "^${svc}\\.service\\s+"; then
+      continue
+    fi
     echo "[INFO] Resetting service state: $svc"
     _run_as_root systemctl stop "$svc" 2>/dev/null || true
     _run_as_root systemctl disable "$svc" 2>/dev/null || true
