@@ -47,9 +47,9 @@ def _auth_redirect(db: Session, session_token: str | None):
 
 
 def _render(request: Request, name: str, context: dict):
-    merged_context = {"request": request, **context}
     if _template_response_accepts_request_kw:
-        return templates.TemplateResponse(request=request, name=name, context=merged_context)
+        return templates.TemplateResponse(request=request, name=name, context=context)
+    merged_context = {"request": request, **context}
     return templates.TemplateResponse(name=name, context=merged_context)
 
 
