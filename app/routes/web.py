@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -27,9 +26,6 @@ router = APIRouter()
 BASE_DIR = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 ai_service = AIService()
-_tmpl_sig_params = inspect.signature(templates.TemplateResponse).parameters
-_has_request_param = "request" in _tmpl_sig_params
-
 _setup_mode_service: SetupModeService | None = None
 _wifi_service: WiFiService | None = None
 
@@ -47,10 +43,11 @@ def _auth_redirect(db: Session, session_token: str | None):
 
 
 def _render(request: Request, name: str, context: dict[str, Any]):
-    if _has_request_param:
-        return templates.TemplateResponse(request=request, name=name, context=context)
     merged_context = {"request": request, **context}
-    return templates.TemplateResponse(name=name, context=merged_context)
+    try:
+        return templates.TemplateResponse(request=request, name=name, context=context)
+    except TypeError:
+        return templates.TemplateResponse(name=name, context=merged_context)
 
 
 @router.get("/", response_class=HTMLResponse)
