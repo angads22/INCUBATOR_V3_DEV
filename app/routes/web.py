@@ -50,6 +50,10 @@ def _render(request: Request, name: str, context: dict[str, Any]):
         return templates.TemplateResponse(name=name, context=merged_context)
 
 
+def _is_setup_complete(config: DeviceConfig | None) -> bool:
+    return bool(config and config.device_name and config.wifi_ssid and config.claimed)
+
+
 @router.get("/", response_class=HTMLResponse)
 def dashboard(
     request: Request,
@@ -60,7 +64,29 @@ def dashboard(
     if redirect:
         return redirect
 
+    config = db.scalar(select(DeviceConfig).limit(1))
     app_settings = get_settings(db)
+    setup_mode = _setup_mode_service.is_setup_mode() if _setup_mode_service else False
+    device_name = "UNO Q Appliance"
+    device_id = "UNOQ-UNCLAIMED"
+    if config and config.device_name:
+        device_name = config.device_name
+    if config and config.device_id:
+        device_id = config.device_id
+    is_claimed = bool(config and config.claimed)
+    wifi_ssid = config.wifi_ssid if config else None
+    has_wifi_config = bool(wifi_ssid)
+    setup_complete = _is_setup_complete(config)
+    if setup_mode:
+        network_state = "Setup hotspot active"
+        network_detail = "Hotspot onboarding mode is enabled for local setup."
+    elif has_wifi_config:
+        network_state = "Connected"
+        network_detail = f"SSID: {wifi_ssid}"
+    else:
+        network_state = "Not configured"
+        network_detail = "No Wi-Fi configured yet."
+
     mock_snapshot = {
         "temperature_c": 37.4,
         "humidity_pct": 54.8,
@@ -81,6 +107,15 @@ def dashboard(
             "mock": mock_snapshot,
             "ai_insight": ai_insight,
             "ai_findings": ai_service.recent_findings(),
+            "home_summary": {
+                "device_name": device_name,
+                "device_id": device_id,
+                "setup_complete": setup_complete,
+                "is_claimed": is_claimed,
+                "setup_mode": setup_mode,
+                "network_state": network_state,
+                "network_detail": network_detail,
+            },
             "recent_activity": [
                 "Setup completed by owner account.",
                 "Heater toggled ON (manual).",

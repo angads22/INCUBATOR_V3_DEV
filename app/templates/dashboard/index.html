@@ -1,62 +1,76 @@
 {% extends 'base.html' %}
 {% block content %}
-{% with eyebrow='Device Dashboard', title='Live Incubator Overview', subtitle='Modular panels designed for future mobile parity.' %}{% include 'partials/section_header.html' %}{% endwith %}
+{% with eyebrow='Home', title='UNO Q Appliance Dashboard', subtitle='Local-first overview for setup, claim state, network, and incubator status.' %}{% include 'partials/section_header.html' %}{% endwith %}
 
-<section class="dashboard-grid">
+<section class="dashboard-grid home-dashboard">
   <div class="panel-group">
-    <div class="metrics-grid">
-      {% with label='Temperature', value='%.1f°C'|format(mock.temperature_c), hint='Target %.1f°C'|format(mock.target_temp_c) %}{% include 'partials/metric_card.html' %}{% endwith %}
-      {% with label='Humidity', value='%.1f%%'|format(mock.humidity_pct), hint='Target %.1f%%'|format(mock.target_humidity_pct) %}{% include 'partials/metric_card.html' %}{% endwith %}
-      {% with label='Heater', value='ON' if mock.heater else 'OFF', hint='Manual override ready' %}{% include 'partials/metric_card.html' %}{% endwith %}
-      {% with label='Fan + Turner', value=('ON' if mock.fan else 'OFF') ~ ' / ' ~ ('ON' if mock.turner else 'OFF'), hint='Cycle-safe state' %}{% include 'partials/metric_card.html' %}{% endwith %}
-    </div>
+    <article class="card">
+      <h3>Device Overview</h3>
+      <p class="device-name">{{ home_summary.device_name }}</p>
+      <p class="muted">Device ID: {{ home_summary.device_id }}</p>
+      <div class="chip-row">
+        {% with label=('Setup complete' if home_summary.setup_complete else 'Setup not complete'), tone=('ok' if home_summary.setup_complete else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label=('Claimed' if home_summary.is_claimed else 'Unclaimed'), tone=('ok' if home_summary.is_claimed else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
+      </div>
+    </article>
 
     <article class="card">
-      <h3>Quick Hardware Actions</h3>
-      <div class="action-grid">
-        {% with title='Open Door', description='Issue immediate open command.', button_text='Open', action="sendHardware('open_door')" %}{% include 'partials/action_card.html' %}{% endwith %}
-        {% with title='Close Door', description='Issue immediate close command.', button_text='Close', action="sendHardware('close_door')", button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
-        {% with title='Read Temperature', description='Fetch a fresh hardware reading.', button_text='Read Temp', action="sendHardware('read_temp')" %}{% include 'partials/action_card.html' %}{% endwith %}
-        {% with title='Read Humidity', description='Fetch a fresh humidity reading.', button_text='Read RH', action="sendHardware('read_humidity')" %}{% include 'partials/action_card.html' %}{% endwith %}
+      <h3>Current setup and claim state</h3>
+      <ul class="stack-list">
+        <li>Setup mode: <strong>{{ 'On' if home_summary.setup_mode else 'Off' }}</strong></li>
+        <li>Setup completion: <strong>{{ 'Complete' if home_summary.setup_complete else 'Pending' }}</strong></li>
+        <li>Claim status: <strong>{{ 'Claimed' if home_summary.is_claimed else 'Unclaimed' }}</strong></li>
+      </ul>
+    </article>
+
+    <article class="card">
+      <h3>Wi-Fi / network state</h3>
+      <p><strong>{{ home_summary.network_state }}</strong></p>
+      <p class="muted">{{ home_summary.network_detail }}</p>
+      <p class="muted">Design mode: local-first operation with hotspot onboarding path.</p>
+    </article>
+
+    <article class="card">
+      <h3>Incubator status summary</h3>
+      <div class="metrics-grid compact-metrics">
+        {% with label='Temperature', value='%.1f°C'|format(mock.temperature_c), hint='Target %.1f°C'|format(mock.target_temp_c) %}{% include 'partials/metric_card.html' %}{% endwith %}
+        {% with label='Humidity', value='%.1f%%'|format(mock.humidity_pct), hint='Target %.1f%%'|format(mock.target_humidity_pct) %}{% include 'partials/metric_card.html' %}{% endwith %}
       </div>
-      <p id="actionResult" class="hint">Actions are safe placeholders until ESP32 mapping is finalized.</p>
+      <p class="muted">Hardware live data placeholder: sensor pipeline can replace these values when fully wired.</p>
     </article>
   </div>
 
   <div class="panel-group">
     <article class="card">
-      <h3>System Status</h3>
-      <div class="chip-row">
-        {% with label='Hardware Online', tone='ok' %}{% include 'partials/status_chip.html' %}{% endwith %}
-        {% with label='Sensors Stable', tone='ok' %}{% include 'partials/status_chip.html' %}{% endwith %}
-        {% with label='Alarm Clear', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+      <h3>Quick actions</h3>
+      <div class="quick-link-grid">
+        <a class="btn btn-primary quick-link" href="/onboarding">Start setup</a>
+        <a class="btn btn-secondary quick-link" href="/status">View status</a>
+        <a class="btn btn-secondary quick-link" href="/help">Open help</a>
+        <a class="btn btn-ghost quick-link" href="/settings">Open settings</a>
       </div>
-      <p class="muted">Version {{ version }}</p>
+      <p class="muted">Top navigation remains Home, Status, and Help. Account actions stay in the top-right profile bubble.</p>
     </article>
 
     <article class="card">
-      <h3>AI Insight (Stub)</h3>
-      <p><strong>{{ ai_insight.summary }}</strong></p>
-      <p class="muted">Risk: {{ ai_insight.risk_level }} · Confidence: {{ ai_insight.confidence }}</p>
-      <p>{{ ai_insight.recommendation }}</p>
-      <ul class="stack-list">
-        {% for finding in ai_findings %}
-        <li><strong>{{ finding.title }}:</strong> {{ finding.detail }}</li>
-        {% endfor %}
-      </ul>
+      <h3>System posture</h3>
+      <div class="chip-row">
+        {% with label='Local-first', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label='Account optional', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label='Hotspot onboarding ready', tone='ok' %}{% include 'partials/status_chip.html' %}{% endwith %}
+      </div>
+      <p class="muted">Reserved room for future chat and vision model panels.</p>
     </article>
 
     <article class="card">
-      <h3>Recent Activity</h3>
+      <h3>Recent activity</h3>
       <ul class="stack-list">
         {% for item in recent_activity %}
         <li>{{ item }}</li>
         {% endfor %}
       </ul>
+      <p class="muted">Version {{ version }}</p>
     </article>
   </div>
 </section>
-{% endblock %}
-{% block scripts %}
-<script src="/static/js/dashboard.js"></script>
 {% endblock %}
