@@ -69,14 +69,15 @@ def dashboard(
         device_name = config.device_name
     if config and config.device_id:
         device_id = config.device_id
-    is_claimed = bool(config.claimed) if config else False
-    has_wifi_config = bool(config and config.wifi_ssid)
+    is_claimed = bool(config and config.claimed)
+    wifi_ssid = config.wifi_ssid if config else None
+    has_wifi_config = bool(wifi_ssid)
     setup_complete = bool(config and config.device_name and has_wifi_config and config.claimed)
     network_state = "Not configured"
     network_detail = "No Wi-Fi configured yet."
-    if has_wifi_config and config and config.wifi_ssid:
+    if has_wifi_config:
         network_state = "Connected"
-        network_detail = f"SSID: {config.wifi_ssid}"
+        network_detail = f"SSID: {wifi_ssid}"
     if setup_mode:
         network_state = "Setup hotspot active"
         network_detail = "Hotspot onboarding mode is enabled for local setup."
