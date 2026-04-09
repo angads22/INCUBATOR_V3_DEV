@@ -34,31 +34,16 @@ def analyze_vision(payload: VisionAnalyzeRequest) -> dict[str, Any]:
         if payload.mode == "classify"
         else vision_service.analyze_egg_image(payload.image_path)
     )
-    return {
-        "ok": False,
-        "configured": False,
-        "message": "Vision service is not configured yet.",
-        "result": result,
-    }
+    return {"endpoint": "vision.analyze", **result}
 
 
 @router.post("/api/ai/chat")
 def ai_chat(payload: AIChatRequest) -> dict[str, Any]:
     result = llm_service.answer_help_question(payload.question, payload.device_state)
-    return {
-        "ok": False,
-        "configured": False,
-        "message": "AI chat service is not configured yet.",
-        "result": result,
-    }
+    return {"endpoint": "ai.chat", **result}
 
 
 @router.post("/api/ai/explain-status")
 def explain_status(payload: ExplainStatusRequest) -> dict[str, Any]:
     result = llm_service.explain_status(payload.device_state)
-    return {
-        "ok": False,
-        "configured": False,
-        "message": "AI status explanation service is not configured yet.",
-        "result": result,
-    }
+    return {"endpoint": "ai.explain_status", **result}

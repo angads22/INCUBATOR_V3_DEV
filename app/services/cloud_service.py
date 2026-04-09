@@ -66,22 +66,11 @@ class CloudService:
                 "message": "Cloud sync enabled but domain settings are incomplete.",
                 "payload": payload or {},
             }
-        try:
-            return {
-                "ok": False,
-                "enabled": True,
-                "configured": True,
-                "operation": operation,
-                "message": "Cloud integration hook not configured yet.",
-                "payload": payload or {},
-            }
-        except Exception as exc:  # pragma: no cover
-            return {
-                "ok": False,
-                "enabled": state.enabled,
-                "configured": state.configured,
-                "operation": operation,
-                "message": "Cloud request failed; continuing local operation.",
-                "error": str(exc),
-                "payload": payload or {},
-            }
+        return {
+            "ok": False,
+            "enabled": True,
+            "configured": True,
+            "operation": operation,
+            "message": "Cloud integration hook not configured yet.",
+            "payload": payload or {},
+        }

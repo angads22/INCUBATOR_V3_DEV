@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -21,6 +22,7 @@ from .services.setup_mode_service import SetupModeService
 from .services.wifi_service import WiFiService
 
 app = FastAPI(title="Incubator v3 API")
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
@@ -47,13 +49,24 @@ def startup() -> None:
     try:
         config = db.scalar(select(DeviceConfig).limit(1))
         if not config:
-            db.add(DeviceConfig(device_id="UNOQ-UNCLAIMED", claimed=False, claim_code="PAIR-1234"))
+            config = DeviceConfig(device_id="UNOQ-UNCLAIMED", claimed=False, claim_code="PAIR-1234")
+            db.add(config)
             db.commit()
+            db.refresh(config)
+        cloud_result = cloud_service.register_device(config.device_id)
+        logger.info(
+            "cloud_register_device",
+            extra={
+                "enabled": cloud_result.get("enabled"),
+                "configured": cloud_result.get("configured"),
+                "ok": cloud_result.get("ok"),
+                "operation": cloud_result.get("operation"),
+            },
+        )
     finally:
         db.close()
 
     button_service.start()
-    cloud_service.register_device("UNOQ-LOCAL")
 
 
 @app.get("/health")
