@@ -19,13 +19,15 @@ source .venv/bin/activate
 python -m pip install -e . -q
 python -c "import app.main; print('[OK] Import check passed')"
 
-if command -v systemctl >/dev/null 2>&1 && systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
+if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files --type=service | grep -qE "^${SERVICE_NAME}\\.service\\s+"; then
   _run_as_root() { [[ "${EUID:-$(id -u)}" -eq 0 ]] && "$@" || sudo "$@"; }
   echo "[INFO] Restarting $SERVICE_NAME service..."
+  _run_as_root systemctl daemon-reload
+  _run_as_root systemctl enable "${SERVICE_NAME}.service"
   _run_as_root systemctl restart "${SERVICE_NAME}.service"
   sleep 2
   _run_as_root systemctl --no-pager --full status "${SERVICE_NAME}.service" || true
   echo "[OK] Service restarted."
 else
-  echo "[OK] Update complete. Restart manually with: ./scripts/start.sh"
+  echo "[OK] Update complete. Service not installed; restart manually with: ./scripts/start.sh"
 fi

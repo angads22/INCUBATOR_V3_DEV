@@ -118,7 +118,11 @@ def help_page(
     redirect = _auth_redirect(db, session_token)
     if redirect:
         return redirect
-    return templates.TemplateResponse(request=request, name="help.html", context={"version": settings.app_version})
+    return templates.TemplateResponse(
+        request=request,
+        name="help.html",
+        context={"version": settings.app_version},
+    )
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -146,17 +150,29 @@ def hardware_page(
     redirect = _auth_redirect(db, session_token)
     if redirect:
         return redirect
-    return templates.TemplateResponse(request=request, name="hardware.html", context={"version": settings.app_version})
+    return templates.TemplateResponse(
+        request=request,
+        name="hardware.html",
+        context={"version": settings.app_version},
+    )
 
 
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    return templates.TemplateResponse(request=request, name="login.html", context={"version": settings.app_version})
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={"version": settings.app_version},
+    )
 
 
 @router.get("/onboarding", response_class=HTMLResponse)
 def onboarding_page(request: Request):
-    return templates.TemplateResponse(request=request, name="onboarding.html", context={"version": settings.app_version})
+    return templates.TemplateResponse(
+        request=request,
+        name="onboarding.html",
+        context={"version": settings.app_version},
+    )
 
 
 @router.post("/onboarding/start")

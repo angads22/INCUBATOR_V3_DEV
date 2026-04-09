@@ -37,10 +37,10 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ### `./init_unoq.sh`
 - Installs minimal OS packages when `apt-get` is available (`python3`, `python3-pip`, `python3-venv`, `git`, `curl`).
-- Creates `.venv` if missing.
-- Upgrades pip and installs project dependencies with `python -m pip install -e .`.
-- Marks runtime scripts executable.
-- Prints next-step commands.
+- Stops old `incubator-v3*` services and stale uvicorn processes, then refreshes `.venv`.
+- Runs import verification with `python -c "import app.main; ..."`.
+- Installs/overwrites `/etc/systemd/system/incubator-v3.service`, enables it, and restarts it.
+- Leaves the app configured to auto-start at boot.
 
 ### `./scripts/start.sh`
 - Changes to project root.
@@ -53,6 +53,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 - Runs `git pull`.
 - Activates `.venv`.
 - Reinstalls project dependencies with `python -m pip install -e .`.
+- Reloads and restarts `incubator-v3.service` when installed.
 
 ## Validate
 
@@ -92,11 +93,7 @@ curl http://127.0.0.1:8000/docs
 curl http://127.0.0.1:8000/health
 ```
 
-## Optional systemd for later
-
-If/when you want background startup via service manager, use these optional templates:
+## Service templates
 
 - `deploy/incubator-v3.service`
 - `deploy/incubator-v3.env.example`
-
-(systemd is intentionally not forced by `init_unoq.sh` in this workflow)

@@ -17,6 +17,10 @@ API_PORT=${API_PORT:-8000}
 SERVICE_NAME="incubator-v3"
 ENV_FILE="/etc/incubator-v3.env"
 SERVICE_DEST="/etc/systemd/system/${SERVICE_NAME}.service"
+OLD_SERVICE_DESTS=(
+  "/etc/systemd/system/incubator-v3-dev.service"
+  "/etc/systemd/system/incubator_v3.service"
+)
 
 # ── 1. System packages ────────────────────────────────────────────────────────
 if command -v apt-get >/dev/null 2>&1; then
@@ -59,6 +63,15 @@ if command -v systemctl >/dev/null 2>&1; then
   done
 fi
 
+# Kill any lingering uvicorn app process to keep only one repo instance active
+if command -v ps >/dev/null 2>&1; then
+  mapfile -t _uvicorn_pids < <(ps -eo pid=,args= | awk '/[u]vicorn .*app.main:app/ {print $1}')
+  if [[ ${#_uvicorn_pids[@]} -gt 0 ]]; then
+    echo "[INFO] Stopping stale uvicorn process(es): ${_uvicorn_pids[*]}"
+    _run_as_root kill "${_uvicorn_pids[@]}" 2>/dev/null || true
+  fi
+fi
+
 # Kill anything lingering on port $API_PORT
 if command -v fuser >/dev/null 2>&1; then
   _run_as_root fuser -k "${API_PORT}/tcp" 2>/dev/null || true
@@ -98,6 +111,13 @@ ENVEOF
   fi
 
   echo "[INFO] Installing systemd service to $SERVICE_DEST..."
+  for old_unit in "${OLD_SERVICE_DESTS[@]}"; do
+    if [[ -f "$old_unit" ]]; then
+      echo "[INFO] Removing old unit file: $old_unit"
+      _run_as_root rm -f "$old_unit"
+    fi
+  done
+
   # Use mktemp to avoid /tmp symlink attacks
   _TMP_SERVICE=$(mktemp)
   sed "s|__INSTALL_DIR__|${INSTALL_DIR}|g" deploy/incubator-v3.service > "$_TMP_SERVICE"
