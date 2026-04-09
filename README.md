@@ -87,16 +87,19 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ```bash
 ./init_unoq.sh
-./scripts/start.sh
-./scripts/stop.sh
+sudo systemctl status incubator-v3.service
+# optional dev-only foreground run (service must be stopped first):
+# ./scripts/start.sh
+# stop service/foreground process:
+# ./scripts/stop.sh
 # later updates:
 ./scripts/update.sh
 ```
 
-## Optional systemd (later)
+## Systemd deployment
 
-- Optional service template: `deploy/incubator-v3.service`
-- Optional env template: `deploy/incubator-v3.env.example`
+- Service template: `deploy/incubator-v3.service`
+- Env template: `deploy/incubator-v3.env.example`
 - Full deploy guide: `docs/UNOQ_DEPLOY.md`
 
 ## Private remote hosting guidance (recommended)
