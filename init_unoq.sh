@@ -7,6 +7,7 @@
 #
 # After running:
 #   ./scripts/start.sh   — foreground dev run
+#   ./scripts/stop.sh    — stop service/stale foreground process
 #   ./scripts/update.sh  — git pull, reinstall deps, restart service
 
 set -euo pipefail
@@ -92,7 +93,7 @@ python -m pip install -e . -q
 python -c "import app.main; print('[OK] Import check passed')"
 
 # ── 6. Make scripts executable ───────────────────────────────────────────────
-chmod +x init_unoq.sh scripts/start.sh scripts/update.sh scripts/deploy_local_unoq.sh 2>/dev/null || true
+chmod +x init_unoq.sh scripts/start.sh scripts/stop.sh scripts/update.sh scripts/deploy_local_unoq.sh 2>/dev/null || true
 
 # ── 7. Install systemd service (if systemd is available) ─────────────────────
 if command -v systemctl >/dev/null 2>&1; then
@@ -139,6 +140,7 @@ echo
 echo "[OK] Setup complete."
 echo "Commands:"
 echo "  Start (dev foreground): ./scripts/start.sh"
+echo "  Stop app/service:       ./scripts/stop.sh"
 echo "  Update from git:        ./scripts/update.sh"
 echo "  Open UI:                http://127.0.0.1:${API_PORT}/"
 echo "  API docs:               http://127.0.0.1:${API_PORT}/docs"

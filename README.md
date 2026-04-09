@@ -88,6 +88,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```bash
 ./init_unoq.sh
 ./scripts/start.sh
+./scripts/stop.sh
 # later updates:
 ./scripts/update.sh
 ```

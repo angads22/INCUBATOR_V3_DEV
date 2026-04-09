@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -26,6 +27,8 @@ router = APIRouter()
 BASE_DIR = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 ai_service = AIService()
+_tmpl_sig_params = inspect.signature(templates.TemplateResponse).parameters
+_has_request_param = "request" in _tmpl_sig_params
 
 _setup_mode_service: SetupModeService | None = None
 _wifi_service: WiFiService | None = None
@@ -41,6 +44,13 @@ def _auth_redirect(db: Session, session_token: str | None):
     if settings.require_login and not get_user_id_from_session(db, session_token):
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
     return None
+
+
+def _render(request: Request, name: str, context: dict[str, Any]):
+    if _has_request_param:
+        return templates.TemplateResponse(request=request, name=name, context=context)
+    merged_context = {"request": request, **context}
+    return templates.TemplateResponse(name=name, context=merged_context)
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -65,7 +75,7 @@ def dashboard(
     }
     ai_insight = ai_service.generate_dashboard_insight(mock_snapshot["temperature_c"], mock_snapshot["humidity_pct"])
 
-    return templates.TemplateResponse(
+    return _render(
         request=request,
         name="dashboard/index.html",
         context={
@@ -93,7 +103,7 @@ def status_page(
     if redirect:
         return redirect
     setup_mode = _setup_mode_service.is_setup_mode() if _setup_mode_service else False
-    return templates.TemplateResponse(
+    return _render(
         request=request,
         name="status.html",
         context={
@@ -118,7 +128,7 @@ def help_page(
     redirect = _auth_redirect(db, session_token)
     if redirect:
         return redirect
-    return templates.TemplateResponse(
+    return _render(
         request=request,
         name="help.html",
         context={"version": settings.app_version},
@@ -134,7 +144,7 @@ def settings_page(
     redirect = _auth_redirect(db, session_token)
     if redirect:
         return redirect
-    return templates.TemplateResponse(
+    return _render(
         request=request,
         name="settings.html",
         context={"settings": get_settings(db), "version": settings.app_version},
@@ -150,7 +160,7 @@ def hardware_page(
     redirect = _auth_redirect(db, session_token)
     if redirect:
         return redirect
-    return templates.TemplateResponse(
+    return _render(
         request=request,
         name="hardware.html",
         context={"version": settings.app_version},
@@ -159,7 +169,7 @@ def hardware_page(
 
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    return templates.TemplateResponse(
+    return _render(
         request=request,
         name="login.html",
         context={"version": settings.app_version},
@@ -168,7 +178,7 @@ def login_page(request: Request):
 
 @router.get("/onboarding", response_class=HTMLResponse)
 def onboarding_page(request: Request):
-    return templates.TemplateResponse(
+    return _render(
         request=request,
         name="onboarding.html",
         context={"version": settings.app_version},

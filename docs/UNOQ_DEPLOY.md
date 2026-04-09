@@ -7,6 +7,7 @@ This guide documents the **local-run first** workflow for UNO Q.
 ```bash
 ./init_unoq.sh
 ./scripts/start.sh
+./scripts/stop.sh
 # later, after new commits:
 ./scripts/update.sh
 ```
@@ -44,9 +45,14 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ### `./scripts/start.sh`
 - Changes to project root.
-- Activates `.venv`.
-- Starts the app with:
+- If `incubator-v3.service` is active, exits with a friendly message to avoid port collision.
+- Otherwise activates `.venv` and starts the app with:
   - `python -m uvicorn app.main:app --host 0.0.0.0 --port 8000`
+
+### `./scripts/stop.sh`
+- Stops `incubator-v3.service` if active.
+- Stops stale foreground uvicorn `app.main:app` processes.
+- Frees port `8000` if needed.
 
 ### `./scripts/update.sh`
 - Changes to project root.
@@ -60,6 +66,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```bash
 ./init_unoq.sh
 ./scripts/start.sh
+./scripts/stop.sh
 # later, after new commits:
 ./scripts/update.sh
 ```
@@ -75,9 +82,13 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ### `./scripts/start.sh`
 - Changes to project root.
-- Activates `.venv`.
-- Starts the app with:
+- If `incubator-v3.service` is active, exits with a friendly message.
+- Otherwise activates `.venv` and starts the app with:
   - `python -m uvicorn app.main:app --host 0.0.0.0 --port 8000`
+
+### `./scripts/stop.sh`
+- Stops `incubator-v3.service` if active.
+- Stops stale uvicorn foreground processes and frees port `8000`.
 
 ### `./scripts/update.sh`
 - Changes to project root.
