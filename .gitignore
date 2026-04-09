@@ -3,3 +3,7 @@ __pycache__/
 *.db
 .venv/
 *.egg-info/
+models/vision/*
+models/llm/*
+!models/vision/README.md
+!models/llm/README.md

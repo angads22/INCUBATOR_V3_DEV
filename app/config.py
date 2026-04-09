@@ -14,6 +14,10 @@ class Settings:
     session_cookie_name: str = os.getenv("INCUBATOR_SESSION_COOKIE_NAME", "incubator_session")
     app_version: str = os.getenv("INCUBATOR_APP_VERSION", VERSION)
     setup_button_hold_seconds: float = float(os.getenv("INCUBATOR_SETUP_BUTTON_HOLD_SECONDS", "4.0"))
+    domain_api_base: str = os.getenv("DOMAIN_API_BASE", "").strip()
+    device_shared_secret: str = os.getenv("DEVICE_SHARED_SECRET", "").strip()
+    enable_cloud_sync: bool = os.getenv("ENABLE_CLOUD_SYNC", "false").lower() == "true"
+    heartbeat_interval_seconds: int = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "300"))
 
 
 settings = Settings()

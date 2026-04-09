@@ -9,10 +9,12 @@ from .auth import hash_password
 from .config import settings
 from .database import Base, engine, get_db
 from .models import ActionLog, DeviceConfig, User
+from .routes.ai import router as ai_router
 from .routes.web import router as web_router, set_runtime_services
 from .schemas import HardwareCommand, OnboardingPayload, SetupStatus
 from .services.button_service import SetupButtonService
 from .services.camera_service import CameraService
+from .services.cloud_service import CloudService
 from .services.esp32_link import ESP32Link
 from .services.hardware_service import HardwareService
 from .services.setup_mode_service import SetupModeService
@@ -23,6 +25,7 @@ app = FastAPI(title="Incubator v3 API")
 BASE_DIR = Path(__file__).resolve().parent
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 app.include_router(web_router)
+app.include_router(ai_router)
 
 link = ESP32Link(settings.serial_port, settings.serial_baud, settings.serial_timeout)
 camera_service = CameraService(link)
@@ -34,6 +37,7 @@ button_service = SetupButtonService(
     callback=lambda reason: setup_mode_service.enter_setup_mode(reason),
 )
 set_runtime_services(setup_mode_service=setup_mode_service, wifi_service=wifi_service)
+cloud_service = CloudService()
 
 
 @app.on_event("startup")
@@ -49,6 +53,7 @@ def startup() -> None:
         db.close()
 
     button_service.start()
+    cloud_service.register_device("UNOQ-LOCAL")
 
 
 @app.get("/health")
