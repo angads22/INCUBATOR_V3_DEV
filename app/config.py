@@ -13,6 +13,7 @@ class Settings:
     require_login: bool = os.getenv("INCUBATOR_REQUIRE_LOGIN", "false").lower() == "true"
     session_cookie_name: str = os.getenv("INCUBATOR_SESSION_COOKIE_NAME", "incubator_session")
     app_version: str = os.getenv("INCUBATOR_APP_VERSION", VERSION)
+    setup_button_hold_seconds: float = float(os.getenv("INCUBATOR_SETUP_BUTTON_HOLD_SECONDS", "4.0"))
 
 
 settings = Settings()
