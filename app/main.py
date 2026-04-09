@@ -48,12 +48,12 @@ def startup() -> None:
     db = next(get_db())
     try:
         config = db.scalar(select(DeviceConfig).limit(1))
+        device_id = config.device_id if config else "UNOQ-UNCLAIMED"
         if not config:
-            config = DeviceConfig(device_id="UNOQ-UNCLAIMED", claimed=False, claim_code="PAIR-1234")
+            config = DeviceConfig(device_id=device_id, claimed=False, claim_code="PAIR-1234")
             db.add(config)
             db.commit()
-            db.refresh(config)
-        cloud_result = cloud_service.register_device(config.device_id)
+        cloud_result = cloud_service.register_device(device_id)
         logger.info(
             "cloud_register_device",
             extra={

@@ -5,6 +5,8 @@ from typing import Any
 
 from ..config import settings
 
+MIN_HEARTBEAT_INTERVAL_SECONDS = 30
+
 
 @dataclass(frozen=True)
 class CloudServiceState:
@@ -21,7 +23,7 @@ class CloudService:
         self._api_base = settings.domain_api_base or None
         self._shared_secret = settings.device_shared_secret or None
         self._enabled = settings.enable_cloud_sync
-        self._heartbeat_interval_seconds = max(30, settings.heartbeat_interval_seconds)
+        self._heartbeat_interval_seconds = max(MIN_HEARTBEAT_INTERVAL_SECONDS, settings.heartbeat_interval_seconds)
 
     def state(self) -> CloudServiceState:
         return CloudServiceState(
