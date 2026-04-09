@@ -102,14 +102,36 @@ async function submitSetup() {
   const link = document.getElementById('finishLink');
 
   const createAccount = document.getElementById('createAccountCheck')?.checked || false;
+  const username = createAccount ? (document.getElementById('acctUsername')?.value || '') : null;
+  const email = createAccount ? (document.getElementById('acctEmail')?.value || '') : null;
+  const password = createAccount ? (document.getElementById('acctPassword')?.value || '') : null;
+
+  if (createAccount) {
+    if (!username || username.length < 3) {
+      title.textContent = 'Validation Error';
+      result.textContent = 'Username must be at least 3 characters.';
+      return;
+    }
+    if (!email || !email.includes('@') || email.length < 5) {
+      title.textContent = 'Validation Error';
+      result.textContent = 'Please enter a valid email address.';
+      return;
+    }
+    if (!password || password.length < 8) {
+      title.textContent = 'Validation Error';
+      result.textContent = 'Password must be at least 8 characters.';
+      return;
+    }
+  }
+
   const payload = {
     ssid: selectedSsid,
     wifi_password: document.getElementById('wifiPassword')?.value || '',
     device_name: document.getElementById('deviceName')?.value || 'My Incubator',
     create_account: createAccount,
-    username: createAccount ? (document.getElementById('acctUsername')?.value || null) : null,
-    email: createAccount ? (document.getElementById('acctEmail')?.value || null) : null,
-    password: createAccount ? (document.getElementById('acctPassword')?.value || null) : null,
+    username,
+    email,
+    password,
   };
 
   try {

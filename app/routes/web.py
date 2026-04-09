@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Cookie, Depends, Request, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -188,19 +188,22 @@ def onboarding_complete(payload: HotspotSetupPayload, db: Session = Depends(get_
     config.wifi_ssid = payload.ssid or None
 
     if payload.create_account and payload.username and payload.email and payload.password:
+        if "@" not in payload.email or len(payload.email) < 5:
+            raise HTTPException(status_code=422, detail="Invalid email address.")
         existing = db.scalar(
             select(User).where((User.username == payload.username) | (User.email == payload.email))
         )
-        if not existing:
-            db.add(
-                User(
-                    username=payload.username,
-                    email=payload.email,
-                    password_hash=hash_password(payload.password),
-                    role="owner",
-                )
+        if existing:
+            raise HTTPException(status_code=409, detail="Username or email already exists.")
+        db.add(
+            User(
+                username=payload.username,
+                email=payload.email,
+                password_hash=hash_password(payload.password),
+                role="owner",
             )
-            config.claimed = True
+        )
+        config.claimed = True
 
     db.add(ActionLog(action="onboarding_complete", payload=f"device={payload.device_name},ssid={payload.ssid}"))
     db.commit()
