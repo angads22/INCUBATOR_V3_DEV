@@ -6,8 +6,11 @@ This guide documents the **local-run first** workflow for UNO Q.
 
 ```bash
 ./init_unoq.sh
-./scripts/start.sh
-./scripts/stop.sh
+sudo systemctl status incubator-v3.service
+# optional dev-only foreground run (service must be stopped first):
+# ./scripts/start.sh
+# stop service/foreground process when needed:
+# ./scripts/stop.sh
 # later, after new commits:
 ./scripts/update.sh
 ```
@@ -37,7 +40,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ### `./init_unoq.sh`
-- Installs minimal OS packages when `apt-get` is available (`python3`, `python3-pip`, `python3-venv`, `git`, `curl`).
+- Installs minimal OS packages when `apt-get` is available (`python3`, `python3-pip`, `python3-venv`, `git`, `curl`, `rsync`).
 - Stops old `incubator-v3*` services and stale uvicorn processes, then refreshes `.venv`.
 - Runs import verification with `python -c "import app.main; ..."`.
 - Installs/overwrites `/etc/systemd/system/incubator-v3.service`, enables it, and restarts it.

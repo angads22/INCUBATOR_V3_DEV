@@ -28,10 +28,10 @@ if command -v apt-get >/dev/null 2>&1; then
   echo "[INFO] Installing required system packages..."
   if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
     apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-venv git curl ca-certificates
+    DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-venv git curl ca-certificates rsync
   elif command -v sudo >/dev/null 2>&1; then
     sudo apt-get update -qq
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-venv git curl ca-certificates
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-venv git curl ca-certificates rsync
   else
     echo "[WARN] Not root and sudo is unavailable; skipping apt package install."
   fi
@@ -42,9 +42,14 @@ fi
 # ── 2. Copy repo to INSTALL_DIR if different ─────────────────────────────────
 cd "$SCRIPT_DIR"
 if [[ "$INSTALL_DIR" != "$SCRIPT_DIR" ]]; then
-  echo "[INFO] Copying repo to $INSTALL_DIR..."
+  echo "[INFO] Syncing repo to $INSTALL_DIR..."
   mkdir -p "$INSTALL_DIR"
-  cp -a . "$INSTALL_DIR/"
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --delete --exclude ".git/" --exclude ".venv/" --exclude "__pycache__/" ./ "$INSTALL_DIR"/
+  else
+    echo "[WARN] rsync unavailable; falling back to cp -a (stale files may persist)."
+    cp -a . "$INSTALL_DIR"/
+  fi
 fi
 cd "$INSTALL_DIR"
 
@@ -54,13 +59,9 @@ _run_as_root() { [[ "${EUID:-$(id -u)}" -eq 0 ]] && "$@" || sudo "$@"; }
 if command -v systemctl >/dev/null 2>&1; then
   # Stop every known service name variant
   for svc in "$SERVICE_NAME" incubator-v3-dev incubator_v3; do
-    if systemctl is-active --quiet "$svc" 2>/dev/null; then
-      echo "[INFO] Stopping old service: $svc"
-      _run_as_root systemctl stop "$svc" || true
-    fi
-    if systemctl is-enabled --quiet "$svc" 2>/dev/null; then
-      _run_as_root systemctl disable "$svc" || true
-    fi
+    echo "[INFO] Resetting service state: $svc"
+    _run_as_root systemctl stop "$svc" 2>/dev/null || true
+    _run_as_root systemctl disable "$svc" 2>/dev/null || true
   done
 fi
 
@@ -118,6 +119,7 @@ ENVEOF
       _run_as_root rm -f "$old_unit"
     fi
   done
+  _run_as_root rm -f "$SERVICE_DEST"
 
   # Use mktemp to avoid /tmp symlink attacks
   _TMP_SERVICE=$(mktemp)
