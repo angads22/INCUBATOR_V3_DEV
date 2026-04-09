@@ -64,8 +64,8 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 
 # Kill any lingering uvicorn app process to keep only one repo instance active
-if command -v pgrep >/dev/null 2>&1; then
-  mapfile -t _uvicorn_pids < <(pgrep -f "uvicorn .*app.main:app" || true)
+if command -v ps >/dev/null 2>&1; then
+  mapfile -t _uvicorn_pids < <(ps -eo pid=,args= | awk '/[u]vicorn .*app.main:app/ {print $1}')
   if [[ ${#_uvicorn_pids[@]} -gt 0 ]]; then
     echo "[INFO] Stopping stale uvicorn process(es): ${_uvicorn_pids[*]}"
     _run_as_root kill "${_uvicorn_pids[@]}" 2>/dev/null || true

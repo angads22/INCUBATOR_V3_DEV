@@ -19,7 +19,7 @@ source .venv/bin/activate
 python -m pip install -e . -q
 python -c "import app.main; print('[OK] Import check passed')"
 
-if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files --type=service | grep -q "^${SERVICE_NAME}.service"; then
+if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files --type=service | grep -qE "^${SERVICE_NAME}\\.service\\s"; then
   _run_as_root() { [[ "${EUID:-$(id -u)}" -eq 0 ]] && "$@" || sudo "$@"; }
   echo "[INFO] Restarting $SERVICE_NAME service..."
   _run_as_root systemctl daemon-reload
