@@ -11,7 +11,6 @@ streaming, single-image inference only.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +22,12 @@ logger = logging.getLogger(__name__)
 _DEFAULT_MODEL_PATH = Path("ai/models/egg_counter.tflite")
 _DEFAULT_LABELS_PATH = Path("ai/models/labels.txt")
 
+# Allowed root directories for image paths (prevents path traversal).
+_ALLOWED_IMAGE_ROOTS: tuple[Path, ...] = (
+    Path("data/cycles"),
+    Path("captures"),
+)
+
 # ---------------------------------------------------------------------------
 # Lazy-loaded global interpreter
 # ---------------------------------------------------------------------------
@@ -30,26 +35,6 @@ _interpreter: Any | None = None
 _labels: list[str] = []
 _model_loaded: bool = False
 _load_error: str | None = None
-
-
-@dataclass(frozen=True)
-class Detection:
-    """A single detected egg."""
-
-    label: str
-    confidence: float
-    bbox: tuple[float, float, float, float]  # ymin, xmin, ymax, xmax (normalised)
-
-
-@dataclass(frozen=True)
-class EggCountResult:
-    """Structured result from ``count_eggs``."""
-
-    ok: bool
-    count: int = 0
-    detections: list[dict[str, Any]] = field(default_factory=list)
-    message: str = ""
-    image_path: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +92,29 @@ def _ensure_interpreter(
 # Public API
 # ---------------------------------------------------------------------------
 
+def _validate_image_path(image_path: str | Path) -> Path | None:
+    """Resolve and validate an image path against allowed roots.
+
+    Returns the resolved ``Path`` if it falls under an allowed directory,
+    or ``None`` if the path is rejected (traversal attempt, symlink escape,
+    etc.).
+    """
+    try:
+        candidate = Path(image_path).resolve()
+    except (OSError, ValueError):
+        return None
+
+    cwd = Path.cwd()
+    for root in _ALLOWED_IMAGE_ROOTS:
+        allowed = (root if root.is_absolute() else cwd / root).resolve()
+        try:
+            candidate.relative_to(allowed)
+            return candidate
+        except ValueError:
+            continue
+    return None
+
+
 def count_eggs(
     image_path: str | Path,
     confidence_threshold: float = 0.5,
@@ -143,7 +151,15 @@ def count_eggs(
 
     assert _interpreter is not None  # ensured by _model_loaded == True
 
-    img_path = Path(image_path)
+    img_path = _validate_image_path(image_path)
+    if img_path is None:
+        return {
+            "ok": False,
+            "count": 0,
+            "detections": [],
+            "message": "Image path is not within an allowed directory.",
+            "image_path": str(image_path),
+        }
     if not img_path.exists():
         return {
             "ok": False,
@@ -160,7 +176,7 @@ def count_eggs(
         # Determine model input size from the interpreter.
         input_details = _interpreter.get_input_details()
         output_details = _interpreter.get_output_details()
-        _, height, width, _ = input_details[0]["shape"]
+        _batch, height, width, _channels = input_details[0]["shape"]
 
         # Pre-process: resize, convert to uint8/float as needed.
         img = Image.open(img_path).convert("RGB").resize((width, height))
