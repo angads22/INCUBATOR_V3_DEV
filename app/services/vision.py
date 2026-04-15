@@ -84,6 +84,7 @@ def _ensure_interpreter(
         _model_loaded = True
         logger.info("TFLite egg-counter model loaded from %s (%d labels)", resolved_model, len(_labels))
     except Exception as exc:
+        _labels = []
         _load_error = f"Failed to load TFLite model: {exc}"
         logger.exception(_load_error)
 
@@ -176,7 +177,7 @@ def count_eggs(
         # Determine model input size from the interpreter.
         input_details = _interpreter.get_input_details()
         output_details = _interpreter.get_output_details()
-        _batch, height, width, _channels = input_details[0]["shape"]
+        batch_size, height, width, channels = input_details[0]["shape"]
 
         # Pre-process: resize, convert to uint8/float as needed.
         img = Image.open(img_path).convert("RGB").resize((width, height))
@@ -217,7 +218,7 @@ def count_eggs(
             "count": len(detections),
             "detections": detections,
             "message": "",
-            "image_path": str(image_path),
+            "image_path": str(img_path),
         }
 
     except Exception as exc:
