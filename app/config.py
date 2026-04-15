@@ -18,6 +18,11 @@ class Settings:
     device_shared_secret: str = os.getenv("DEVICE_SHARED_SECRET", "").strip()
     enable_cloud_sync: bool = os.getenv("ENABLE_CLOUD_SYNC", "false").lower() == "true"
     heartbeat_interval_seconds: int = int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "300"))
+    # AI / vision model paths
+    tflite_model_path: str = os.getenv("INCUBATOR_TFLITE_MODEL", "ai/models/egg_counter.tflite")
+    tflite_labels_path: str = os.getenv("INCUBATOR_TFLITE_LABELS", "ai/models/labels.txt")
+    # Local image storage root for egg-cycle captures
+    image_storage_root: str = os.getenv("INCUBATOR_IMAGE_STORAGE", "data/cycles")
 
 
 settings = Settings()

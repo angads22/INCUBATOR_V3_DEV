@@ -7,3 +7,10 @@ models/vision/*
 models/llm/*
 !models/vision/README.md
 !models/llm/README.md
+# AI model binaries (keep .gitkeep and README)
+ai/models/*
+!ai/models/.gitkeep
+!ai/models/README.md
+# Local image storage (microSD captures)
+data/cycles/*
+!data/cycles/.gitkeep
