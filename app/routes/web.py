@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -43,11 +46,7 @@ def _auth_redirect(db: Session, session_token: str | None):
 
 
 def _render(request: Request, name: str, context: dict[str, Any]):
-    try:
-        return templates.TemplateResponse(request=request, name=name, context=context)
-    except TypeError:
-        merged_context = {"request": request, **context}
-        return templates.TemplateResponse(name=name, context=merged_context)
+    return templates.TemplateResponse(request=request, name=name, context=context)
 
 
 def _is_setup_complete(config: DeviceConfig | None) -> bool:
@@ -55,7 +54,7 @@ def _is_setup_complete(config: DeviceConfig | None) -> bool:
 
 
 def _get_bool_setting(app_settings: dict[str, str], key: str, default: bool) -> bool:
-    return app_settings.get(key, "true" if default else "false") == "true"
+    return app_settings.get(key, "true" if default else "false").lower() == "true"
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -303,7 +302,7 @@ def onboarding_complete(payload: HotspotSetupPayload, db: Session = Depends(get_
     config.wifi_ssid = payload.ssid or None
 
     if payload.create_account and payload.username and payload.email and payload.password:
-        if "@" not in payload.email or len(payload.email) < 5:
+        if not payload.email or not _EMAIL_RE.match(payload.email):
             raise HTTPException(status_code=422, detail="Invalid email address.")
         existing = db.scalar(
             select(User).where((User.username == payload.username) | (User.email == payload.email))
@@ -332,8 +331,8 @@ def onboarding_complete(payload: HotspotSetupPayload, db: Session = Depends(get_
 
 
 class SettingsUpdate(BaseModel):
-    target_temp_c: float | None = None
-    target_humidity_pct: float | None = None
+    target_temp_c: float | None = Field(default=None, ge=20.0, le=42.0)
+    target_humidity_pct: float | None = Field(default=None, ge=0.0, le=100.0)
     heater_enabled: bool | None = None
     fan_enabled: bool | None = None
     turner_enabled: bool | None = None

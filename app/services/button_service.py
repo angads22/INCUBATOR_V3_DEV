@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
 from typing import Callable
+
+logger = logging.getLogger(__name__)
 
 
 class SetupButtonService:
@@ -23,8 +26,10 @@ class SetupButtonService:
     def _read_pressed(self) -> bool:
         if self.mock_file and os.path.exists(self.mock_file):
             try:
-                return open(self.mock_file, "r", encoding="utf-8").read().strip() == "1"
-            except Exception:
+                with open(self.mock_file, "r", encoding="utf-8") as f:
+                    return f.read().strip() == "1"
+            except OSError as exc:
+                logger.warning("Cannot read button mock file %s: %s", self.mock_file, exc)
                 return False
         return False
 
@@ -49,3 +54,9 @@ class SetupButtonService:
         if self._thread is None:
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
+
+    def stop(self) -> None:
+        self._stop = True
+        if self._thread:
+            self._thread.join(timeout=2.0)
+            self._thread = None

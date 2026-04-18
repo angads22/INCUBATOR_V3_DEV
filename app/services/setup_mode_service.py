@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from threading import Lock
+
+logger = logging.getLogger(__name__)
 
 
 class SetupModeService:
@@ -21,11 +24,18 @@ class SetupModeService:
         if self._state_file.exists():
             try:
                 self._state = json.loads(self._state_file.read_text())
-            except Exception:
+            except json.JSONDecodeError as exc:
+                logger.warning("Setup state file is corrupt, resetting: %s", exc)
+                self._state = {"setup_mode": False, "reason": "normal"}
+            except OSError as exc:
+                logger.warning("Cannot read setup state file %s: %s", self._state_file, exc)
                 self._state = {"setup_mode": False, "reason": "normal"}
 
     def _save(self) -> None:
-        self._state_file.write_text(json.dumps(self._state))
+        try:
+            self._state_file.write_text(json.dumps(self._state))
+        except OSError as exc:
+            logger.error("Cannot persist setup state to %s: %s", self._state_file, exc)
 
     def enter_setup_mode(self, reason: str) -> None:
         with self._lock:

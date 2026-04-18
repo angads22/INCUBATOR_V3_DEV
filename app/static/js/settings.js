@@ -10,6 +10,15 @@ document.getElementById('settings-form')?.addEventListener('submit', async (e) =
     alarm_enabled: f.alarm_enabled.checked,
   };
   const msg = document.getElementById('settings-msg');
+
+  function showMsg(text) {
+    msg.textContent = text;
+    msg.classList.remove('feedback-visible');
+    // Trigger reflow so the animation replays on repeated saves
+    void msg.offsetWidth;
+    msg.classList.add('feedback-visible');
+  }
+
   try {
     const res = await fetch('/api/settings', {
       method: 'POST',
@@ -17,8 +26,8 @@ document.getElementById('settings-form')?.addEventListener('submit', async (e) =
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    msg.textContent = data.ok ? 'Settings saved.' : (data.error || data.detail || 'Save failed.');
+    showMsg(data.ok ? 'Settings saved.' : (data.error || data.detail || 'Save failed.'));
   } catch (err) {
-    msg.textContent = `Request failed: ${err}`;
+    showMsg(`Request failed: ${err}`);
   }
 });
