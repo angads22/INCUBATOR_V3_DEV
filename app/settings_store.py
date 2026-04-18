@@ -16,9 +16,9 @@ DEFAULT_SETTINGS = {
 
 
 def ensure_defaults(db: Session) -> None:
+    existing_keys = set(db.scalars(select(AppSetting.key)).all())
     for key, value in DEFAULT_SETTINGS.items():
-        row = db.scalar(select(AppSetting).where(AppSetting.key == key))
-        if not row:
+        if key not in existing_keys:
             db.add(AppSetting(key=key, value=value))
     db.commit()
 
@@ -32,10 +32,13 @@ def get_settings(db: Session) -> dict[str, str]:
 
 
 def update_settings(db: Session, updates: dict[str, str]) -> dict[str, str]:
+    if not updates:
+        return get_settings(db)
+    keys = list(updates.keys())
+    existing = {row.key: row for row in db.scalars(select(AppSetting).where(AppSetting.key.in_(keys))).all()}
     for key, value in updates.items():
-        row = db.scalar(select(AppSetting).where(AppSetting.key == key))
-        if row:
-            row.value = value
+        if key in existing:
+            existing[key].value = value
         else:
             db.add(AppSetting(key=key, value=value))
     db.commit()

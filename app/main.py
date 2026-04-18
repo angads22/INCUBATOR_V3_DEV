@@ -1,4 +1,6 @@
 import logging
+import secrets
+import uuid
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -20,6 +22,7 @@ from .services.esp32_link import ESP32Link
 from .services.hardware_service import HardwareService
 from .services.setup_mode_service import SetupModeService
 from .services.wifi_service import WiFiService
+from .settings_store import ensure_defaults
 
 app = FastAPI(title="Incubator v3 API")
 logger = logging.getLogger(__name__)
@@ -48,11 +51,14 @@ def startup() -> None:
     db = next(get_db())
     try:
         config = db.scalar(select(DeviceConfig).limit(1))
-        device_id = config.device_id if config else "UNOQ-UNCLAIMED"
         if not config:
-            config = DeviceConfig(device_id=device_id, claimed=False, claim_code="PAIR-1234")
+            device_id = f"UNOQ-{uuid.uuid4().hex[:8].upper()}"
+            claim_code = f"PAIR-{secrets.token_hex(3).upper()}"
+            config = DeviceConfig(device_id=device_id, claimed=False, claim_code=claim_code)
             db.add(config)
             db.commit()
+        device_id = config.device_id
+        ensure_defaults(db)
         cloud_result = cloud_service.register_device(device_id)
         logger.info(
             "cloud_register_device",

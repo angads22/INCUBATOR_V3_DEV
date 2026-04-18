@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 import re
 import subprocess
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 _SAFE_SSID_RE = re.compile(r"^[\w\s\-\.@#!]{1,32}$")
 _SAFE_PASS_RE = re.compile(r"^[\x20-\x7E]{0,63}$")
@@ -50,12 +53,17 @@ class WiFiService:
                     continue
                 networks.append(WiFiNetwork(ssid=ssid.strip(), strength=int(signal or 0), secure=bool(security.strip())))
             return networks[:20]
-        except Exception:
-            return [
-                WiFiNetwork(ssid="FarmNet-2.4G", strength=82, secure=True),
-                WiFiNetwork(ssid="BarnOffice", strength=67, secure=True),
-                WiFiNetwork(ssid="Guest", strength=41, secure=False),
-            ]
+        except FileNotFoundError:
+            logger.debug("nmcli not found, returning mock WiFi networks")
+        except subprocess.CalledProcessError as exc:
+            logger.warning("nmcli wifi scan failed (exit %s)", exc.returncode)
+        except Exception as exc:
+            logger.warning("Unexpected error during WiFi scan: %s", exc)
+        return [
+            WiFiNetwork(ssid="FarmNet-2.4G", strength=82, secure=True),
+            WiFiNetwork(ssid="BarnOffice", strength=67, secure=True),
+            WiFiNetwork(ssid="Guest", strength=41, secure=False),
+        ]
 
     def start_hotspot(self, hotspot_ssid: str, hotspot_pass: str) -> bool:
         try:
@@ -65,14 +73,27 @@ class WiFiService:
                 stderr=subprocess.DEVNULL,
             )
             return True
-        except Exception:
-            return False
+        except FileNotFoundError:
+            logger.debug("nmcli not found, hotspot start skipped")
+        except subprocess.CalledProcessError as exc:
+            logger.warning("Failed to start hotspot (exit %s)", exc.returncode)
+        except Exception as exc:
+            logger.warning("Unexpected error starting hotspot: %s", exc)
+        return False
 
     def stop_hotspot(self) -> None:
         try:
-            subprocess.check_call(["nmcli", "connection", "down", "Hotspot"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            return
+            subprocess.check_call(
+                ["nmcli", "connection", "down", "Hotspot"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            logger.debug("nmcli not found, hotspot stop skipped")
+        except subprocess.CalledProcessError as exc:
+            logger.warning("Failed to stop hotspot (exit %s)", exc.returncode)
+        except Exception as exc:
+            logger.warning("Unexpected error stopping hotspot: %s", exc)
 
     def connect_client(self, ssid: str, password: str) -> bool:
         try:
@@ -83,5 +104,12 @@ class WiFiService:
                 cmd += ["password", password]
             subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             return True
-        except Exception:
-            return False
+        except ValueError as exc:
+            logger.warning("WiFi connect rejected due to invalid input: %s", exc)
+        except FileNotFoundError:
+            logger.debug("nmcli not found, WiFi connect skipped")
+        except subprocess.CalledProcessError as exc:
+            logger.warning("WiFi connect failed (exit %s)", exc.returncode)
+        except Exception as exc:
+            logger.warning("Unexpected error connecting to WiFi: %s", exc)
+        return False
