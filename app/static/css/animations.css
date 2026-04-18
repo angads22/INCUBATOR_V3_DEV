@@ -1,0 +1,265 @@
+/* ── Keyframes ──────────────────────────────────────────────────────── */
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-right {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0   rgba(52, 211, 153, 0.38); }
+  50%       { box-shadow: 0 0 0 5px rgba(52, 211, 153, 0);   }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -600px 0; }
+  100% { background-position:  600px 0; }
+}
+
+@keyframes pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+/* ── Page entrance ──────────────────────────────────────────────────── */
+
+.app-main {
+  animation: fade-in 0.28s ease-out;
+}
+
+/* ── Cards ──────────────────────────────────────────────────────────── */
+
+.card {
+  animation: slide-up 0.38s ease-out both;
+  transition: box-shadow 0.22s ease, transform 0.22s ease, border-color 0.22s ease;
+}
+
+.card:hover {
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
+}
+
+/* Stagger cards inside panel-group columns */
+.panel-group > .card:nth-child(1) { animation-delay: 0.04s; }
+.panel-group > .card:nth-child(2) { animation-delay: 0.09s; }
+.panel-group > .card:nth-child(3) { animation-delay: 0.14s; }
+.panel-group > .card:nth-child(4) { animation-delay: 0.19s; }
+.panel-group > .card:nth-child(5) { animation-delay: 0.24s; }
+
+/* ── Buttons ────────────────────────────────────────────────────────── */
+
+.btn {
+  transition: background 0.16s ease, color 0.16s ease,
+              transform 0.13s ease, box-shadow 0.16s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.3);
+}
+
+.btn:active {
+  transform: translateY(0) scale(0.97);
+  box-shadow: none;
+}
+
+.btn-primary:hover {
+  box-shadow: 0 5px 20px rgba(88, 196, 255, 0.4);
+}
+
+/* ── Nav links ──────────────────────────────────────────────────────── */
+
+.nav-links a {
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+/* ── Profile dropdown ───────────────────────────────────────────────── */
+
+/* Default closed state — CSS hides it so we can animate open/close.
+   The `hidden` attribute is removed by JS before the open animation. */
+.profile-dropdown {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px) scale(0.97);
+  transform-origin: top right;
+  transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.profile-dropdown.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.profile-dropdown a,
+.menu-item {
+  transition: background 0.12s ease;
+}
+
+/* ── Quick action items ─────────────────────────────────────────────── */
+
+.quick-action-item {
+  transition: background 0.15s ease, border-color 0.15s ease,
+              transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.quick-action-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.24);
+}
+
+.quick-action-item:active {
+  transform: scale(0.98);
+}
+
+/* Staggered entrance for quick actions */
+.quick-actions-grid .quick-action-item:nth-child(1) { animation: slide-up 0.32s 0.08s ease-out both; }
+.quick-actions-grid .quick-action-item:nth-child(2) { animation: slide-up 0.32s 0.12s ease-out both; }
+.quick-actions-grid .quick-action-item:nth-child(3) { animation: slide-up 0.32s 0.16s ease-out both; }
+.quick-actions-grid .quick-action-item:nth-child(4) { animation: slide-up 0.32s 0.20s ease-out both; }
+.quick-actions-grid .quick-action-item:nth-child(5) { animation: slide-up 0.32s 0.24s ease-out both; }
+.quick-actions-grid .quick-action-item:nth-child(6) { animation: slide-up 0.32s 0.28s ease-out both; }
+
+/* ── Status chips ───────────────────────────────────────────────────── */
+
+.status-chip {
+  animation: scale-in 0.2s ease-out both;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.status-ok {
+  animation: scale-in 0.2s ease-out both,
+             pulse-glow 2.8s 0.6s ease-in-out infinite;
+}
+
+/* ── Metrics ────────────────────────────────────────────────────────── */
+
+.metric-value {
+  transition: color 0.3s ease;
+}
+
+/* ── Inputs / form fields ───────────────────────────────────────────── */
+
+input, select, textarea {
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(88, 196, 255, 0.16);
+}
+
+/* ── WiFi list items ────────────────────────────────────────────────── */
+
+.wifi-item {
+  transition: background 0.12s ease, border-color 0.15s ease, transform 0.13s ease;
+}
+
+.wifi-item:hover {
+  transform: translateX(3px);
+}
+
+.wifi-item.selected {
+  transition: background 0.18s ease, border-color 0.18s ease;
+  animation: pop 0.22s ease-out;
+}
+
+/* WiFi items stagger in when loaded */
+.wifi-item:nth-child(1) { animation: slide-right 0.22s 0.02s ease-out both; }
+.wifi-item:nth-child(2) { animation: slide-right 0.22s 0.05s ease-out both; }
+.wifi-item:nth-child(3) { animation: slide-right 0.22s 0.08s ease-out both; }
+.wifi-item:nth-child(4) { animation: slide-right 0.22s 0.11s ease-out both; }
+.wifi-item:nth-child(5) { animation: slide-right 0.22s 0.14s ease-out both; }
+.wifi-item:nth-child(6) { animation: slide-right 0.22s 0.17s ease-out both; }
+.wifi-item:nth-child(n+7) { animation: slide-right 0.22s 0.20s ease-out both; }
+
+/* ── Wizard step transition ─────────────────────────────────────────── */
+
+.wizard-step.active {
+  animation: scale-in 0.22s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.wizard-step.active .card {
+  animation: slide-up 0.28s 0.04s ease-out both;
+}
+
+/* ── Inline feedback messages ───────────────────────────────────────── */
+
+.hint.feedback-visible,
+.feedback-visible {
+  animation: slide-up 0.2s ease-out both;
+}
+
+/* ── Spinner ────────────────────────────────────────────────────────── */
+
+.spinner {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  border: 2px solid rgba(88, 196, 255, 0.22);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+/* ── Skeleton shimmer ───────────────────────────────────────────────── */
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--panel) 25%,
+    var(--panel-soft) 50%,
+    var(--panel) 75%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 8px;
+  color: transparent !important;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ── Section header entrance ────────────────────────────────────────── */
+
+.section-header {
+  animation: slide-up 0.3s ease-out both;
+}
+
+/* ── Topbar subtle transition ───────────────────────────────────────── */
+
+.topbar {
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* ── Reduced motion — respect user preference ───────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
