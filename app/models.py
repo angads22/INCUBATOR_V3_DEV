@@ -75,8 +75,11 @@ class ModelResult(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     egg_id: Mapped[int | None] = mapped_column(ForeignKey("eggs.id"), nullable=True)
+    image_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_backend: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)
     predicted_label: Mapped[str] = mapped_column(String(64), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    raw_output: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
 

@@ -1,37 +1,97 @@
-from dataclasses import dataclass
+from __future__ import annotations
+
+from typing import Any
 
 from .camera_service import CameraService
-from .esp32_link import ESP32Link
+from .gpio_service import GPIOService
 
 
-@dataclass
 class HardwareService:
-    link: ESP32Link
-    camera: CameraService
+    """High-level hardware commands that map to GPIO actions on the Pi Zero 2W.
 
-    def open_lock(self) -> dict:
-        return self.link.send_command("open_lock")
+    All methods return a dict with at least {"ok": bool}.
+    """
 
-    def close_lock(self) -> dict:
-        return self.link.send_command("close_lock")
+    def __init__(self, gpio: GPIOService, camera: CameraService) -> None:
+        self.gpio = gpio
+        self.camera = camera
 
-    def open_door(self) -> dict:
-        return self.link.send_command("open_door")
+    # ------------------------------------------------------------------
+    # Enclosure
+    # ------------------------------------------------------------------
 
-    def close_door(self) -> dict:
-        return self.link.send_command("close_door")
+    def open_lock(self) -> dict[str, Any]:
+        return self.gpio.set_lock(locked=False)
 
-    def move_motor(self, value: int | str) -> dict:
-        return self.link.send_command("move_motor", value)
+    def close_lock(self) -> dict[str, Any]:
+        return self.gpio.set_lock(locked=True)
 
-    def read_temp(self) -> dict:
-        return self.link.send_command("read_temp")
+    def open_door(self) -> dict[str, Any]:
+        return self.gpio.set_door(open_=True)
 
-    def read_humidity(self) -> dict:
-        return self.link.send_command("read_humidity")
+    def close_door(self) -> dict[str, Any]:
+        return self.gpio.set_door(open_=False)
 
-    def set_candle(self, on: bool) -> dict:
-        return self.link.send_command("set_candle", "on" if on else "off")
+    # ------------------------------------------------------------------
+    # Climate
+    # ------------------------------------------------------------------
 
-    def capture_image(self) -> dict:
-        return self.camera.capture_image()
+    def set_heater(self, on: bool) -> dict[str, Any]:
+        return self.gpio.set_heater(on)
+
+    def set_fan(self, on: bool) -> dict[str, Any]:
+        return self.gpio.set_fan(on)
+
+    # ------------------------------------------------------------------
+    # Turner
+    # ------------------------------------------------------------------
+
+    def move_motor(self, value: int | str) -> dict[str, Any]:
+        """value encodes turn direction/steps.  Positive = forward, negative = reverse."""
+        try:
+            steps = int(value)
+        except (TypeError, ValueError):
+            steps = 200
+        direction = -1 if steps < 0 else 1
+        return self.gpio.move_turner(abs(steps) or 200, direction)
+
+    # ------------------------------------------------------------------
+    # Sensors
+    # ------------------------------------------------------------------
+
+    def read_temp(self) -> dict[str, Any]:
+        result = self.gpio.read_temperature_humidity()
+        if not result.get("ok"):
+            return result
+        return {"ok": True, "temperature_c": result["temperature_c"], "mock": result.get("mock", False)}
+
+    def read_humidity(self) -> dict[str, Any]:
+        result = self.gpio.read_temperature_humidity()
+        if not result.get("ok"):
+            return result
+        return {"ok": True, "humidity_pct": result["humidity_pct"], "mock": result.get("mock", False)}
+
+    def read_environment(self) -> dict[str, Any]:
+        """Read both temperature and humidity in one DHT22 call."""
+        return self.gpio.read_temperature_humidity()
+
+    # ------------------------------------------------------------------
+    # Candling / light
+    # ------------------------------------------------------------------
+
+    def set_candle(self, on: bool) -> dict[str, Any]:
+        return self.gpio.set_candle(on)
+
+    # ------------------------------------------------------------------
+    # Camera
+    # ------------------------------------------------------------------
+
+    def capture_image(self) -> dict[str, Any]:
+        return self.camera.capture()
+
+    # ------------------------------------------------------------------
+    # Convenience
+    # ------------------------------------------------------------------
+
+    def get_state(self) -> dict[str, Any]:
+        return self.gpio.get_state()
