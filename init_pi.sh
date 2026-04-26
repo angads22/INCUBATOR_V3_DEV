@@ -38,8 +38,8 @@ apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv python3-dev \
     git curl ca-certificates \
     network-manager \
-    libgpiod2 \
-    libatlas-base-dev \
+    libgpiod-dev \
+    libopenblas-dev \
     python3-picamera2 \
     libjpeg-dev zlib1g-dev \
     > /dev/null
