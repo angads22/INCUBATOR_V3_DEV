@@ -98,12 +98,15 @@ info "Installing Python dependencies..."
 if [ ! -f "${ENV_FILE}" ]; then
     info "Creating ${ENV_FILE}..."
     cp "${INSTALL_DIR}/deploy/incubator.env.example" "${ENV_FILE}"
-    # Seed a random AP password
-    AP_PASS="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 12)"
+    chmod 600 "${ENV_FILE}"
+    # Seed a random AP password — use dd+xxd to stay pipefail-safe
+    # (tr + head triggers SIGPIPE under set -euo pipefail on some shells)
+    AP_PASS="$(dd if=/dev/urandom bs=9 count=1 2>/dev/null | base64 | tr -dc 'A-Za-z0-9' | cut -c1-12)"
     sed -i "s|INCUBATOR_AP_PASSWORD=.*|INCUBATOR_AP_PASSWORD=${AP_PASS}|" "${ENV_FILE}"
     info "AP password set to: ${AP_PASS}  (saved in ${ENV_FILE})"
 else
     warn "${ENV_FILE} already exists — skipping (edit manually if needed)"
+    chmod 600 "${ENV_FILE}" 2>/dev/null || true
 fi
 
 # ── systemd service ──────────────────────────────────────────

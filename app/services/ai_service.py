@@ -30,6 +30,14 @@ from datetime import datetime, timezone
 from typing import Any
 
 
+_RISK_RANK: dict[str, int] = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+
+
+def _escalate(current: str, candidate: str) -> str:
+    """Return whichever risk level is higher by severity rank."""
+    return candidate if _RISK_RANK.get(candidate, 0) > _RISK_RANK.get(current, 0) else current
+
+
 @dataclass(frozen=True)
 class AIInsight:
     summary: str
@@ -78,7 +86,7 @@ class AIService:
         elif temperature_c > self.TEMP_HIGH:
             issues.append(f"Temperature {temperature_c:.1f}°C is above target range")
             recommendations.append("Reduce heater duty cycle. Check fan is running.")
-            risk = max(risk, "medium") if risk != "critical" else risk  # type: ignore[assignment]
+            risk = _escalate(risk, "medium")
         elif temperature_c < self.TEMP_CRITICAL_LOW:
             issues.append(f"CRITICAL: Temperature {temperature_c:.1f}°C is too low")
             recommendations.append("Check heater connection. Increase heater duty cycle.")
@@ -86,7 +94,7 @@ class AIService:
         elif temperature_c < self.TEMP_LOW:
             issues.append(f"Temperature {temperature_c:.1f}°C is below target range")
             recommendations.append("Increase heater output gradually. Re-check in 10 minutes.")
-            risk = max(risk, "medium") if risk != "critical" else risk  # type: ignore[assignment]
+            risk = _escalate(risk, "medium")
 
         # Humidity assessment
         lockdown = incubation_day >= 18
@@ -107,13 +115,13 @@ class AIService:
             issues.append(f"Last candling result: {vision_label}")
             if vision_label == "blood_ring":
                 recommendations.append("Blood ring detected — remove egg to prevent contamination.")
-                risk = max(risk, "medium") if risk != "critical" else risk  # type: ignore[assignment]
+                risk = _escalate(risk, "medium")
             elif vision_label == "dead_embryo":
                 recommendations.append("Dead embryo detected — remove egg promptly.")
-                risk = max(risk, "medium") if risk != "critical" else risk  # type: ignore[assignment]
+                risk = _escalate(risk, "medium")
             elif vision_label == "crack":
                 recommendations.append("Cracked shell detected — remove egg to avoid bacterial spread.")
-                risk = max(risk, "medium") if risk != "critical" else risk  # type: ignore[assignment]
+                risk = _escalate(risk, "medium")
 
         if not issues:
             summary = (

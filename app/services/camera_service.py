@@ -77,8 +77,9 @@ class CameraService:
             return {"ok": False, "error": str(exc), "backend": "opencv"}
 
     def _capture_mock(self, path: Path) -> dict[str, Any]:
-        # Write a tiny placeholder so the path is real on disk
-        path.write_bytes(b"MOCK_IMAGE")
+        # Write a deterministic placeholder large enough for downstream
+        # vision-service minimum-size validation (_MIN_IMAGE_BYTES = 512).
+        path.write_bytes(b"MOCK_IMAGE" * 64)
         return {"ok": True, "image_path": str(path), "backend": "mock", "mock": True}
 
     # ------------------------------------------------------------------

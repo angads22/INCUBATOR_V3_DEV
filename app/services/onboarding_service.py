@@ -60,7 +60,7 @@ class OnboardingService:
         if not self._auto_hotspot:
             return
         config = db.scalar(select(DeviceConfig).limit(1))
-        needs_setup = not config or not config.wifi_ssid or not config.claimed
+        needs_setup = not config or not config.wifi_ssid
         if needs_setup:
             ssid = self._make_ssid(device_id)
             logger.info(

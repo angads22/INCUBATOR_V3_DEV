@@ -120,7 +120,9 @@ class VisionService:
         VISION MODEL HOOK: This is where real inference happens.
         Called from routes/ai.py and from the auto-candle-and-analyze flow.
         """
-        if not self._image_valid(image_path):
+        # Skip size validation in mock mode — mock captures intentionally write
+        # small placeholder bytes and the mock backend doesn't read the file.
+        if self.backend != "mock" and not self._image_valid(image_path):
             return {"ok": False, "error": "Image file missing or too small", "path": image_path}
 
         if self.backend == "tflite" and self._tflite_ready:

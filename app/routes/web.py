@@ -66,7 +66,8 @@ def _render(request: Request, name: str, context: dict[str, Any]):
 
 
 def _is_setup_complete(config: DeviceConfig | None) -> bool:
-    return bool(config and config.device_name and config.wifi_ssid and config.claimed)
+    # Account creation is optional — treat WiFi + device name as sufficient for "complete"
+    return bool(config and config.device_name and config.wifi_ssid)
 
 
 def _get_bool_setting(app_settings: dict[str, str], key: str, default: bool) -> bool:
@@ -239,6 +240,13 @@ def status_page(
     hw_state = _hardware_service.get_state() if _hardware_service else {}
     env = _hardware_service.read_environment() if _hardware_service else {}
 
+    if not _hardware_service:
+        sensor_status = "unavailable"
+    elif env.get("ok"):
+        sensor_status = "online"
+    else:
+        sensor_status = "error"
+
     return _render(
         request=request,
         name="status.html",
@@ -246,7 +254,7 @@ def status_page(
             "version": settings.app_version,
             "health": {
                 "hardware": "online" if _hardware_service else "unavailable",
-                "sensors": "online" if env.get("ok") else "error",
+                "sensors": sensor_status,
                 "alarms": "none",
                 "gpio_mock": settings.gpio_mock,
                 "setup_mode": "on" if setup_mode else "off",

@@ -50,7 +50,8 @@ class SetupButtonService:
         # Mock file takes priority (dev mode)
         if self.mock_file and os.path.exists(self.mock_file):
             try:
-                return open(self.mock_file).read().strip() == "1"  # noqa: WPS515
+                with open(self.mock_file) as f:
+                    return f.read().strip() == "1"
             except OSError:
                 return False
         # Real hardware

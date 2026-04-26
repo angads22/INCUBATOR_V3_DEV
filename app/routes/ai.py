@@ -98,8 +98,8 @@ def candle_and_analyze(payload: CandleRequest, db: Session = Depends(get_db)) ->
     Full candling workflow:
       1. Turn candle LED on
       2. Capture image via camera
-      3. Turn candle LED off
-      4. Run vision inference
+      3. Run vision inference
+      4. Turn candle LED off  (always, even on failure)
       5. Optionally persist result
 
     VISION MODEL HOOK — this is the primary automated candling entry point.
