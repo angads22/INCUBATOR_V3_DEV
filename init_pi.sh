@@ -95,14 +95,16 @@ info "Creating Python virtual environment..."
 python3 -m venv --system-site-packages "${VENV_DIR}"
 "${VENV_DIR}/bin/pip" install --upgrade pip --quiet
 
-info "Installing Python dependencies..."
+info "Installing Python dependencies (using piwheels pre-built wheels)..."
 "${VENV_DIR}/bin/pip" install \
+    --prefer-binary \
     --extra-index-url https://www.piwheels.org/simple \
     -e "${INSTALL_DIR}[pi]" \
     --quiet
 
 # Try TFLite runtime (optional — skip if unavailable for this Pi version)
 "${VENV_DIR}/bin/pip" install \
+    --prefer-binary \
     --extra-index-url https://www.piwheels.org/simple \
     tflite-runtime numpy \
     --quiet 2>/dev/null || warn "TFLite runtime not available — vision will use mock or API backend"
