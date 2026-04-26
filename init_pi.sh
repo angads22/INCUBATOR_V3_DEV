@@ -34,15 +34,28 @@ echo ""
 # ── System packages ──────────────────────────────────────────
 info "Installing system packages..."
 apt-get update -qq
+
+# Install packages that exist on all supported Pi OS versions (Bullseye/Bookworm, 32/64-bit)
 apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv python3-dev \
-    git curl ca-certificates \
+    git curl ca-certificates rsync \
     network-manager \
-    libgpiod-dev \
-    libopenblas-dev \
-    python3-picamera2 \
     libjpeg-dev zlib1g-dev \
     > /dev/null
+
+# libgpiod: name differs by OS version
+apt-get install -y --no-install-recommends libgpiod2 > /dev/null 2>&1 \
+    || apt-get install -y --no-install-recommends libgpiod-dev > /dev/null 2>&1 \
+    || warn "libgpiod not found — GPIO will use mock mode"
+
+# BLAS (for numpy/tflite): atlas on Bullseye, openblas on Bookworm
+apt-get install -y --no-install-recommends libatlas-base-dev > /dev/null 2>&1 \
+    || apt-get install -y --no-install-recommends libopenblas-dev > /dev/null 2>&1 \
+    || warn "BLAS library not found — numpy may be slow"
+
+# picamera2: available as system package on Bullseye/Bookworm
+apt-get install -y --no-install-recommends python3-picamera2 > /dev/null 2>&1 \
+    || warn "python3-picamera2 not found — set CAMERA_BACKEND=mock or CAMERA_BACKEND=opencv"
 
 # Enable camera interface if raspi-config is available
 if command -v raspi-config &>/dev/null; then
