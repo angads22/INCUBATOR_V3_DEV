@@ -1,0 +1,18 @@
+[Unit]
+Description=Incubator v3 (Pi Zero 2W)
+After=network-online.target NetworkManager.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=__INSTALL_DIR__
+EnvironmentFile=/etc/incubator.env
+ExecStart=__INSTALL_DIR__/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info
+Restart=always
+RestartSec=5
+# Allow GPIO and serial access
+SupplementaryGroups=gpio dialout video
+
+[Install]
+WantedBy=multi-user.target

@@ -1,22 +1,54 @@
 {% extends 'base.html' %}
 {% block content %}
-{% with eyebrow='Operations', title='System Status', subtitle='Current connectivity and safety posture.' %}{% include 'partials/section_header.html' %}{% endwith %}
+{% with eyebrow='Operations', title='System Status', subtitle='Current hardware state, sensor readings, and safety posture.' %}{% include 'partials/section_header.html' %}{% endwith %}
 <section class="two-col">
   <article class="card">
     <h3>Runtime Health</h3>
     <div class="chip-row">
-      {% with label='Hardware: ' ~ health.hardware, tone='ok' %}{% include 'partials/status_chip.html' %}{% endwith %}
-      {% with label='Sensors: ' ~ health.sensors, tone='ok' %}{% include 'partials/status_chip.html' %}{% endwith %}
+      {% with label='Hardware: ' ~ health.hardware, tone=('ok' if health.hardware == 'online' else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
+      {% with label='Sensors: ' ~ health.sensors, tone=('ok' if health.sensors == 'online' else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
       {% with label='Alarms: ' ~ health.alarms, tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
-      {% with label='Link: ' ~ health.link, tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+      {% with label='Setup mode: ' ~ health.setup_mode, tone=('warn' if health.setup_mode == 'on' else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
+      {% with label='GPIO: ' ~ ('mock' if health.gpio_mock else 'live'), tone=('warn' if health.gpio_mock else 'ok') %}{% include 'partials/status_chip.html' %}{% endwith %}
     </div>
+    <p class="muted">Camera: <strong>{{ health.camera_backend }}</strong> &nbsp;|&nbsp; Vision: <strong>{{ health.vision_backend }}</strong></p>
     <p class="muted">Version {{ version }}</p>
   </article>
+
+  <article class="card">
+    <h3>Live Sensor Reading</h3>
+    {% if environment and environment.ok %}
+    <div class="metrics-grid compact-metrics">
+      {% with label='Temperature', value='%.2f°C'|format(environment.temperature_c), hint=('Live' if not environment.mock else 'Simulated') %}{% include 'partials/metric_card.html' %}{% endwith %}
+      {% with label='Humidity', value='%.1f%%'|format(environment.humidity_pct), hint=('Live' if not environment.mock else 'Simulated') %}{% include 'partials/metric_card.html' %}{% endwith %}
+    </div>
+    {% else %}
+    <p class="muted">No sensor reading available. Check DHT22 wiring on GPIO{{ health.get('dht_pin', '4') }}.</p>
+    {% endif %}
+  </article>
+
+  <article class="card">
+    <h3>Output State</h3>
+    {% if hw_state %}
+    <div class="chip-row">
+      {% with label=('Heater ON' if hw_state.heater else 'Heater OFF'), tone=('ok' if hw_state.heater else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
+      {% with label=('Fan ON' if hw_state.fan else 'Fan OFF'), tone=('ok' if hw_state.fan else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
+      {% with label=('Candle ON' if hw_state.candle else 'Candle OFF'), tone=('warn' if hw_state.candle else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
+      {% with label=('Locked' if hw_state.lock else 'Unlocked'), tone=('ok' if hw_state.lock else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
+      {% with label=('Door open' if hw_state.door else 'Door closed'), tone=('warn' if hw_state.door else 'ok') %}{% include 'partials/status_chip.html' %}{% endwith %}
+      {% with label=('Alarm ON' if hw_state.alarm else 'Alarm off'), tone=('warn' if hw_state.alarm else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
+    </div>
+    {% else %}
+    <p class="muted">Hardware state unavailable.</p>
+    {% endif %}
+  </article>
+
   <article class="card">
     <h3>Operator Guidance</h3>
     <ul class="stack-list">
       <li>Use <a href="/hardware">Hardware</a> for immediate manual commands.</li>
       <li>Use <a href="/settings">Settings</a> to adjust targets and toggles.</li>
+      <li>Use <strong>POST /api/vision/candle</strong> to trigger automated egg candling.</li>
       <li>Review AI panel insights from the dashboard for advisory context.</li>
     </ul>
   </article>
