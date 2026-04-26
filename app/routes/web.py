@@ -10,7 +10,7 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from ..auth import get_user_id_from_session, hash_password
@@ -211,6 +211,12 @@ def dashboard(
             "next_step": next_step,
             "quick_actions": quick_actions,
             "vision_backend": settings.vision_backend,
+            "recent_activity": [
+                row.action + (f": {row.payload}" if row.payload else "")
+                for row in db.scalars(
+                    select(ActionLog).order_by(desc(ActionLog.created_at)).limit(5)
+                ).all()
+            ],
         },
     )
 

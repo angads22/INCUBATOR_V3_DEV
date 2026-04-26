@@ -13,7 +13,7 @@
       <div class="chip-row">
         {% with label=('Setup complete' if home_summary.setup_complete else 'Setup pending'), tone=('ok' if home_summary.setup_complete else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
         {% with label=('Claimed' if home_summary.is_claimed else 'Using without account'), tone=('ok' if home_summary.is_claimed else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
-        {% with label=('Setup hotspot active' if home_summary.setup_mode else 'Setup hotspot off'), tone=('warn' if home_summary.setup_mode else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label=('Hotspot active' if home_summary.hotspot_active else ('Setup mode' if home_summary.setup_mode else 'Normal')), tone=('warn' if (home_summary.hotspot_active or home_summary.setup_mode) else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
       </div>
     </article>
 
@@ -27,16 +27,16 @@
     <article class="card">
       <h3>Overview / incubator health</h3>
       <div class="metrics-grid compact-metrics">
-        {% with label='Temperature', value='%.1f°C'|format(mock.temperature_c), hint='Target %.1f°C'|format(mock.target_temp_c) %}{% include 'partials/metric_card.html' %}{% endwith %}
-        {% with label='Humidity', value='%.1f%%'|format(mock.humidity_pct), hint='Target %.1f%%'|format(mock.target_humidity_pct) %}{% include 'partials/metric_card.html' %}{% endwith %}
+        {% with label='Temperature', value='%.1f°C'|format(live.temperature_c), hint='Target %.1f°C'|format(live.target_temp_c) %}{% include 'partials/metric_card.html' %}{% endwith %}
+        {% with label='Humidity', value='%.1f%%'|format(live.humidity_pct), hint='Target %.1f%%'|format(live.target_humidity_pct) %}{% include 'partials/metric_card.html' %}{% endwith %}
       </div>
       <div class="chip-row key-state-row">
-        {% with label=('Door closed' if mock.door_closed else 'Door open'), tone=('ok' if mock.door_closed else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
-        {% with label=('Heater on' if mock.heater else 'Heater off'), tone=('ok' if mock.heater else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
-        {% with label=('Fan on' if mock.fan else 'Fan off'), tone=('ok' if mock.fan else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
-        {% with label=('Turner on' if mock.turner else 'Turner off'), tone=('ok' if mock.turner else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label=('Door closed' if live.door_closed else 'Door open'), tone=('ok' if live.door_closed else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label=('Heater on' if live.heater else 'Heater off'), tone=('ok' if live.heater else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label=('Fan on' if live.fan else 'Fan off'), tone=('ok' if live.fan else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label=('Turner on' if live.turner else 'Turner off'), tone=('ok' if live.turner else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
       </div>
-      <p class="muted">Usable now even before full wiring; live sensor feeds can replace placeholders as hardware comes online.</p>
+      <p class="muted">Live sensor data from DHT22. Readings update every {{ settings.get('sensor_poll_interval', '30') }}s.</p>
     </article>
   </div>
 
@@ -56,21 +56,21 @@
     <article class="card">
       <h3>Setup / onboarding status</h3>
       <ul class="stack-list">
-        <li>Setup mode: <strong>{{ 'On' if home_summary.setup_mode else 'Off' }}</strong></li>
+        <li>Hotspot: <strong>{{ 'Active' if home_summary.hotspot_active else 'Off' }}</strong>{% if home_summary.hotspot_active %} — SSID: <code>{{ home_summary.ap_ssid }}</code>{% endif %}</li>
         <li>Setup completion: <strong>{{ 'Complete' if home_summary.setup_complete else 'Pending' }}</strong></li>
-        <li>Account/claim state: <strong>{{ 'Claimed' if home_summary.is_claimed else 'Optional and not linked yet' }}</strong></li>
+        <li>Account/claim state: <strong>{{ 'Claimed' if home_summary.is_claimed else 'Optional — not linked yet' }}</strong></li>
       </ul>
-      <p class="muted">Local setup works through hotspot onboarding and does not require internet/domain.</p>
+      <p class="muted">Local setup works through hotspot onboarding and does not require internet.</p>
     </article>
 
     <article class="card">
-      <h3>Network / connectivity summary</h3>
+      <h3>Network / connectivity</h3>
       <p><strong>{{ home_summary.network_state }}</strong></p>
       <p class="muted">{{ home_summary.network_detail }}</p>
       <div class="chip-row">
         {% with label='Local-first', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
         {% with label='Domain optional', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
-        {% with label='Internet optional', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label='Vision: ' ~ vision_backend, tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
       </div>
     </article>
 
@@ -79,15 +79,26 @@
       <ul class="stack-list">
         {% for item in recent_activity %}
         <li>{{ item }}</li>
+        {% else %}
+        <li class="muted">No recent activity logged yet.</li>
         {% endfor %}
       </ul>
       <p class="muted">Version {{ version }}</p>
     </article>
 
     <article class="card future-card">
-      <h3>Future AI assistant (preview)</h3>
-      <p class="muted">{{ ai_insight }}</p>
-      <p class="muted">Reserved space for future chat + vision features without changing the core local-first flow.</p>
+      <h3>AI insight</h3>
+      {% if ai_insight %}
+      <p><strong>{{ ai_insight.summary }}</strong></p>
+      <p class="muted">{{ ai_insight.recommendation }}</p>
+      <div class="chip-row">
+        {% with label='Risk: ' ~ ai_insight.risk_level, tone=('warn' if ai_insight.risk_level in ('medium', 'high', 'critical') else 'ok') %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label=ai_insight.confidence, tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+      </div>
+      {% else %}
+      <p class="muted">No AI insight available yet.</p>
+      {% endif %}
+      <p class="muted hint">Connect a vision model via VISION_BACKEND for egg candling analysis.</p>
     </article>
   </div>
 </section>
