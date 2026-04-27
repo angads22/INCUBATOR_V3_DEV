@@ -23,6 +23,16 @@ sed "s|__INSTALL_DIR__|${INSTALL_DIR}|g" \
     "${ROOTFS_DIR}${INSTALL_DIR}/deploy/incubator.service" \
     > "${ROOTFS_DIR}/etc/systemd/system/${SERVICE_NAME}.service"
 
+# Auto-update service + timer
+install -m 644 "${ROOTFS_DIR}${INSTALL_DIR}/deploy/incubator-update.service" \
+    "${ROOTFS_DIR}/etc/systemd/system/incubator-update.service"
+install -m 644 "${ROOTFS_DIR}${INSTALL_DIR}/deploy/incubator-update.timer" \
+    "${ROOTFS_DIR}/etc/systemd/system/incubator-update.timer"
+chmod +x "${ROOTFS_DIR}${INSTALL_DIR}/scripts/auto_update.sh"
+
+# Version stamp (image build commit is "baked" — first update replaces it)
+echo "image-build" > "${ROOTFS_DIR}${INSTALL_DIR}/.version"
+
 # ── Data directories ────────────────────────────────────────
 install -d "${ROOTFS_DIR}${DATA_DIR}/captures"
 install -d "${ROOTFS_DIR}${DATA_DIR}/models/vision"
@@ -64,6 +74,7 @@ systemctl enable NetworkManager
 echo "[incubator] Enabling incubator services..."
 systemctl enable incubator-firstboot.service
 systemctl enable ${SERVICE_NAME}.service
+systemctl enable incubator-update.timer
 
 echo "[incubator] Setting GPIO permissions for root..."
 usermod -aG gpio,dialout,video root 2>/dev/null || true

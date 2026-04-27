@@ -1,0 +1,16 @@
+[Unit]
+Description=Incubator v3 auto-update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/incubator.env
+ExecStart=/opt/incubator/scripts/auto_update.sh
+StandardOutput=journal
+StandardError=journal
+# Don't fail the timer if the update errors — log and move on
+SuccessExitStatus=0 1
+
+[Install]
+WantedBy=multi-user.target

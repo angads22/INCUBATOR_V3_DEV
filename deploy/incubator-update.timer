@@ -1,0 +1,15 @@
+[Unit]
+Description=Incubator v3 auto-update timer
+Requires=incubator-update.service
+
+[Timer]
+# Check 3 minutes after every boot (gives network time to connect)
+OnBootSec=3min
+# Then once a week at 3 AM Sunday
+OnCalendar=Sun *-*-* 03:00:00
+# Spread the check randomly ±30 min so all devices don't hit GitHub at once
+RandomizedDelaySec=1800
+Persistent=true
+
+[Install]
+WantedBy=timers.target

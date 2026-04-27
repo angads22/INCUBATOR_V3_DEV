@@ -62,6 +62,11 @@ class Settings:
     device_shared_secret: str = field(default_factory=lambda: os.getenv("DEVICE_SHARED_SECRET", "").strip())
     heartbeat_interval_seconds: int = field(default_factory=lambda: int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "300")))
 
+    # --- Auto-update ---
+    auto_update_enabled: bool = field(default_factory=lambda: os.getenv("INCUBATOR_AUTO_UPDATE", "true").lower() == "true")
+    update_repo_url: str = field(default_factory=lambda: os.getenv("INCUBATOR_REPO_URL", "https://github.com/angads22/INCUBATOR_V3_DEV.git"))
+    update_branch: str = field(default_factory=lambda: os.getenv("INCUBATOR_UPDATE_BRANCH", "main"))
+
     # --- Dev overrides ---
     gpio_mock: bool = field(default_factory=lambda: os.getenv("GPIO_MOCK", "false").lower() == "true")
     button_mock_file: str = field(default_factory=lambda: os.getenv("INCUBATOR_BUTTON_MOCK_FILE", ""))

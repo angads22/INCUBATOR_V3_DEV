@@ -124,16 +124,31 @@ else
     chmod 600 "${ENV_FILE}" 2>/dev/null || true
 fi
 
-# ── systemd service ──────────────────────────────────────────
-info "Installing systemd service..."
+# ── Version stamp ────────────────────────────────────────────
+git -C "${REPO_DIR}" rev-parse --short HEAD 2>/dev/null \
+    > "${INSTALL_DIR}/.version" \
+    || echo "manual" > "${INSTALL_DIR}/.version"
+info "Version: $(cat "${INSTALL_DIR}/.version")"
+
+# ── systemd services ─────────────────────────────────────────
+info "Installing systemd services..."
+chmod +x "${INSTALL_DIR}/scripts/auto_update.sh"
+
 sed \
     -e "s|__INSTALL_DIR__|${INSTALL_DIR}|g" \
     "${INSTALL_DIR}/deploy/incubator.service" \
     > "${SERVICE_FILE}"
 
+cp "${INSTALL_DIR}/deploy/incubator-update.service" \
+    "/etc/systemd/system/incubator-update.service"
+cp "${INSTALL_DIR}/deploy/incubator-update.timer" \
+    "/etc/systemd/system/incubator-update.timer"
+
 systemctl daemon-reload
 systemctl enable "${SERVICE_NAME}"
+systemctl enable incubator-update.timer
 systemctl restart "${SERVICE_NAME}"
+systemctl start incubator-update.timer
 
 # ── GPIO permissions ─────────────────────────────────────────
 # Add the service user (root) to gpio group — already root so skip.

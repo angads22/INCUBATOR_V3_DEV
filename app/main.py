@@ -15,6 +15,7 @@ Startup sequence:
 
 import logging
 import secrets
+import subprocess
 import threading
 import time
 import uuid
@@ -291,6 +292,53 @@ def complete_setup(payload: OnboardingPayload, db: Session = Depends(get_db)) ->
     ))
     db.commit()
     return {"ok": True, "claimed": True, "device_name": config.device_name}
+
+
+@app.get("/api/system/version")
+def system_version() -> dict:
+    """Current installed version and latest available commit on the configured branch."""
+    version_file = Path("/opt/incubator/.version")
+    local_sha = version_file.read_text().strip() if version_file.exists() else "unknown"
+
+    repo_url = settings.update_repo_url
+    branch = settings.update_branch
+
+    remote_sha = "unknown"
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", repo_url, f"refs/heads/{branch}"],
+            capture_output=True, text=True, timeout=8,
+        )
+        if result.returncode == 0 and result.stdout:
+            remote_sha = result.stdout.split()[0][:8]
+    except Exception:
+        pass
+
+    return {
+        "local_sha": local_sha,
+        "remote_sha": remote_sha,
+        "branch": branch,
+        "up_to_date": local_sha == remote_sha,
+        "auto_update": settings.auto_update_enabled,
+    }
+
+
+@app.post("/api/system/update")
+def trigger_update() -> dict:
+    """Kick off an immediate update check in the background."""
+    update_script = Path("/opt/incubator/scripts/auto_update.sh")
+    if not update_script.exists():
+        raise HTTPException(status_code=404, detail="Update script not found")
+    try:
+        subprocess.Popen(
+            ["bash", str(update_script)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return {"ok": True, "message": "Update started — service will restart if a new version is found"}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/api/sensors/latest")
