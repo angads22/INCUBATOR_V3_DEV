@@ -1,12 +1,12 @@
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+requires = ["setuptools>=40", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "incubator-v3"
 version = "1.31.0"
 description = "Incubator v3 — Raspberry Pi Zero 2W edition"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 dependencies = [
   # Web framework
   "fastapi>=0.115.0",

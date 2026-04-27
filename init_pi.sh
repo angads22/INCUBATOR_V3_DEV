@@ -37,7 +37,7 @@ apt-get update -qq
 
 # Install packages that exist on all supported Pi OS versions (Bullseye/Bookworm, 32/64-bit)
 apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-venv python3-dev \
+    python3 python3-pip python3-venv python3-dev python3-setuptools python3-wheel \
     git curl ca-certificates rsync \
     network-manager \
     libjpeg-dev zlib1g-dev \
@@ -99,7 +99,7 @@ info "Installing Python dependencies (using piwheels pre-built wheels)..."
 "${VENV_DIR}/bin/pip" install \
     --prefer-binary \
     --extra-index-url https://www.piwheels.org/simple \
-    -e "${INSTALL_DIR}[pi]" \
+    "${INSTALL_DIR}[pi]" \
     --quiet
 
 # Try TFLite runtime (optional — skip if unavailable for this Pi version)
