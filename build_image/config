@@ -1,0 +1,37 @@
+# pi-gen configuration for Incubator v3 (Pi Zero 2W)
+# Ref: https://github.com/RPi-Distro/pi-gen#config
+
+IMG_NAME="incubator-v3"
+
+# Base OS: Bookworm Lite (no desktop, minimal footprint)
+RELEASE="bookworm"
+
+# Output format
+DEPLOY_ZIP=0
+IMG_COMPRESSION="xz"
+
+# Locale / timezone — adjust to your region
+LOCALE_DEFAULT="en_US.UTF-8"
+TIMEZONE_DEFAULT="America/New_York"
+
+# Hostname shown on your network
+TARGET_HOSTNAME="incubator"
+
+# Keyboard (US layout — change if needed)
+KEYBOARD_KEYMAP="us"
+KEYBOARD_LAYOUT="English (US)"
+
+# Default login credentials
+# Change FIRST_USER_PASS before distributing! (or use SSH keys)
+FIRST_USER_NAME="pi"
+FIRST_USER_PASS="incubator"
+
+# Enable SSH so you can connect over WiFi or hotspot
+ENABLE_SSH=1
+
+# WiFi country code — REQUIRED for WiFi radio to activate
+# Change to your 2-letter ISO country code (US, GB, CA, AU, DE, ...)
+WPA_COUNTRY="US"
+
+# Only build Lite stages + our custom stage (no desktop)
+STAGE_LIST="stage0 stage1 stage2 stage-incubator"

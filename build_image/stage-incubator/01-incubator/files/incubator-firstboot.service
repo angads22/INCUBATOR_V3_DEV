@@ -1,0 +1,16 @@
+[Unit]
+Description=Incubator v3 first-boot initialisation
+# Run before the main service but only when env file is absent
+ConditionPathExists=!/etc/incubator.env
+Before=incubator.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/incubator-firstboot
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
