@@ -64,15 +64,18 @@ rsync -a --delete \
 info "App source staged ($(du -sh "${STAGE_FILES}/app_src" | cut -f1))"
 
 # ── Patch pi-gen for Bookworm compatibility ──────────────────
-# rpi-resize.service was removed in Bookworm
-find "${PIGEN_DIR}" -name "*.sh" | xargs grep -rl "rpi-resize" 2>/dev/null | while read -r f; do
-    sed -i '/rpi-resize/d' "${f}"
-    warn "Patched: ${f}"
-done
+# rpi-resize.service was removed in Bookworm — strip any references.
+# grep exits 1 when nothing matches, so we OR true to avoid pipefail killing the script.
+info "Patching pi-gen for Bookworm compatibility..."
+grep -rl "rpi-resize" "${PIGEN_DIR}" --include="*.sh" 2>/dev/null \
+    | while read -r f; do
+        sed -i '/rpi-resize/d' "${f}"
+        warn "Patched rpi-resize: ${f}"
+    done || true
 
 # rpi-cloud-init-mods package doesn't exist in Bookworm — skip the stage
 touch "${PIGEN_DIR}/stage2/04-cloud-init/SKIP" 2>/dev/null || true
-info "Patching pi-gen for Bookworm compatibility done"
+info "Bookworm patches applied"
 
 # ── Wire our stage into pi-gen ───────────────────────────────
 info "Linking custom stage into pi-gen..."
