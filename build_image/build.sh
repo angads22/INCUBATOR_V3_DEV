@@ -63,6 +63,15 @@ rsync -a --delete \
 
 info "App source staged ($(du -sh "${STAGE_FILES}/app_src" | cut -f1))"
 
+# ── Patch pi-gen for Bookworm compatibility ──────────────────
+# rpi-resize.service was removed in Bookworm — strip any references
+# from pi-gen's own stage scripts so they don't fail trying to enable it.
+info "Patching pi-gen for Bookworm compatibility..."
+find "${PIGEN_DIR}" -name "*.sh" | xargs grep -rl "rpi-resize" 2>/dev/null | while read -r f; do
+    sed -i '/rpi-resize/d' "${f}"
+    warn "Patched: ${f}"
+done
+
 # ── Wire our stage into pi-gen ───────────────────────────────
 info "Linking custom stage into pi-gen..."
 rm -rf "${PIGEN_DIR}/stage-incubator"
