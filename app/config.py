@@ -56,11 +56,15 @@ class Settings:
     sensor_poll_interval_seconds: int = field(default_factory=lambda: int(os.getenv("SENSOR_POLL_INTERVAL", "30")))
     sensor_log_to_db: bool = field(default_factory=lambda: os.getenv("SENSOR_LOG_TO_DB", "true").lower() == "true")
 
-    # --- Cloud (optional) ---
+    # --- Cloud / OTA (optional) ---
     enable_cloud_sync: bool = field(default_factory=lambda: os.getenv("ENABLE_CLOUD_SYNC", "false").lower() == "true")
     domain_api_base: str = field(default_factory=lambda: os.getenv("DOMAIN_API_BASE", "").strip())
     device_shared_secret: str = field(default_factory=lambda: os.getenv("DEVICE_SHARED_SECRET", "").strip())
     heartbeat_interval_seconds: int = field(default_factory=lambda: int(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "300")))
+    # Unique device identifier written by firstboot.sh and embedded in the env file
+    device_id: str = field(default_factory=lambda: os.getenv("INCUBATOR_DEVICE_ID", "").strip())
+    # How often (seconds) the OTA timer fires; 0 = disabled (managed by systemd timer)
+    ota_poll_interval_seconds: int = field(default_factory=lambda: int(os.getenv("OTA_POLL_INTERVAL_SECONDS", "0")))
 
     # --- Dev overrides ---
     gpio_mock: bool = field(default_factory=lambda: os.getenv("GPIO_MOCK", "false").lower() == "true")
