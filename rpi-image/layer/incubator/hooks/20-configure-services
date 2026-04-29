@@ -1,0 +1,111 @@
+#!/bin/bash
+# Hook 20 — Install and enable the incubator systemd services.
+# Runs inside the image chroot during the bdebstrap customize phase.
+set -euo pipefail
+
+INSTALL_DIR="/opt/incubator"
+SYSTEMD_DIR="/etc/systemd/system"
+
+# ---------------------------------------------------------------------------
+# Main application service
+# ---------------------------------------------------------------------------
+cat > "${SYSTEMD_DIR}/incubator.service" << 'EOF'
+[Unit]
+Description=Incubator v3 (Pi Zero 2W)
+Documentation=https://github.com/angads22/incubator_v3_dev
+After=network-online.target NetworkManager.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/incubator
+EnvironmentFile=/etc/incubator.env
+ExecStart=/opt/incubator/.venv/bin/uvicorn app.main:app \
+    --host 0.0.0.0 --port 8000 --log-level info
+Restart=always
+RestartSec=5
+# Limit runaway restarts to avoid burning SD card
+StartLimitInterval=60
+StartLimitBurst=5
+SupplementaryGroups=gpio dialout video
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ---------------------------------------------------------------------------
+# OTA update service (oneshot, triggered by timer or cloud command)
+# ---------------------------------------------------------------------------
+cat > "${SYSTEMD_DIR}/incubator-ota.service" << 'EOF'
+[Unit]
+Description=Incubator OTA Update Agent
+After=network-online.target
+Wants=network-online.target
+# Never run while an update is already in progress
+ConditionPathExists=!/run/incubator-ota.lock
+
+[Service]
+Type=oneshot
+ExecStart=/opt/incubator/scripts/ota-agent.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=incubator-ota
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ---------------------------------------------------------------------------
+# OTA timer — check for updates every 15 minutes
+# ---------------------------------------------------------------------------
+cat > "${SYSTEMD_DIR}/incubator-ota.timer" << 'EOF'
+[Unit]
+Description=Incubator OTA update check (every 15 min)
+Requires=incubator-ota.service
+
+[Timer]
+# Randomize start within a 5-minute window so many devices don't hammer the
+# server at the same second after a power-cycle event.
+OnBootSec=5min
+OnUnitActiveSec=15min
+RandomizedDelaySec=2min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
+EOF
+
+# ---------------------------------------------------------------------------
+# First-boot provisioning service
+# ---------------------------------------------------------------------------
+cat > "${SYSTEMD_DIR}/incubator-firstboot.service" << 'EOF'
+[Unit]
+Description=Incubator first-boot provisioning
+DefaultDependencies=no
+Before=incubator.service incubator-ota.timer
+ConditionPathExists=!/etc/incubator-firstboot.done
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/incubator/scripts/firstboot.sh
+StandardOutput=journal
+SyslogIdentifier=incubator-firstboot
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ---------------------------------------------------------------------------
+# Enable services
+# ---------------------------------------------------------------------------
+systemctl enable incubator.service
+systemctl enable incubator-ota.timer
+systemctl enable incubator-firstboot.service
+
+# Disable getty on tty1 to reduce attack surface on headless Pi Zero
+systemctl disable getty@tty1.service 2>/dev/null || true
+
+echo "[incubator] systemd services configured and enabled"

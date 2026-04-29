@@ -1,0 +1,88 @@
+---
+# rpi-image-gen layer definition for Incubator v3
+# Validate with: rpi-image-gen metadata --lint layer/incubator/layer.yaml
+
+name: incubator
+description: |
+  Incubator v3 application layer for Raspberry Pi Zero 2W.
+  Installs the FastAPI incubator application, configures systemd services,
+  and sets up the OTA update agent for automatic application updates.
+author: Incubator Team
+
+# ---------------------------------------------------------------------------
+# APT packages installed into the image filesystem
+# ---------------------------------------------------------------------------
+packages:
+  # Python runtime
+  - python3
+  - python3-pip
+  - python3-venv
+  - python3-dev
+
+  # Version control (git-pull OTA)
+  - git
+
+  # Network utilities
+  - curl
+  - ca-certificates
+  - network-manager
+  - dnsmasq                  # Needed for AP hotspot DHCP
+  - iw
+
+  # GPIO / hardware
+  - libgpiod2
+  - libgpiod-dev
+
+  # Camera (picamera2 is a Raspberry Pi OS system package)
+  - python3-picamera2
+
+  # Math/image libs required by numpy / Pillow / tflite
+  - libatlas-base-dev
+  - libjpeg-dev
+  - zlib1g-dev
+  - libopenblas0
+
+  # Build tools needed by pip for compiled wheels
+  - gcc
+  - build-essential
+
+  # Utilities used by hook and OTA scripts
+  - jq
+  - rsync
+  - xxd
+
+# ---------------------------------------------------------------------------
+# Layer variables
+# Declare variables this layer consumes.  rpi-image-gen validates that each
+# variable is defined before the build starts.
+# ---------------------------------------------------------------------------
+variables:
+  INCUBATOR_APP_REPO:
+    type: string
+    description: Git remote URL for the incubator application
+    default: https://github.com/angads22/incubator_v3_dev.git
+    optional: false
+
+  INCUBATOR_APP_GIT_REF:
+    type: string
+    description: Git ref (tag / branch / SHA) to embed in the image
+    default: main
+    optional: false
+
+  INCUBATOR_HOSTNAME:
+    type: string
+    description: Base hostname written to /etc/hostname
+    default: incubator
+    optional: true
+
+# ---------------------------------------------------------------------------
+# Hook scripts executed during the bdebstrap build phases.
+# Scripts run INSIDE the chroot after all packages have been installed.
+# ---------------------------------------------------------------------------
+hooks:
+  # Main customisation phase (runs after pkg installation, inside chroot)
+  customize:
+    - hooks/10-install-incubator
+    - hooks/20-configure-services
+    - hooks/30-ota-setup
+    - hooks/40-firstboot-setup
