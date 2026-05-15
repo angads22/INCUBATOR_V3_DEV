@@ -13,6 +13,8 @@ class Settings:
     # --- Auth ---
     require_login: bool = field(default_factory=lambda: os.getenv("INCUBATOR_REQUIRE_LOGIN", "false").lower() == "true")
     session_cookie_name: str = field(default_factory=lambda: os.getenv("INCUBATOR_SESSION_COOKIE_NAME", "incubator_session"))
+    session_secure: bool = field(default_factory=lambda: os.getenv("INCUBATOR_SESSION_SECURE", "false").lower() == "true")
+    session_ttl_seconds: int = field(default_factory=lambda: int(os.getenv("INCUBATOR_SESSION_TTL_SECONDS", "2592000")))
 
     # --- GPIO pin assignments (BCM numbering) ---
     # Sensors

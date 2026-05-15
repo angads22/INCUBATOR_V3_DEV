@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SERVICE_NAME="incubator-v3"
+SERVICE_NAME="incubator"
 API_PORT="${API_PORT:-8000}"
 
 _run_as_root() {

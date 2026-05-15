@@ -1,22 +1,25 @@
 from __future__ import annotations
 
+import hashlib
 import re
+import secrets
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from ..auth import get_user_id_from_session, hash_password
+from ..auth import get_user_id_from_session, hash_password, verify_password
 from ..config import settings
 from ..database import get_db
-from ..models import ActionLog, DeviceConfig, User
+from ..models import ActionLog, DeviceConfig, Session as AuthSession, User
 from ..schemas import HotspotSetupPayload
 from ..services.ai_service import AIService
 from ..settings_store import get_settings, update_settings
@@ -437,6 +440,52 @@ def api_settings_update(payload: SettingsUpdate, db: Session = Depends(get_db)) 
     return {"ok": True}
 
 
+class LoginPayload(BaseModel):
+    username: str = Field(min_length=1)
+    password: str = Field(min_length=1)
+
+
+@router.post("/api/login")
+def api_login(
+    payload: LoginPayload,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> dict:
+    user = db.scalar(select(User).where(User.username == payload.username))
+    if not user or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
+        seconds=settings.session_ttl_seconds
+    )
+    db.add(AuthSession(user_id=user.id, token_hash=token_hash, expires_at=expires_at))
+    db.commit()
+
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=token,
+        max_age=settings.session_ttl_seconds,
+        httponly=True,
+        secure=settings.session_secure,
+        samesite="lax",
+        path="/",
+    )
+    return {"ok": True, "username": user.username}
+
+
 @router.post("/api/logout")
-def api_logout() -> dict:
+def api_logout(
+    response: Response,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict:
+    if session_token:
+        token_hash = hashlib.sha256(session_token.encode("utf-8")).hexdigest()
+        active = db.scalar(select(AuthSession).where(AuthSession.token_hash == token_hash))
+        if active:
+            db.delete(active)
+            db.commit()
+    response.delete_cookie(key=settings.session_cookie_name, path="/")
     return {"ok": True}
