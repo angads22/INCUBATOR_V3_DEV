@@ -95,6 +95,7 @@ WORK_DIR="${OUT_DIR}/.build"
 ROOT_MNT="${WORK_DIR}/rootfs"
 LOOP_DEV=""
 RESOLV_BACKED_UP=0
+NEED_EMULATION=0   # set to 1 in ensure_tools when the host is not arm64
 
 # ── Cleanup (idempotent; runs on any exit) ───────────────────────────────────
 cleanup() {
@@ -136,28 +137,44 @@ ensure_tools() {
     fi
 
     # Cross-arch emulation is only needed when the host is not arm64.
-    if [[ "$HOST_ARCH" != "aarch64" && "$HOST_ARCH" != "arm64" ]]; then
-        if ! command -v qemu-aarch64-static >/dev/null 2>&1; then
-            if command -v apt-get >/dev/null 2>&1; then
-                info "Installing qemu-user-static for arm64 emulation..."
-                apt-get update -qq
-                apt-get install -y --no-install-recommends qemu-user-static binfmt-support >/dev/null \
-                    || error "Could not install qemu-user-static. Install it manually."
-            else
-                error "qemu-aarch64-static not found and apt-get unavailable. Install qemu-user-static."
-            fi
-        fi
-        # Make sure the binfmt handler is actually registered.
-        if ! ls /proc/sys/fs/binfmt_misc/qemu-aarch64* >/dev/null 2>&1; then
-            command -v update-binfmts >/dev/null 2>&1 && update-binfmts --enable qemu-aarch64 2>/dev/null || true
-            systemctl restart systemd-binfmt 2>/dev/null || true
-        fi
-        ls /proc/sys/fs/binfmt_misc/qemu-aarch64* >/dev/null 2>&1 \
-            || error "arm64 binfmt handler not registered. Try: apt-get install --reinstall qemu-user-static binfmt-support"
-        info "arm64 emulation ready (host arch: ${HOST_ARCH})."
-    else
+    if [[ "$HOST_ARCH" == "aarch64" || "$HOST_ARCH" == "arm64" ]]; then
         info "Native arm64 host — no emulation needed."
+        return
     fi
+    NEED_EMULATION=1
+
+    # If an arm64 binfmt handler is already registered (e.g. CI ran
+    # docker/setup-qemu-action, or qemu-user-static's binfmt service is up),
+    # nothing more to do — that registration survives into the chroot.
+    if ls /proc/sys/fs/binfmt_misc/qemu-aarch64* >/dev/null 2>&1; then
+        info "arm64 emulation already registered (host arch: ${HOST_ARCH})."
+        return
+    fi
+
+    # Otherwise try to install + register it ourselves.
+    if command -v apt-get >/dev/null 2>&1; then
+        info "Installing qemu-user-static for arm64 emulation..."
+        apt-get update -qq
+        apt-get install -y --no-install-recommends qemu-user-static binfmt-support >/dev/null \
+            || warn "qemu-user-static install reported an error; checking registration anyway."
+    fi
+    command -v update-binfmts >/dev/null 2>&1 && update-binfmts --enable qemu-aarch64 2>/dev/null || true
+    systemctl restart systemd-binfmt 2>/dev/null || true
+    # Last resort: register the handler directly via the kernel interface.
+    if ! ls /proc/sys/fs/binfmt_misc/qemu-aarch64* >/dev/null 2>&1; then
+        local qemu_bin; qemu_bin="$(command -v qemu-aarch64-static || true)"
+        if [[ -n "$qemu_bin" ]]; then
+            mountpoint -q /proc/sys/fs/binfmt_misc 2>/dev/null \
+                || mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
+            # ELF magic for aarch64, with the 'F' (fix-binary) flag so the
+            # interpreter is loaded once and stays valid inside the chroot.
+            printf ':qemu-aarch64:M::\\x7fELF\\x02\\x01\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\x00\\xb7\\x00:\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\x00\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xfe\\xff\\xff\\xff:%s:F' \
+                "$qemu_bin" > /proc/sys/fs/binfmt_misc/register 2>/dev/null || true
+        fi
+    fi
+    ls /proc/sys/fs/binfmt_misc/qemu-aarch64* >/dev/null 2>&1 || error \
+        "arm64 emulation is not registered. In CI add a 'docker/setup-qemu-action' step before this; locally run: sudo apt-get install --reinstall qemu-user-static binfmt-support"
+    info "arm64 emulation ready (host arch: ${HOST_ARCH})."
 }
 
 # ── Acquire + decompress the base image ──────────────────────────────────────
@@ -238,8 +255,12 @@ mount_image() {
     rm -f "${ROOT_MNT}/etc/resolv.conf"
     cp /etc/resolv.conf "${ROOT_MNT}/etc/resolv.conf" 2>/dev/null || echo "nameserver 1.1.1.1" > "${ROOT_MNT}/etc/resolv.conf"
 
-    if [[ "$HOST_ARCH" != "aarch64" && "$HOST_ARCH" != "arm64" ]]; then
-        cp "$(command -v qemu-aarch64-static)" "${ROOT_MNT}/usr/bin/"
+    # Copy the static emulator into the guest as a fallback. With the binfmt
+    # 'F' (fix-binary) flag the kernel already holds the interpreter open, so
+    # this is best-effort — a missing host binary must not abort the build.
+    if [[ "$NEED_EMULATION" == "1" ]]; then
+        local qemu_bin; qemu_bin="$(command -v qemu-aarch64-static || true)"
+        [[ -n "$qemu_bin" ]] && cp "$qemu_bin" "${ROOT_MNT}/usr/bin/" 2>/dev/null || true
     fi
 }
 

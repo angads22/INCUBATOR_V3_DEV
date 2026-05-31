@@ -23,6 +23,18 @@ jobs:
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache || true
           df -h /
 
+      # Register arm64 emulation in the kernel (binfmt_misc) with the persistent
+      # 'F' flag so it stays valid inside the chroot build_image.sh creates.
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Verify arm64 emulation is registered
+        run: |
+          ls -l /proc/sys/fs/binfmt_misc/qemu-aarch64*
+          cat /proc/sys/fs/binfmt_misc/qemu-aarch64 || true
+
       - name: Build image
         run: sudo ./build_image.sh --hostname "${{ github.event.inputs.hostname }}"
 
