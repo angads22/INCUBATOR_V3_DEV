@@ -6,14 +6,21 @@ from typing import TYPE_CHECKING, Any
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from ..auth import get_user_id_from_session, hash_password
+from ..auth import (
+    authenticate,
+    create_session,
+    destroy_session,
+    get_user_id_from_session,
+    has_any_user,
+    hash_password,
+)
 from ..config import settings
 from ..database import get_db
 from ..models import ActionLog, DeviceConfig, User
@@ -55,10 +62,42 @@ def set_runtime_services(
     _vision_service = vision_service
 
 
+def _login_required(db: Session) -> bool:
+    """Auth is enforced when explicitly required, or once an account exists.
+
+    This gives the appliance its expected lifecycle: a fresh device is open so
+    onboarding can run, but as soon as an owner account is created during setup
+    every protected page and control API requires a valid session.
+    """
+    return settings.require_login or has_any_user(db)
+
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=token,
+        max_age=settings.session_ttl_seconds,
+        httponly=True,
+        samesite="lax",
+        secure=settings.session_secure,
+        path="/",
+    )
+
+
+def _clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(key=settings.session_cookie_name, path="/")
+
+
 def _auth_redirect(db: Session, session_token: str | None):
-    if settings.require_login and not get_user_id_from_session(db, session_token):
+    if _login_required(db) and not get_user_id_from_session(db, session_token):
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
     return None
+
+
+def _require_api_user(db: Session, session_token: str | None) -> None:
+    """Raise 401 for control APIs when login is required and absent."""
+    if _login_required(db) and not get_user_id_from_session(db, session_token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
 
 def _render(request: Request, name: str, context: dict[str, Any]):
@@ -312,8 +351,18 @@ def hardware_page(
 
 
 @router.get("/login", response_class=HTMLResponse)
-def login_page(request: Request):
-    return _render(request=request, name="login.html", context={"version": settings.app_version})
+def login_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+):
+    if get_user_id_from_session(db, session_token):
+        return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+    return _render(
+        request=request,
+        name="login.html",
+        context={"version": settings.app_version, "has_account": has_any_user(db)},
+    )
 
 
 @router.get("/onboarding", response_class=HTMLResponse)
@@ -359,7 +408,7 @@ def onboarding_wifi_scan() -> dict:
 
 
 @router.post("/onboarding/complete")
-def onboarding_complete(payload: HotspotSetupPayload, db: Session = Depends(get_db)) -> dict:
+def onboarding_complete(payload: HotspotSetupPayload, response: Response, db: Session = Depends(get_db)) -> dict:
     config = db.scalar(select(DeviceConfig).limit(1))
     if not config:
         config = DeviceConfig(device_id=f"PI-{__import__('uuid').uuid4().hex[:8].upper()}", claimed=False)
@@ -368,26 +417,33 @@ def onboarding_complete(payload: HotspotSetupPayload, db: Session = Depends(get_
     config.device_name = payload.device_name
     config.wifi_ssid = payload.ssid or None
 
+    new_user: User | None = None
     if payload.create_account and payload.username and payload.email and payload.password:
         if not _EMAIL_RE.match(payload.email):
             raise HTTPException(status_code=422, detail="Invalid email address.")
+        if len(payload.password) < 8:
+            raise HTTPException(status_code=422, detail="Password must be at least 8 characters.")
         existing = db.scalar(
             select(User).where((User.username == payload.username) | (User.email == payload.email))
         )
         if existing:
             raise HTTPException(status_code=409, detail="Username or email already exists.")
-        db.add(
-            User(
-                username=payload.username,
-                email=payload.email,
-                password_hash=hash_password(payload.password),
-                role="owner",
-            )
+        new_user = User(
+            username=payload.username,
+            email=payload.email,
+            password_hash=hash_password(payload.password),
+            role="owner",
         )
+        db.add(new_user)
         config.claimed = True
 
     db.add(ActionLog(action="onboarding_complete", payload=f"device={payload.device_name},ssid={payload.ssid}"))
     db.commit()
+
+    # Log the new owner straight in so they are not locked out by the account
+    # they just created.
+    if new_user is not None:
+        _set_session_cookie(response, create_session(db, new_user.id, settings.session_ttl_seconds))
 
     # Switch from AP to client WiFi
     if _onboarding_service:
@@ -414,7 +470,12 @@ class SettingsUpdate(BaseModel):
 
 
 @router.post("/api/settings")
-def api_settings_update(payload: SettingsUpdate, db: Session = Depends(get_db)) -> dict:
+def api_settings_update(
+    payload: SettingsUpdate,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict:
+    _require_api_user(db, session_token)
     updates: dict[str, str] = {}
     if payload.target_temp_c is not None:
         updates["target_temp_c"] = str(payload.target_temp_c)
@@ -437,6 +498,28 @@ def api_settings_update(payload: SettingsUpdate, db: Session = Depends(get_db)) 
     return {"ok": True}
 
 
+class LoginPayload(BaseModel):
+    username: str
+    password: str
+
+
+@router.post("/api/login")
+def api_login(payload: LoginPayload, response: Response, db: Session = Depends(get_db)) -> dict:
+    user = authenticate(db, payload.username, payload.password)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
+    _set_session_cookie(response, create_session(db, user.id, settings.session_ttl_seconds))
+    db.add(ActionLog(action="login", payload=user.username))
+    db.commit()
+    return {"ok": True, "username": user.username}
+
+
 @router.post("/api/logout")
-def api_logout() -> dict:
+def api_logout(
+    response: Response,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict:
+    destroy_session(db, session_token)
+    _clear_session_cookie(response)
     return {"ok": True}

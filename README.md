@@ -1,142 +1,134 @@
-# Incubator v3 (UNO Q + ESP32)
+# Incubator v3 — Raspberry Pi Zero 2W
 
-UNO Q-hosted FastAPI incubator control app with ESP32 UART hardware bridge.
+A local-first egg-incubator controller for the **Raspberry Pi Zero 2W**. It runs
+a FastAPI web app that drives the incubator hardware over GPIO (heater, fan, egg
+turner, candling LED, door/lock relays, DHT22 sensor, Pi Camera) and serves an
+operator dashboard on the local network.
 
-## Audit summary (current repo)
+The device is an appliance: flash the SD card, power on, and finish setup from
+your phone over a Wi-Fi hotspot — **no keyboard, monitor, or internet required**.
 
-## Version history
+---
 
-- **1.30 (feature, current)**: Registered the web router in `app/main.py`, mounted static files, and restored the `/` HTML dashboard route while keeping `/docs` available.
-- **1.20 (previous)**: API-focused baseline release for UNO Q + ESP32 backend scaffolding and deployment flow, before the web router was wired into the FastAPI app.
+## Fastest path: build a ready-to-flash image
 
-Active, authoritative files currently used by runtime:
-
-- `app/main.py` (FastAPI routes, templates, API, auth/session wiring)
-- `app/models.py`, `app/database.py` (SQLAlchemy persistence)
-- `app/services/*` (hardware and camera abstraction)
-- `app/templates/*` + `app/static/css/*` + `app/static/js/*` (operator UI)
-- `deploy/incubator-v3.service`, `deploy/incubator-v3.env.example`, `init_unoq.sh` (UNO Q deployment)
-
-No extra dead-end modules are used by the current runtime path.
-
-## Pi-app reference note
-
-The original Pi repository was not available in this container session, so parity was implemented from your provided requirements (dashboard hierarchy, appliance-style control flow, terminology, status-first layout). When the Pi repo path/URL is available, UI text/layout can be tightened further for exact parity.
-
-## User-facing routes
-
-Frontend:
-
-- `/` dashboard
-- `/settings`
-- `/status`
-- `/hardware`
-- `/login`
-- `/onboarding`
-- `/help`
-
-API:
-
-- `GET /health`
-- `GET /setup/status`
-- `POST /setup/complete`
-- `POST /hardware/send`
-- `GET /docs`
-- `GET /openapi.json`
-
-## Local run (UNO Q)
-Linux-first incubator backend for **Arduino UNO Q** with **ESP32** as hardware/provisioning bridge.
-
-## Pi parity (what stays the same)
-
-- Backend still runs on Linux with FastAPI + SQLite.
-- Core API behavior remains similar (`/health`, setup flow, hardware dispatch).
-- Business logic remains on the Linux board.
-
-## What changed from Pi
-
-- No direct Pi GPIO/camera assumptions.
-- Hardware/camera actions route through ESP32 over UART via service abstractions.
-
-## Quick start (local dev)
+`build_image.sh` is a single script that bakes the app, its dependencies, and
+the systemd service into the official Raspberry Pi OS Lite image, producing one
+`.img.xz` you flash to a microSD card.
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e .
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+# On a Linux build host (x86 or arm64), with root:
+sudo ./build_image.sh
 ```
 
-If you see `No module named uvicorn`, your virtualenv is not active or dependencies are not installed yet. Re-run:
+This downloads Raspberry Pi OS Lite (arm64), installs everything into the image
+(using `qemu` emulation on non-ARM hosts), and writes
+`dist/incubator-v3-<version>-<date>.img.xz`.
+
+Flash it with **Raspberry Pi Imager** (*Use custom* → pick the file),
+**balenaEtcher**, or `dd`:
 
 ```bash
-source .venv/bin/activate
-python -m pip install -e .
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+xz -dc dist/incubator-v3-*.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
-If you see `No module named uvicorn`, your virtualenv is not active or dependencies are not installed yet. Re-run:
+Useful options (`./build_image.sh --help` for all):
+
+| Option | Purpose |
+|--------|---------|
+| `--base <path|url>` | Use a local/alternate base image instead of downloading |
+| `--hostname <name>` | Set the Pi hostname (default `incubator`) |
+| `--user / --password` | Create an OS login for SSH access (optional) |
+| `--no-compress` | Emit a raw `.img` instead of `.img.xz` |
+
+### First boot (account creation + user auth)
+
+1. Insert the card, power on the Pi.
+2. It broadcasts Wi-Fi **`Incubator-XXXX`** (password printed by the build and
+   stored in `/etc/incubator.env`).
+3. Join that network and open **http://10.42.0.1:8000**.
+4. The setup wizard walks you through:
+   - selecting your home Wi-Fi network,
+   - naming the device,
+   - **creating an operator account** (username + email + password).
+5. After setup the Pi joins your Wi-Fi. From then on the dashboard **requires
+   login** — sign in at `/login` with the account you created.
+
+Re-enter setup later by holding the **setup button (GPIO18) for 4 seconds**.
+
+---
+
+## Authentication model
+
+- A fresh device is open so onboarding can run.
+- As soon as an operator account exists, every page and control API
+  (`/api/settings`, `/hardware/send`) requires a valid session cookie.
+- Passwords are stored as PBKDF2-HMAC-SHA256 hashes; sessions are random tokens
+  stored only as SHA-256 hashes server-side.
+- Sign in with username **or** email at `/login`; sign out from the profile menu.
+- Knobs (in `/etc/incubator.env`): `INCUBATOR_REQUIRE_LOGIN`,
+  `INCUBATOR_SESSION_SECURE` (set behind HTTPS), `INCUBATOR_SESSION_TTL`.
+
+---
+
+## Alternative: install onto an existing Raspberry Pi OS
+
+If you already have Raspberry Pi OS Lite (64-bit, Bookworm) running:
 
 ```bash
-source .venv/bin/activate
-python -m pip install -e .
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+git clone https://github.com/angads22/incubator_v3_dev /home/pi/incubator
+sudo bash /home/pi/incubator/init_pi.sh /opt/incubator
 ```
 
-## UNO Q local workflow (recommended)
+`init_pi.sh` installs system packages, builds a Python venv, writes
+`/etc/incubator.env` with a random AP password, and enables the `incubator`
+systemd service. (`build_image.sh` reuses this same installer inside the image.)
+
+---
+
+## Local development (no Pi hardware)
 
 ```bash
-./init_unoq.sh
-sudo systemctl status incubator-v3.service
-# optional dev-only foreground run (service must be stopped first):
-# ./scripts/start.sh
-# stop service/foreground process:
-# ./scripts/stop.sh
-# later updates:
-./scripts/update.sh
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+GPIO_MOCK=true CAMERA_BACKEND=mock VISION_BACKEND=mock ./scripts/start.sh
 ```
 
-## Systemd deployment
+Open http://localhost:8000 — all hardware/camera/vision calls return simulated
+data, and the full onboarding + auth flow works.
 
-- Service template: `deploy/incubator-v3.service`
-- Env template: `deploy/incubator-v3.env.example`
-- Full deploy guide: `docs/UNOQ_DEPLOY.md`
+---
 
-## Private remote hosting guidance (recommended)
+## Routes
 
-Do **not** expose this app publicly without an access layer.
+**Web UI:** `/` (dashboard), `/status`, `/settings`, `/hardware`, `/help`,
+`/onboarding`, `/login`
 
-Preferred options:
+**API:** `GET /health`, `GET /setup/status`, `POST /setup/complete`,
+`POST /api/login`, `POST /api/logout`, `POST /api/settings`,
+`POST /hardware/send`, `GET /api/sensors/latest`, `GET /docs`
 
-1. Reverse proxy (Nginx/Caddy) with HTTPS + auth gate (OIDC/BasicAuth)
-2. VPN-only (e.g., Tailscale subnet route/device ACL)
-3. Authenticated private tunnel (Cloudflare Tunnel Access policies)
+---
 
-Security defaults:
+## Project layout
 
-- Session cookie is HTTPOnly.
-- Set `INCUBATOR_SESSION_SECURE=true` when behind HTTPS.
-- Keep host firewall locked to trusted ingress path only.
+| Path | Purpose |
+|------|---------|
+| `build_image.sh` | **Build a flashable SD-card image** |
+| `init_pi.sh` | On-device installer (also runs inside the image build) |
+| `app/main.py` | FastAPI app, lifecycle, core API |
+| `app/routes/` | Web pages, onboarding, auth, settings APIs |
+| `app/auth.py` | Password hashing + session management |
+| `app/services/` | GPIO, camera, Wi-Fi/hotspot, vision, onboarding |
+| `app/models.py`, `app/database.py` | SQLAlchemy persistence (SQLite) |
+| `app/templates/`, `app/static/` | Operator UI |
+| `deploy/` | systemd unit + env template |
+| `docs/PI_DEPLOY.md` | Full deployment + GPIO wiring guide |
 
-## Known TODOs
+---
 
-- Integrate Pi repo exact visual/wording parity once repo is available.
-- Replace placeholder ESP32 command names with AG-robotics protocol mappings.
-- Add role-based authorization and stronger CSRF protection for control endpoints.
-## Deployment docs
+## Security notes
 
-- Full deploy guide: [`docs/UNOQ_DEPLOY.md`](docs/UNOQ_DEPLOY.md)
-- Env template: [`deploy/incubator-v3.env.example`](deploy/incubator-v3.env.example)
-- Service template: [`deploy/incubator-v3.service`](deploy/incubator-v3.service)
-
-## Next step
-
-Integrate AG-robotics UART protocol + camera transfer implementation into `app/services/esp32_link.py` and `app/services/camera_service.py`.
-
-
-## Pin 2 setup trigger (AP onboarding)
-
-- Hold button on **pin 2** for ~4 seconds while running to enter setup mode.
-- Device can also be forced into setup mode via onboarding endpoint for local testing.
-- Setup mode brings up hotspot/AP onboarding at `http://192.168.4.1` and guides Wi-Fi + device setup.
-- Local operation does not depend on internet/domain availability.
+- Don't expose port 8000 directly to the internet. Use Tailscale, WireGuard, or
+  a reverse proxy with HTTPS, and set `INCUBATOR_SESSION_SECURE=true`.
+- The `/etc/incubator.env` file holds the AP password and is mode `600`.

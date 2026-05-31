@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "incubator-v3"
-version = "1.31.0"
+version = "1.40.0"
 description = "Incubator v3 — Raspberry Pi Zero 2W edition"
 requires-python = ">=3.11"
 dependencies = [

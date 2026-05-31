@@ -17,6 +17,12 @@ REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV_DIR="${INSTALL_DIR}/.venv"
 DATA_DIR="/var/incubator"
 
+# IMAGE_BUILD=1 is set by build_image.sh when running inside a chroot while
+# baking an SD-card image. In that mode there is no running init system, so we
+# only *enable* units (create symlinks) and skip daemon-reload/start/health
+# checks — the service starts on the first real boot instead.
+IMAGE_BUILD="${INCUBATOR_IMAGE_BUILD:-0}"
+
 # ── Colour helpers ────────────────────────────────────────────
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
@@ -50,19 +56,28 @@ if command -v raspi-config &>/dev/null; then
     raspi-config nonint do_camera 0 || true
 fi
 
-# Ensure NetworkManager is running (needed for hotspot AP mode)
-systemctl enable --now NetworkManager || true
+# Ensure NetworkManager is enabled (needed for hotspot AP mode)
+if [[ "$IMAGE_BUILD" == "1" ]]; then
+    systemctl enable NetworkManager || true
+else
+    systemctl enable --now NetworkManager || true
+fi
 
 # ── Create install directory and copy files ──────────────────
-info "Deploying application to ${INSTALL_DIR}..."
 mkdir -p "${INSTALL_DIR}"
-rsync -a --delete \
-    --exclude='.git' \
-    --exclude='.venv' \
-    --exclude='*.pyc' \
-    --exclude='__pycache__' \
-    --exclude='captures' \
-    "${REPO_DIR}/" "${INSTALL_DIR}/"
+if [[ "$IMAGE_BUILD" == "1" && "$REPO_DIR" == "$INSTALL_DIR" ]]; then
+    info "Image build — application already staged at ${INSTALL_DIR}."
+else
+    info "Deploying application to ${INSTALL_DIR}..."
+    rsync -a --delete \
+        --exclude='.git' \
+        --exclude='.venv' \
+        --exclude='*.pyc' \
+        --exclude='__pycache__' \
+        --exclude='captures' \
+        --exclude='dist' \
+        "${REPO_DIR}/" "${INSTALL_DIR}/"
+fi
 
 # ── Data directories ─────────────────────────────────────────
 info "Creating data directories..."
@@ -116,16 +131,27 @@ sed \
     "${INSTALL_DIR}/deploy/incubator.service" \
     > "${SERVICE_FILE}"
 
-systemctl daemon-reload
-systemctl enable "${SERVICE_NAME}"
-systemctl restart "${SERVICE_NAME}"
+# Enable the unit. `systemctl enable` works offline (in a chroot) too, but fall
+# back to a manual wants-symlink if systemd is unavailable.
+systemctl enable "${SERVICE_NAME}" 2>/dev/null \
+    || ln -sf "${SERVICE_FILE}" "/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service"
 
 # ── GPIO permissions ─────────────────────────────────────────
 # Add the service user (root) to gpio group — already root so skip.
 # If you change User= in the service file, add that user to gpio group.
 usermod -aG gpio,dialout,video root 2>/dev/null || true
 
-# ── Health check ─────────────────────────────────────────────
+# ── Start + health check (skipped during image build) ────────
+if [[ "$IMAGE_BUILD" == "1" ]]; then
+    AP_PASS_SHOWN="$(grep INCUBATOR_AP_PASSWORD "${ENV_FILE}" | cut -d= -f2)"
+    info "Image build complete — service enabled, will start on first boot."
+    info "First boot broadcasts AP 'Incubator-XXXX' (password: ${AP_PASS_SHOWN}) at http://10.42.0.1:8000"
+    exit 0
+fi
+
+systemctl daemon-reload
+systemctl restart "${SERVICE_NAME}"
+
 info "Waiting for service to start..."
 sleep 5
 if systemctl is-active --quiet "${SERVICE_NAME}"; then

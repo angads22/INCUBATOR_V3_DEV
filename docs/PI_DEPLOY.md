@@ -44,32 +44,45 @@ Relay modules with active-LOW inputs (most 5V SRD-05VDC-SL-C modules):
 
 ## First-Time Setup
 
-### 1. Flash OS
+Choose **one** of two installation paths. Both end at the same first-boot
+onboarding flow.
 
-Flash **Raspberry Pi OS Lite (64-bit, Bookworm)** to a microSD card using Raspberry Pi Imager.  
-Enable SSH and set hostname in the imager advanced settings.
+### Option A — Build and flash a ready-to-run image (recommended)
 
-### 2. Boot and SSH in
+On a Linux build host (root required):
 
 ```bash
-ssh pi@raspberrypi.local
+git clone https://github.com/angads22/incubator_v3_dev
+cd incubator_v3_dev
+sudo ./build_image.sh
 ```
 
-### 3. Clone and run init script
+This produces `dist/incubator-v3-<version>-<date>.img.xz` with the app,
+dependencies, and service pre-installed. Flash it to a microSD card with
+Raspberry Pi Imager (*Use custom*), balenaEtcher, or `dd`, then insert it and
+power on. No internet is needed on the Pi at first boot. See
+`./build_image.sh --help` for options (custom base image, hostname, SSH user).
+
+### Option B — Manual install on existing Raspberry Pi OS
+
+1. Flash **Raspberry Pi OS Lite (64-bit, Bookworm)** with Raspberry Pi Imager;
+   enable SSH and set a hostname in the advanced settings.
+2. SSH in: `ssh pi@raspberrypi.local`
+3. Clone and run the installer:
 
 ```bash
 git clone https://github.com/angads22/incubator_v3_dev /home/pi/incubator
 sudo bash /home/pi/incubator/init_pi.sh /opt/incubator
 ```
 
-This script:
+`init_pi.sh`:
 - Installs system packages (`python3-picamera2`, `libgpiod2`, NetworkManager, etc.)
 - Creates a Python venv with all dependencies
-- Creates `/etc/incubator.env` with randomised AP password
+- Creates `/etc/incubator.env` with a randomised AP password
 - Installs and enables the `incubator` systemd service
 - Enables the camera interface
 
-### 4. First boot onboarding
+### First boot onboarding (both options)
 
 On a fresh install the device has no WiFi config, so it **automatically broadcasts a WiFi hotspot**:
 
@@ -82,16 +95,19 @@ IP:       http://10.42.0.1:8000
 1. Connect your phone/laptop to the `Incubator-XXXX` network
 2. Open **http://10.42.0.1:8000** in a browser
 3. Complete the onboarding wizard:
-   - Name your incubator
    - Select and connect to your home WiFi
-   - (Optional) create an owner account
-4. The Pi switches from AP to client mode automatically
+   - Name your incubator
+   - Create an operator account (username + email + password)
+4. The Pi switches from AP to client mode automatically and logs you in
+
+Once an operator account exists, the dashboard requires login. Sign in at
+`/login` with your username (or email) and password.
 
 ### Re-entering setup mode
 
 Hold the **setup button** (GPIO18) for **4 seconds**.  The AP restarts.
 
-### 5. Normal operation
+### Normal operation
 
 After onboarding the service is accessible on the local network:
 
@@ -118,7 +134,7 @@ Key settings:
 | `CAMERA_BACKEND` | `picamera2` | `picamera2` / `opencv` / `mock` |
 | `VISION_BACKEND` | `mock` | `tflite` / `api` / `mock` |
 | `VISION_API_URL` | *(empty)* | Remote vision model endpoint |
-| `INCUBATOR_REQUIRE_LOGIN` | `false` | Enforce password login |
+| `INCUBATOR_REQUIRE_LOGIN` | `false` | Force login even before an account exists (login is auto-enforced once one does) |
 | `SENSOR_POLL_INTERVAL` | `30` | DHT22 poll interval (seconds) |
 
 ---

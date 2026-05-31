@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_ROOT=$(cd -- "$SCRIPT_DIR/.." && pwd)
-SERVICE_NAME="incubator-v3"
+SERVICE_NAME="incubator"
 API_PORT="${API_PORT:-8000}"
 cd "$PROJECT_ROOT"
 
@@ -14,7 +14,7 @@ _run_as_root() { [[ "${EUID:-$(id -u)}" -eq 0 ]] && "$@" || sudo "$@"; }
 git pull
 
 if [[ ! -d .venv ]]; then
-  echo "[ERROR] .venv not found. Run ./init_unoq.sh first."
+  echo "[ERROR] .venv not found. Run: sudo bash init_pi.sh"
   exit 1
 fi
 

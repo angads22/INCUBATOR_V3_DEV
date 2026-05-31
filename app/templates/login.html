@@ -8,6 +8,9 @@
     <label>Password<input name="password" type="password" required /></label>
     <button class="btn btn-primary" type="submit">Login</button>
     <p id="login-msg" class="hint"></p>
+    {% if not has_account %}
+    <p class="muted">No account yet? <a href="/onboarding">Run device setup</a> to create one.</p>
+    {% endif %}
   </form>
 </section>
 {% endblock %}
