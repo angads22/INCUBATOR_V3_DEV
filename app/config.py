@@ -11,8 +11,13 @@ class Settings:
     app_version: str = field(default_factory=lambda: os.getenv("INCUBATOR_APP_VERSION", VERSION))
 
     # --- Auth ---
+    # When false, login is still auto-enforced once an owner account exists.
     require_login: bool = field(default_factory=lambda: os.getenv("INCUBATOR_REQUIRE_LOGIN", "false").lower() == "true")
     session_cookie_name: str = field(default_factory=lambda: os.getenv("INCUBATOR_SESSION_COOKIE_NAME", "incubator_session"))
+    # Mark the session cookie Secure — enable when serving over HTTPS.
+    session_secure: bool = field(default_factory=lambda: os.getenv("INCUBATOR_SESSION_SECURE", "false").lower() == "true")
+    # Session lifetime in seconds (default 7 days).
+    session_ttl_seconds: int = field(default_factory=lambda: int(os.getenv("INCUBATOR_SESSION_TTL", "604800")))
 
     # --- GPIO pin assignments (BCM numbering) ---
     # Sensors

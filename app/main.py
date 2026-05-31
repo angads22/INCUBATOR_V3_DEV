@@ -20,12 +20,12 @@ import time
 import uuid
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Response, status
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .auth import hash_password
+from .auth import create_session, get_user_id_from_session, has_any_user, hash_password
 from .config import settings
 from .database import Base, engine, get_db
 from .models import ActionLog, DeviceConfig, SensorLog, User
@@ -259,7 +259,7 @@ def setup_status(db: Session = Depends(get_db)) -> SetupStatus:
 
 
 @app.post("/setup/complete")
-def complete_setup(payload: OnboardingPayload, db: Session = Depends(get_db)) -> dict:
+def complete_setup(payload: OnboardingPayload, response: Response, db: Session = Depends(get_db)) -> dict:
     config = db.scalar(select(DeviceConfig).limit(1))
     if not config:
         raise HTTPException(status_code=500, detail="Device config missing")
@@ -273,14 +273,13 @@ def complete_setup(payload: OnboardingPayload, db: Session = Depends(get_db)) ->
     if existing:
         raise HTTPException(status_code=409, detail="User already exists")
 
-    db.add(
-        User(
-            username=payload.username,
-            email=payload.email,
-            password_hash=hash_password(payload.password),
-            role="owner",
-        )
+    user = User(
+        username=payload.username,
+        email=payload.email,
+        password_hash=hash_password(payload.password),
+        role="owner",
     )
+    db.add(user)
     config.claimed = True
     config.device_name = payload.device_name
     config.farm_name = payload.farm_name
@@ -290,6 +289,17 @@ def complete_setup(payload: OnboardingPayload, db: Session = Depends(get_db)) ->
         payload=payload.model_dump_json(exclude={"password", "wifi_password"}),
     ))
     db.commit()
+
+    # Auto-login the new owner so the claim flow lands authenticated.
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=create_session(db, user.id, settings.session_ttl_seconds),
+        max_age=settings.session_ttl_seconds,
+        httponly=True,
+        samesite="lax",
+        secure=settings.session_secure,
+        path="/",
+    )
     return {"ok": True, "claimed": True, "device_name": config.device_name}
 
 
@@ -300,7 +310,14 @@ def sensors_latest() -> dict:
 
 
 @app.post("/hardware/send")
-def send_hardware_command(payload: HardwareCommand, db: Session = Depends(get_db)) -> dict:
+def send_hardware_command(
+    payload: HardwareCommand,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict:
+    # Physical actuator control requires a session once an account exists.
+    if (settings.require_login or has_any_user(db)) and not get_user_id_from_session(db, session_token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     handler = {
         "open_lock": hardware_service.open_lock,
         "close_lock": hardware_service.close_lock,

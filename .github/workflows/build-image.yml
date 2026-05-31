@@ -1,0 +1,35 @@
+name: Build SD image
+
+# Manually triggered. Builds the flashable Pi image in the cloud and uploads it
+# as a downloadable artifact — useful if you don't have a Linux machine to run
+# build_image.sh on (e.g. Windows users): run this, then download + flash.
+on:
+  workflow_dispatch:
+    inputs:
+      hostname:
+        description: "Pi hostname"
+        default: "incubator"
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache || true
+          df -h /
+
+      - name: Build image
+        run: sudo ./build_image.sh --hostname "${{ github.event.inputs.hostname }}"
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: incubator-sd-image
+          path: dist/*.img.xz
+          retention-days: 14
+          if-no-files-found: error

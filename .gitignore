@@ -3,6 +3,11 @@ __pycache__/
 *.db
 .venv/
 *.egg-info/
+# Image-build artifacts (build_image.sh)
+dist/
+.image-cache/
+*.img
+*.img.xz
 models/vision/*
 models/llm/*
 !models/vision/README.md
