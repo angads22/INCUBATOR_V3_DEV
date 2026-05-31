@@ -36,10 +36,15 @@ Useful options (`./build_image.sh --help` for all):
 
 | Option | Purpose |
 |--------|---------|
-| `--base <path|url>` | Use a local/alternate base image instead of downloading |
+| `--base <path\|url>` | Use a local/alternate base image instead of downloading |
 | `--hostname <name>` | Set the Pi hostname (default `incubator`) |
 | `--user / --password` | Create an OS login for SSH access (optional) |
+| `--grow <MB>` | Root-fs headroom for the pre-baked deps (default 2560) |
 | `--no-compress` | Emit a raw `.img` instead of `.img.xz` |
+
+> **On Windows?** The script needs Linux. Easiest path: run the **Build SD
+> image** GitHub Action and download the artifact — or use WSL2. See
+> [docs/BUILD_WINDOWS.md](docs/BUILD_WINDOWS.md).
 
 ### First boot (account creation + user auth)
 
@@ -97,6 +102,16 @@ GPIO_MOCK=true CAMERA_BACKEND=mock VISION_BACKEND=mock ./scripts/start.sh
 Open http://localhost:8000 — all hardware/camera/vision calls return simulated
 data, and the full onboarding + auth flow works.
 
+Run the test suite (auth lifecycle, in mock mode):
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+CI (`.github/workflows/ci.yml`) runs these tests plus `bash -n` on every push
+and PR.
+
 ---
 
 ## Routes
@@ -124,6 +139,9 @@ data, and the full onboarding + auth flow works.
 | `app/templates/`, `app/static/` | Operator UI |
 | `deploy/` | systemd unit + env template |
 | `docs/PI_DEPLOY.md` | Full deployment + GPIO wiring guide |
+| `docs/BUILD_WINDOWS.md` | Building the image from Windows |
+| `tests/` | Auth-lifecycle tests (pytest, mock mode) |
+| `.github/workflows/` | CI (lint + tests) and on-demand image build |
 
 ---
 

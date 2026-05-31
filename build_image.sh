@@ -36,6 +36,7 @@
 #    --password <pw>     Password for the SSH login user (enables SSH login).
 #    --no-ssh            Do not enable the SSH server.
 #    --no-compress       Leave the raw .img instead of compressing to .img.xz.
+#    --grow <MB>         Extra root-fs space added before installing (default 2560).
 #    --cache <dir>       Where to cache downloaded base images (default: ./.image-cache).
 #    -h, --help          Show this help.
 #
@@ -56,6 +57,7 @@ SSH_USER=""
 SSH_PASS=""
 ENABLE_SSH=1
 COMPRESS=1
+GROW_MB=2560   # extra root-fs headroom for the pre-baked venv + apt packages
 
 # ── Colour helpers ───────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -78,6 +80,7 @@ while [[ $# -gt 0 ]]; do
         --cache)       CACHE_DIR="${2:-}"; shift 2 ;;
         --no-ssh)      ENABLE_SSH=0; shift ;;
         --no-compress) COMPRESS=0; shift ;;
+        --grow)        GROW_MB="${2:-}"; shift 2 ;;
         -h|--help)     usage ;;
         *) error "Unknown option: $1 (try --help)" ;;
     esac
@@ -115,7 +118,7 @@ trap cleanup EXIT INT TERM
 ensure_tools() {
     step "Checking build dependencies..."
     local missing=()
-    for t in losetup mount umount rsync xz openssl; do
+    for t in losetup mount umount rsync xz openssl resize2fs e2fsck growpart; do
         command -v "$t" >/dev/null 2>&1 || missing+=("$t")
     done
     if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
@@ -123,9 +126,10 @@ ensure_tools() {
     fi
     if ((${#missing[@]})); then
         if command -v apt-get >/dev/null 2>&1; then
-            info "Installing host packages: util-linux rsync xz-utils openssl curl"
+            info "Installing host packages (util-linux rsync xz-utils openssl curl e2fsprogs cloud-guest-utils parted)"
             apt-get update -qq && apt-get install -y --no-install-recommends \
-                util-linux rsync xz-utils openssl curl ca-certificates >/dev/null
+                util-linux rsync xz-utils openssl curl ca-certificates \
+                e2fsprogs cloud-guest-utils parted >/dev/null
         else
             error "Missing tools: ${missing[*]}. Install them and re-run."
         fi
@@ -194,10 +198,26 @@ acquire_base() {
 
 # ── Mount partitions + prepare chroot ────────────────────────────────────────
 mount_image() {
+    # Grow the image first: the stock Lite root partition has very little free
+    # space, not enough for the pre-baked venv + apt packages.
+    if [[ "${GROW_MB:-0}" -gt 0 ]]; then
+        step "Adding ${GROW_MB} MB of root-fs headroom..."
+        truncate -s "+${GROW_MB}M" "$WORK_IMG"
+    fi
+
     step "Loop-mounting image partitions..."
     LOOP_DEV="$(losetup -fP --show "$WORK_IMG")" || error "losetup failed"
     [[ -e "${LOOP_DEV}p2" ]] || { sleep 1; partprobe "$LOOP_DEV" 2>/dev/null || true; }
     [[ -e "${LOOP_DEV}p2" ]] || error "Root partition ${LOOP_DEV}p2 not found"
+
+    if [[ "${GROW_MB:-0}" -gt 0 ]]; then
+        step "Growing root partition + filesystem..."
+        growpart "$LOOP_DEV" 2 2>/dev/null || parted -s "$LOOP_DEV" resizepart 2 100% 2>/dev/null \
+            || warn "Could not grow partition table — install may run out of space."
+        partprobe "$LOOP_DEV" 2>/dev/null || partx -u "$LOOP_DEV" 2>/dev/null || true
+        e2fsck -fy "${LOOP_DEV}p2" >/dev/null 2>&1 || true
+        resize2fs "${LOOP_DEV}p2" >/dev/null 2>&1 || warn "resize2fs failed — install may run out of space."
+    fi
 
     mkdir -p "$ROOT_MNT"
     mount "${LOOP_DEV}p2" "$ROOT_MNT" || error "Cannot mount root partition"
