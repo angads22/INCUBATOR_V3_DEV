@@ -12,8 +12,8 @@ Let GitHub build the image for you and download the result.
 1. Push this repo to GitHub (it already is, if you're reading this there).
 2. Go to the **Actions** tab → **Build SD image** → **Run workflow**.
    - Optionally set a hostname (default `incubator`).
-3. Wait for it to finish (~30–60 min — it emulates ARM in the cloud while
-   installing the app + dependencies into the image).
+3. Wait for it to finish (~10–25 min — it builds on a **native ARM64** runner,
+   so the app + dependencies install at full speed with no emulation).
 4. Open the completed run → **Artifacts** → download **`incubator-sd-image`**.
 5. Unzip it to get `incubator-v3-<version>-<date>.img.xz`.
 6. Flash it (see **Flashing** below).
