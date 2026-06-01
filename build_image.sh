@@ -36,7 +36,7 @@
 #    --password <pw>     Password for the SSH login user (enables SSH login).
 #    --no-ssh            Do not enable the SSH server.
 #    --no-compress       Leave the raw .img instead of compressing to .img.xz.
-#    --grow <MB>         Extra root-fs space added before installing (default 2560).
+#    --grow <MB>         Extra root-fs space added before installing (default 2048).
 #    --cache <dir>       Where to cache downloaded base images (default: ./.image-cache).
 #    -h, --help          Show this help.
 #
@@ -57,7 +57,10 @@ SSH_USER=""
 SSH_PASS=""
 ENABLE_SSH=1
 COMPRESS=1
-GROW_MB=2560   # extra root-fs headroom for the pre-baked venv + apt packages
+GROW_MB=2048   # extra root-fs headroom for the pre-baked venv + apt packages
+               # (~1 GB is used; rest is slack). Kept small so the image flashes
+               # onto an 8 GB card — the root fs auto-expands to fill the card on
+               # first boot, so a compact image loses nothing.
 
 # ── Colour helpers ───────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BLUE='\033[0;34m'; NC='\033[0m'
