@@ -39,8 +39,12 @@ jobs:
       # build_image.sh downloads Raspberry Pi OS Lite (arm64), grows it, chroots
       # in (natively — no QEMU), runs init_pi.sh in IMAGE_BUILD mode, enables SSH,
       # and writes dist/incubator-v3-<version>-<date>.img.xz (already compressed).
+      # --grow 2048 adds just enough root-fs headroom for the pre-baked venv +
+      # apt packages (~1 GB) while keeping the raw image small (~4.7 GB) so it
+      # flashes onto an 8 GB card. The filesystem auto-expands to fill the whole
+      # card on first boot, so nothing is lost by keeping the image compact.
       - name: Build image
-        run: sudo ./build_image.sh --hostname "${{ github.event.inputs.hostname }}" --grow 4096
+        run: sudo ./build_image.sh --hostname "${{ github.event.inputs.hostname }}" --grow 2048
 
       - name: Upload image artifact
         uses: actions/upload-artifact@v4

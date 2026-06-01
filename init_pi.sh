@@ -134,6 +134,12 @@ info "Installing Python dependencies..."
     tflite-runtime numpy \
     --quiet 2>/dev/null || warn "TFLite runtime not available — vision will use mock or API backend"
 
+# Trim the pip download cache so the baked image stays as small as possible.
+# A smaller image flashes onto more SD cards; Raspberry Pi OS auto-expands the
+# root filesystem to fill the whole card on first boot anyway.
+"${VENV_DIR}/bin/pip" cache purge >/dev/null 2>&1 || true
+rm -rf /root/.cache/pip "${HOME:-/root}/.cache/pip" 2>/dev/null || true
+
 # ── Environment file ─────────────────────────────────────────
 if [ ! -f "${ENV_FILE}" ]; then
     info "Creating ${ENV_FILE}..."
