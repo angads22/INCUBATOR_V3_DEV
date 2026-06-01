@@ -1,0 +1,45 @@
+#!/bin/bash
+# Hook 10 — Clone the incubator app and create the Python virtualenv.
+# Runs inside the image chroot during the bdebstrap customize phase.
+set -euo pipefail
+
+INSTALL_DIR="/opt/incubator"
+DATA_DIR="/var/incubator"
+REPO="${INCUBATOR_APP_REPO:-https://github.com/angads22/incubator_v3_dev.git}"
+GIT_REF="${INCUBATOR_APP_GIT_REF:-main}"
+
+echo "[incubator] Cloning ${REPO}@${GIT_REF} → ${INSTALL_DIR}"
+git clone --depth 1 --branch "${GIT_REF}" "${REPO}" "${INSTALL_DIR}"
+
+# Record the baked-in git ref so the OTA agent knows the baseline
+git -C "${INSTALL_DIR}" rev-parse HEAD > "${INSTALL_DIR}/.git-sha"
+echo "${GIT_REF}" > "${INSTALL_DIR}/.git-ref"
+
+# Persistent data directories (survive rootfs upgrades if mounted separately)
+mkdir -p \
+    "${DATA_DIR}/captures" \
+    "${DATA_DIR}/models/vision" \
+    "${DATA_DIR}/models/llm" \
+    "${DATA_DIR}/db"
+
+# Symlink database into persistent storage
+ln -sf "${DATA_DIR}/db" "${INSTALL_DIR}/database"
+
+echo "[incubator] Creating Python virtualenv..."
+python3 -m venv --system-site-packages "${INSTALL_DIR}/.venv"
+
+echo "[incubator] Installing Python dependencies (pi extras)..."
+"${INSTALL_DIR}/.venv/bin/pip" install --upgrade pip --quiet
+"${INSTALL_DIR}/.venv/bin/pip" install \
+    --extra-index-url https://www.piwheels.org/simple \
+    -e "${INSTALL_DIR}[pi]" \
+    --quiet
+
+# TFLite is optional — skip if unavailable for this platform
+"${INSTALL_DIR}/.venv/bin/pip" install \
+    --extra-index-url https://www.piwheels.org/simple \
+    tflite-runtime numpy \
+    --quiet 2>/dev/null \
+    || echo "[incubator] TFLite unavailable — vision will use API/mock backend"
+
+echo "[incubator] App installed at ${INSTALL_DIR}"
