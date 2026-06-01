@@ -46,11 +46,22 @@ apt-get update -qq \
 
 # Essential: the app, onboarding/account creation + auth, and the Wi-Fi hotspot
 # all need these. A failure here is fatal — there's no usable device without them.
+# Raspberry Pi OS package names can vary by Debian base (e.g. t64 transition), so
+# detect the available runtime package before installing essentials.
+GPIO_RUNTIME_PKG=""
+for pkg in libgpiod2 libgpiod2t64 libgpiod3; do
+    if apt-cache show "$pkg" >/dev/null 2>&1; then
+        GPIO_RUNTIME_PKG="$pkg"
+        break
+    fi
+done
+[[ -n "$GPIO_RUNTIME_PKG" ]] || error "No compatible libgpiod runtime package found."
+
 apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv python3-dev \
     git curl ca-certificates \
     network-manager \
-    libgpiod2 \
+    "$GPIO_RUNTIME_PKG" \
     libjpeg-dev zlib1g-dev \
     || error "Failed to install essential system packages."
 
