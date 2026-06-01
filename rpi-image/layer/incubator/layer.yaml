@@ -30,7 +30,6 @@ packages:
   - iw
 
   # GPIO / hardware
-  - libgpiod2
   - libgpiod-dev
 
   # Camera (picamera2 is a Raspberry Pi OS system package)
