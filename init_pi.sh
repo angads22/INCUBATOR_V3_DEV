@@ -39,16 +39,30 @@ echo ""
 
 # ── System packages ──────────────────────────────────────────
 info "Installing system packages..."
-apt-get update -qq
+# apt-get can transiently fail under cross-arch emulation (image builds); retry.
+apt-get update -qq \
+    || { warn "apt-get update failed; retrying in 3s..."; sleep 3; apt-get update -qq; } \
+    || error "apt-get update failed."
+
+# Essential: the app, onboarding/account creation + auth, and the Wi-Fi hotspot
+# all need these. A failure here is fatal — there's no usable device without them.
 apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv python3-dev \
     git curl ca-certificates \
     network-manager \
     libgpiod2 \
-    libatlas-base-dev \
-    python3-picamera2 \
     libjpeg-dev zlib1g-dev \
-    > /dev/null
+    || error "Failed to install essential system packages."
+
+# Camera + BLAS are heavier and only used for vision/candling, not for the
+# first-boot setup/auth flow. Their maintainer scripts (libcamera, etc.) can
+# choke under QEMU emulation, so don't let that abort an image build — they can
+# be added on the device later: sudo apt install python3-picamera2 libatlas-base-dev
+apt-get install -y --no-install-recommends \
+    python3-picamera2 libatlas-base-dev \
+    || warn "Camera/BLAS packages not installed (install on-device later if needed)."
+
+apt-get clean
 
 # Enable camera interface if raspi-config is available
 if command -v raspi-config &>/dev/null; then

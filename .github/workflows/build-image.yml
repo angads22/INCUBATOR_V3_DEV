@@ -19,7 +19,12 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Pin to 22.04 on purpose. ubuntu-latest is now 24.04, whose newer QEMU
+    # segfaults while emulating arm64 inside apt/dpkg/gpgv — which surfaces as
+    # `apt-get` exit code 100 a few minutes into the build. 22.04's QEMU 6.x
+    # runs the cross-arch apt/pip install reliably. (This is the single most
+    # common arm-runner-action failure mode.)
+    runs-on: ubuntu-22.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +45,10 @@ jobs:
         with:
           base_image: raspios_lite_arm64:latest
           cpu: cortex-a53
-          image_additional_mb: 2560
+          # Working headroom for the pre-baked apt packages + venv + pip wheels.
+          # optimize_image (default) shrinks the rootfs afterward, so the
+          # distributed image stays small regardless of this number.
+          image_additional_mb: 4096
           copy_repository_path: /opt/incubator
           shell: /bin/bash
           commands: |
