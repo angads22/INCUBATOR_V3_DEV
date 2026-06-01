@@ -44,7 +44,7 @@
 #  The incubator operator ACCOUNT (the web login) is created in the browser
 #  during first-boot onboarding — that is the "account creation + user auth".
 # =============================================================================
-set -euo pipefail
+set -Eeuo pipefail   # -E so the ERR trap is inherited by functions/subshells
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -64,7 +64,13 @@ GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BLUE='\033[0;34m'; NC
 info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 step()  { echo -e "${BLUE}[STEP]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
-error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
+# In GitHub Actions, also emit a ::error:: annotation so the failure reason is
+# visible on the run summary (not just buried in the step log body).
+error() {
+    echo -e "${RED}[ERROR]${NC} $*" >&2
+    [[ -n "${GITHUB_ACTIONS:-}" ]] && echo "::error title=build_image.sh::$*"
+    exit 1
+}
 
 # Print the banner comment (between the two ===== delimiter lines) as help text.
 usage() { sed -n '3,/^# ===/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0; }
@@ -114,6 +120,17 @@ cleanup() {
     LOOP_DEV=""
 }
 trap cleanup EXIT INT TERM
+
+# Surface the exact failing line as a CI annotation for any command that trips
+# `set -e` (not just our explicit error() calls), since the step log body isn't
+# always reachable from the run summary.
+on_err() {
+    local rc=$?
+    [[ -n "${GITHUB_ACTIONS:-}" ]] && \
+        echo "::error title=build_image.sh::failed at line ${BASH_LINENO[0]:-?} (exit ${rc}): ${BASH_COMMAND}"
+    return 0
+}
+trap on_err ERR
 
 # ── Dependency checks ────────────────────────────────────────────────────────
 ensure_tools() {
@@ -192,10 +209,25 @@ acquire_base() {
             info "Using cached download: ${archive}"
         else
             step "Downloading Raspberry Pi OS Lite (arm64)..."
-            if command -v curl >/dev/null 2>&1; then
-                curl -fL --retry 3 -o "${archive}.part" "$src" || error "Download failed: $src"
-            else
-                wget -O "${archive}.part" "$src" || error "Download failed: $src"
+            # Try the requested URL, then the other official CDN as a fallback.
+            local urls=("$src")
+            [[ "$src" == "$BASE_IMAGE_URL_DEFAULT" ]] && \
+                urls+=("https://downloads.raspberrypi.org/raspios_lite_arm64_latest")
+            local got=0 u
+            for u in "${urls[@]}"; do
+                info "Fetching ${u}"
+                rm -f "${archive}.part"
+                if command -v curl >/dev/null 2>&1; then
+                    curl -fL --retry 3 --connect-timeout 30 -o "${archive}.part" "$u" && { got=1; break; }
+                else
+                    wget -O "${archive}.part" "$u" && { got=1; break; }
+                fi
+                warn "Download failed from ${u}"
+            done
+            [[ "$got" == "1" ]] || error "Could not download the base image (tried: ${urls[*]}). Pass --base <path|url>."
+            # A captive portal / error page would download as HTML, not xz — catch it.
+            if command -v file >/dev/null 2>&1 && ! file -bL "${archive}.part" | grep -qiE 'XZ|compress'; then
+                error "Downloaded file is not an xz image (got: $(file -bL "${archive}.part")) — mirror likely returned an error page."
             fi
             mv "${archive}.part" "$archive"
         fi
