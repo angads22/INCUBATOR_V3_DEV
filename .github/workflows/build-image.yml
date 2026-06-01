@@ -3,6 +3,12 @@ name: Build SD image
 # Manually triggered. Builds the flashable Pi image in the cloud and uploads it
 # as a downloadable artifact — useful if you don't have a Linux machine to run
 # build_image.sh on (e.g. Windows users): run this, then download + flash.
+#
+# This uses pguyot/arm-runner-action, the battle-tested action for mutating a
+# Raspberry Pi OS image in CI. It owns the fragile parts (base-image download,
+# resize, QEMU/binfmt arm64 emulation, loop mount, chroot) and runs our SAME
+# init_pi.sh inside the arm64 root filesystem — so "what gets installed" lives
+# in one place (init_pi.sh), shared with the local build_image.sh path.
 on:
   workflow_dispatch:
     inputs:
@@ -14,7 +20,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -23,20 +29,53 @@ jobs:
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache || true
           df -h /
 
-      # Register arm64 emulation in the kernel (binfmt_misc) with the persistent
-      # 'F' flag so it stays valid inside the chroot build_image.sh creates.
-      - name: Set up QEMU (arm64 emulation)
-        uses: docker/setup-qemu-action@v3
+      # Bakes the app + deps + service into a fresh Raspberry Pi OS Lite (arm64)
+      # image. arm-runner-action downloads the base image, grows it, registers
+      # arm64 emulation, chroots in, copies the repo to /opt/incubator, and runs
+      # our commands. INCUBATOR_IMAGE_BUILD=1 makes init_pi.sh enable (not start)
+      # the service so it comes up on the Pi's first real boot.
+      - name: Build Incubator image
+        id: build
+        uses: pguyot/arm-runner-action@v2
         with:
-          platforms: arm64
+          base_image: raspios_lite_arm64:latest
+          cpu: cortex-a53
+          image_additional_mb: 2560
+          copy_repository_path: /opt/incubator
+          shell: /bin/bash
+          commands: |
+            set -euo pipefail
+            export INCUBATOR_IMAGE_BUILD=1
+            export DEBIAN_FRONTEND=noninteractive
 
-      - name: Verify arm64 emulation is registered
+            # Hostname (input is substituted by GitHub before the script runs).
+            H="${{ github.event.inputs.hostname }}"
+            [ -z "$H" ] && H="incubator"
+            echo "$H" > /etc/hostname
+            sed -i "s/127.0.1.1.*/127.0.1.1\t$H/" /etc/hosts 2>/dev/null || \
+              printf '127.0.1.1\t%s\n' "$H" >> /etc/hosts
+
+            # Install app, deps, and the systemd service into the image.
+            # REPO_DIR == INSTALL_DIR here, so init_pi.sh skips the rsync.
+            bash /opt/incubator/init_pi.sh /opt/incubator
+
+            # Keep the image lean — drop the VCS metadata we copied in.
+            rm -rf /opt/incubator/.git
+
+            # Enable SSH for headless access (rootfs unit + boot flag file).
+            systemctl enable ssh 2>/dev/null || true
+            touch /boot/firmware/ssh 2>/dev/null || touch /boot/ssh 2>/dev/null || true
+
+      - name: Rename + compress image
         run: |
-          ls -l /proc/sys/fs/binfmt_misc/qemu-aarch64*
-          cat /proc/sys/fs/binfmt_misc/qemu-aarch64 || true
-
-      - name: Build image
-        run: sudo ./build_image.sh --hostname "${{ github.event.inputs.hostname }}"
+          VERSION="$(grep -oP 'VERSION\s*=\s*"\K[^"]+' app/version.py 2>/dev/null || echo dev)"
+          STAMP="$(date +%Y%m%d)"
+          OUT="incubator-v3-${VERSION}-${STAMP}.img"
+          mv "${{ steps.build.outputs.image }}" "$OUT"
+          echo "Compressing $OUT ..."
+          xz -T0 -6 "$OUT"
+          mkdir -p dist && mv "${OUT}.xz" dist/
+          ls -lh dist/
 
       - name: Upload image artifact
         uses: actions/upload-artifact@v4
