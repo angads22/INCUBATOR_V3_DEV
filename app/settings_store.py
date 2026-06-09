@@ -11,6 +11,11 @@ DEFAULT_SETTINGS = {
     "fan_enabled": "true",
     "turner_enabled": "true",
     "alarm_enabled": "true",
+    # Alerting: readings outside target ± tolerance raise an alert; the
+    # sensor counts as offline after this many consecutive failed reads.
+    "alert_temp_tolerance_c": "1.0",
+    "alert_humidity_tolerance_pct": "10",
+    "alert_sensor_fail_count": "3",
     "private_access_hint": "vpn_or_reverse_proxy",
 }
 

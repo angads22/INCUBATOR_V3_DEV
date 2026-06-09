@@ -2,6 +2,14 @@
 {% block content %}
 {% with eyebrow='Home', title='Incubator Home', subtitle='Local-first appliance dashboard for setup, health, and daily operation.' %}{% include 'partials/section_header.html' %}{% endwith %}
 
+<div id="alertBanner" class="alert-banner"{% if not alerts.active %} hidden{% endif %}>
+  <div>
+    <strong>Attention needed</strong>
+    <p id="alertBannerText" class="alert-banner-text">{% for a in alerts.active %}{{ a.message }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+  </div>
+  <button id="alertSilenceBtn" class="btn btn-secondary" type="button"{% if not alerts.alarm_on %} hidden{% endif %}>Silence alarm</button>
+</div>
+
 <section class="dashboard-grid home-dashboard appliance-home">
   <div class="panel-group">
     <article class="card home-hero">
@@ -27,8 +35,11 @@
     <article class="card">
       <h3>Overview / incubator health</h3>
       <div class="metrics-grid compact-metrics">
-        {% with label='Temperature', value='%.1f°C'|format(live.temperature_c), hint='Target %.1f°C'|format(live.target_temp_c) %}{% include 'partials/metric_card.html' %}{% endwith %}
-        {% with label='Humidity', value='%.1f%%'|format(live.humidity_pct), hint='Target %.1f%%'|format(live.target_humidity_pct) %}{% include 'partials/metric_card.html' %}{% endwith %}
+        {% with label='Temperature', value=('%.1f°C'|format(sensor.temperature_c) if sensor.temperature_c is not none else '—'), hint='Target %.1f°C'|format(live.target_temp_c), value_id='liveTemp' %}{% include 'partials/metric_card.html' %}{% endwith %}
+        {% with label='Humidity', value=('%.1f%%'|format(sensor.humidity_pct) if sensor.humidity_pct is not none else '—'), hint='Target %.1f%%'|format(live.target_humidity_pct), value_id='liveHum' %}{% include 'partials/metric_card.html' %}{% endwith %}
+      </div>
+      <div class="chip-row" id="sensorOfflineRow"{% if sensor.online %} hidden{% endif %}>
+        <span class="status-chip status-warn" id="sensorOfflineChip">Sensor offline{% if sensor.read_at %} — last reading {{ sensor.read_at }}{% endif %}</span>
       </div>
       <div class="chip-row key-state-row">
         {% with label=('Door closed' if live.door_closed else 'Door open'), tone=('ok' if live.door_closed else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
@@ -36,7 +47,7 @@
         {% with label=('Fan on' if live.fan else 'Fan off'), tone=('ok' if live.fan else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
         {% with label=('Turner on' if live.turner else 'Turner off'), tone=('ok' if live.turner else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
       </div>
-      <p class="muted">Live sensor data from DHT22. Readings update every {{ settings.get('sensor_poll_interval', '30') }}s.</p>
+      <p class="muted">Live sensor data from DHT22. Readings update every {{ poll_interval }}s. <span id="updatedAgo"></span></p>
     </article>
   </div>
 
@@ -102,4 +113,7 @@
     </article>
   </div>
 </section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/dashboard.js"></script>
 {% endblock %}

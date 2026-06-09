@@ -17,18 +17,20 @@ from ..auth import (
     authenticate,
     create_session,
     destroy_session,
+    destroy_user_sessions,
     get_user_id_from_session,
     has_any_user,
     hash_password,
 )
 from ..config import settings
 from ..database import get_db
-from ..models import ActionLog, DeviceConfig, User
+from ..models import ActionLog, DeviceConfig, SensorLog, User
 from ..schemas import HotspotSetupPayload
 from ..services.ai_service import AIService
 from ..settings_store import get_settings, update_settings
 
 if TYPE_CHECKING:
+    from ..services.alert_service import AlertService
     from ..services.hardware_service import HardwareService
     from ..services.onboarding_service import OnboardingService
     from ..services.setup_mode_service import SetupModeService
@@ -45,6 +47,7 @@ _wifi_service: WiFiService | None = None
 _onboarding_service: OnboardingService | None = None
 _hardware_service: HardwareService | None = None
 _vision_service: VisionService | None = None
+_alert_service: AlertService | None = None
 
 
 def set_runtime_services(
@@ -53,13 +56,15 @@ def set_runtime_services(
     onboarding_service=None,
     hardware_service=None,
     vision_service=None,
+    alert_service=None,
 ) -> None:
-    global _setup_mode_service, _wifi_service, _onboarding_service, _hardware_service, _vision_service
+    global _setup_mode_service, _wifi_service, _onboarding_service, _hardware_service, _vision_service, _alert_service
     _setup_mode_service = setup_mode_service
     _wifi_service = wifi_service
     _onboarding_service = onboarding_service
     _hardware_service = hardware_service
     _vision_service = vision_service
+    _alert_service = alert_service
 
 
 def _login_required(db: Session) -> bool:
@@ -113,6 +118,71 @@ def _get_bool_setting(app_settings: dict[str, str], key: str, default: bool) -> 
     return app_settings.get(key, "true" if default else "false").lower() == "true"
 
 
+def _sensor_context(db: Session) -> dict[str, Any]:
+    """Cached sensor state for page rendering — never reads the DHT22 directly.
+
+    Falls back to the latest sensor_logs row when the in-process cache is
+    empty (fresh boot), so the UI shows the last known reading rather than
+    pretending the targets are live values.
+    """
+    if _alert_service:
+        sensor = _alert_service.sensor_snapshot()
+    else:
+        sensor = {
+            "online": False,
+            "has_reading": False,
+            "temperature_c": None,
+            "humidity_pct": None,
+            "read_at": None,
+            "mock": False,
+        }
+    if not sensor["has_reading"]:
+        last_log = db.scalar(select(SensorLog).order_by(desc(SensorLog.captured_at)).limit(1))
+        if last_log:
+            sensor.update(
+                has_reading=True,
+                temperature_c=last_log.temperature_c,
+                humidity_pct=last_log.humidity_pct,
+                read_at=last_log.captured_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            )
+    return sensor
+
+
+def _alerts_context() -> dict[str, Any]:
+    if _alert_service:
+        return _alert_service.alert_state()
+    return {"active": [], "alarm_on": False, "silenced": False}
+
+
+# Friendly labels for the recent-events list; unknown actions fall back to the
+# raw action name and payload.
+_FRIENDLY_ACTIONS = {
+    "login": "User logged in",
+    "onboarding_complete": "Device setup completed",
+    "setup_complete": "Device claimed",
+    "network_connect": "Connected to a new Wi-Fi network",
+    "alarm_silenced": "Alarm silenced",
+    "system.password_reset": "Account password was reset",
+    "system.sensor_offline": "Alert: sensor went offline",
+    "system.sensor_offline_cleared": "Sensor back online",
+    "system.temp_low": "Alert: temperature below range",
+    "system.temp_low_cleared": "Temperature back in range",
+    "system.temp_high": "Alert: temperature above range",
+    "system.temp_high_cleared": "Temperature back in range",
+    "system.humidity_low": "Alert: humidity below range",
+    "system.humidity_low_cleared": "Humidity back in range",
+    "system.humidity_high": "Alert: humidity above range",
+    "system.humidity_high_cleared": "Humidity back in range",
+}
+
+
+def _format_activity(row: ActionLog) -> str:
+    label = _FRIENDLY_ACTIONS.get(row.action)
+    if not label:
+        label = row.action + (f": {row.payload}" if row.payload else "")
+    return f"{row.created_at:%d %b %H:%M} — {label}"
+
+
 # ------------------------------------------------------------------
 # Dashboard
 # ------------------------------------------------------------------
@@ -157,18 +227,12 @@ def dashboard(
         network_state = "Not configured"
         network_detail = "No Wi-Fi configured. Restart or hold setup button."
 
-    # Live sensor snapshot — falls back to targets when hardware unavailable
-    if _hardware_service:
-        env = _hardware_service.read_environment()
-        live_temp = env.get("temperature_c") or float(app_settings.get("target_temp_c", "37.5"))
-        live_hum = env.get("humidity_pct") or float(app_settings.get("target_humidity_pct", "55"))
-    else:
-        live_temp = float(app_settings.get("target_temp_c", "37.5"))
-        live_hum = float(app_settings.get("target_humidity_pct", "55"))
+    # Cached sensor state — shown honestly: an offline sensor renders as
+    # offline with its last known reading, never as the target values.
+    sensor = _sensor_context(db)
+    alerts = _alerts_context()
 
     snapshot = {
-        "temperature_c": live_temp,
-        "humidity_pct": live_hum,
         "target_temp_c": float(app_settings.get("target_temp_c", "37.5")),
         "target_humidity_pct": float(app_settings.get("target_humidity_pct", "55")),
         "door_closed": _get_bool_setting(app_settings, "door_closed", default=True),
@@ -176,7 +240,9 @@ def dashboard(
         "fan": _get_bool_setting(app_settings, "fan_enabled", default=True),
         "turner": _get_bool_setting(app_settings, "turner_enabled", default=True),
     }
-    ai_insight = ai_service.generate_dashboard_insight(snapshot["temperature_c"], snapshot["humidity_pct"])
+    ai_insight = None
+    if sensor["temperature_c"] is not None and sensor["humidity_pct"] is not None:
+        ai_insight = ai_service.generate_dashboard_insight(sensor["temperature_c"], sensor["humidity_pct"])
 
     # Determine next-step card
     if hotspot_active or setup_mode:
@@ -232,6 +298,9 @@ def dashboard(
             "settings": app_settings,
             "version": settings.app_version,
             "live": snapshot,
+            "sensor": sensor,
+            "alerts": alerts,
+            "poll_interval": settings.sensor_poll_interval_seconds,
             "ai_insight": ai_insight,
             "ai_findings": ai_service.recent_findings(),
             "home_summary": {
@@ -252,9 +321,9 @@ def dashboard(
             "quick_actions": quick_actions,
             "vision_backend": settings.vision_backend,
             "recent_activity": [
-                row.action + (f": {row.payload}" if row.payload else "")
+                _format_activity(row)
                 for row in db.scalars(
-                    select(ActionLog).order_by(desc(ActionLog.created_at)).limit(5)
+                    select(ActionLog).order_by(desc(ActionLog.created_at)).limit(8)
                 ).all()
             ],
         },
@@ -277,14 +346,23 @@ def status_page(
 
     setup_mode = _setup_mode_service.is_setup_mode() if _setup_mode_service else False
     hw_state = _hardware_service.get_state() if _hardware_service else {}
-    env = _hardware_service.read_environment() if _hardware_service else {}
+    # Served from the poller's cache — the DHT22 is never read on the request path.
+    env = _sensor_context(db)
+    alerts = _alerts_context()
 
     if not _hardware_service:
         sensor_status = "unavailable"
-    elif env.get("ok"):
+    elif env["online"]:
         sensor_status = "online"
     else:
-        sensor_status = "error"
+        sensor_status = "offline"
+
+    if alerts["active"]:
+        alarms = f"{len(alerts['active'])} active" + (" (silenced)" if alerts["silenced"] else "")
+        alarms_tone = "warn"
+    else:
+        alarms = "none"
+        alarms_tone = "info"
 
     return _render(
         request=request,
@@ -294,13 +372,16 @@ def status_page(
             "health": {
                 "hardware": "online" if _hardware_service else "unavailable",
                 "sensors": sensor_status,
-                "alarms": "none",
+                "alarms": alarms,
+                "alarms_tone": alarms_tone,
                 "gpio_mock": settings.gpio_mock,
                 "setup_mode": "on" if setup_mode else "off",
                 "vision_backend": settings.vision_backend,
                 "camera_backend": settings.camera_backend,
+                "dht_pin": settings.gpio_dht_pin,
             },
             "environment": env,
+            "alerts": alerts,
             "hw_state": hw_state,
         },
     )
@@ -319,7 +400,17 @@ def help_page(
     redirect = _auth_redirect(db, session_token)
     if redirect:
         return redirect
-    return _render(request=request, name="help.html", context={"version": settings.app_version})
+    return _render(
+        request=request,
+        name="help.html",
+        context={
+            "version": settings.app_version,
+            "ap_ip": settings.ap_ip,
+            "ap_ssid_prefix": settings.ap_ssid_prefix,
+            "hold_seconds": int(settings.setup_button_hold_seconds),
+            "dht_pin": settings.gpio_dht_pin,
+        },
+    )
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -463,6 +554,8 @@ def onboarding_complete(payload: HotspotSetupPayload, response: Response, db: Se
 class SettingsUpdate(BaseModel):
     target_temp_c: float | None = Field(default=None, ge=20.0, le=42.0)
     target_humidity_pct: float | None = Field(default=None, ge=0.0, le=100.0)
+    alert_temp_tolerance_c: float | None = Field(default=None, ge=0.1, le=10.0)
+    alert_humidity_tolerance_pct: float | None = Field(default=None, ge=1.0, le=50.0)
     heater_enabled: bool | None = None
     fan_enabled: bool | None = None
     turner_enabled: bool | None = None
@@ -481,6 +574,10 @@ def api_settings_update(
         updates["target_temp_c"] = str(payload.target_temp_c)
     if payload.target_humidity_pct is not None:
         updates["target_humidity_pct"] = str(payload.target_humidity_pct)
+    if payload.alert_temp_tolerance_c is not None:
+        updates["alert_temp_tolerance_c"] = str(payload.alert_temp_tolerance_c)
+    if payload.alert_humidity_tolerance_pct is not None:
+        updates["alert_humidity_tolerance_pct"] = str(payload.alert_humidity_tolerance_pct)
     if payload.heater_enabled is not None:
         updates["heater_enabled"] = "true" if payload.heater_enabled else "false"
         if _hardware_service:
@@ -493,6 +590,10 @@ def api_settings_update(
         updates["turner_enabled"] = "true" if payload.turner_enabled else "false"
     if payload.alarm_enabled is not None:
         updates["alarm_enabled"] = "true" if payload.alarm_enabled else "false"
+        # Disabling the alarm should quiet a ringing buzzer immediately, not
+        # on the next poll cycle.
+        if not payload.alarm_enabled and _alert_service:
+            _alert_service.silence()
     if updates:
         update_settings(db, updates)
     return {"ok": True}
@@ -523,3 +624,120 @@ def api_logout(
     destroy_session(db, session_token)
     _clear_session_cookie(response)
     return {"ok": True}
+
+
+# ------------------------------------------------------------------
+# Alerts API
+# ------------------------------------------------------------------
+
+@router.post("/api/alerts/silence")
+def api_alerts_silence(
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict:
+    _require_api_user(db, session_token)
+    state = _alerts_context()
+    if _alert_service:
+        state = _alert_service.silence()
+        db.add(ActionLog(action="alarm_silenced"))
+        db.commit()
+    return {"ok": True, "alerts": state}
+
+
+# ------------------------------------------------------------------
+# Network API — change Wi-Fi after setup without re-running onboarding
+# ------------------------------------------------------------------
+
+class NetworkConnectPayload(BaseModel):
+    ssid: str = Field(min_length=1, max_length=64)
+    password: str = ""
+
+
+@router.get("/api/network/status")
+def api_network_status(
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict:
+    _require_api_user(db, session_token)
+    config = db.scalar(select(DeviceConfig).limit(1))
+    return {
+        "ok": True,
+        "connected_ssid": _wifi_service.get_connected_ssid() if _wifi_service else None,
+        "configured_ssid": config.wifi_ssid if config else None,
+        "hotspot_active": _onboarding_service.is_hotspot_active() if _onboarding_service else False,
+    }
+
+
+@router.post("/api/network/connect")
+def api_network_connect(
+    payload: NetworkConnectPayload,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict:
+    _require_api_user(db, session_token)
+    if not _wifi_service:
+        raise HTTPException(status_code=503, detail="Wi-Fi service unavailable")
+    connected = _wifi_service.connect_client(payload.ssid, payload.password or "")
+    if not connected:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not connect to '{payload.ssid}'. Check the password and try again.",
+        )
+    config = db.scalar(select(DeviceConfig).limit(1))
+    if config:
+        config.wifi_ssid = payload.ssid
+    db.add(ActionLog(action="network_connect", payload=payload.ssid))
+    db.commit()
+    return {"ok": True, "ssid": payload.ssid}
+
+
+# ------------------------------------------------------------------
+# Password reset — requires physical presence (setup mode)
+# ------------------------------------------------------------------
+
+class PasswordResetPayload(BaseModel):
+    identifier: str = Field(min_length=1)
+    new_password: str = Field(min_length=8)
+
+
+@router.get("/reset-password", response_class=HTMLResponse)
+def reset_password_page(request: Request):
+    setup_mode = _setup_mode_service.is_setup_mode() if _setup_mode_service else False
+    return _render(
+        request=request,
+        name="reset_password.html",
+        context={
+            "version": settings.app_version,
+            "setup_mode": setup_mode,
+            "hold_seconds": int(settings.setup_button_hold_seconds),
+        },
+    )
+
+
+@router.post("/api/reset-password")
+def api_reset_password(payload: PasswordResetPayload, db: Session = Depends(get_db)) -> dict:
+    """Reset an account password without a session.
+
+    Gated on setup mode, which can only be entered by physically holding the
+    device's setup button (or during first-boot onboarding) — that is the
+    proof of presence.  The response is identical whether or not the account
+    exists, to avoid account enumeration.
+    """
+    if not (_setup_mode_service and _setup_mode_service.is_setup_mode()):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password reset requires setup mode. Hold the device's setup button, then try again.",
+        )
+    identifier = payload.identifier.strip()
+    user = db.scalar(
+        select(User).where((User.username == identifier) | (User.email == identifier)).limit(1)
+    )
+    if user:
+        user.password_hash = hash_password(payload.new_password)
+        destroy_user_sessions(db, user.id)
+        db.add(ActionLog(action="system.password_reset", payload=user.username))
+        db.commit()
+        # Close the reset window unless the device is mid-onboarding on its hotspot.
+        if not (_onboarding_service and _onboarding_service.is_hotspot_active()):
+            _setup_mode_service.exit_setup_mode()
+    return {"ok": True, "message": "If that account exists, its password has been reset. You can now log in."}
