@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 *.db
 .venv/
+uv.lock
 *.egg-info/
 # Image-build artifacts (build_image.sh)
 dist/
