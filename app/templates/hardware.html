@@ -3,12 +3,16 @@
 {% with eyebrow='Manual Control', title='Hardware Control Panel', subtitle='Direct command access with explicit operator actions.' %}{% include 'partials/section_header.html' %}{% endwith %}
 <section class="card">
   <div class="action-grid">
-    {% with title='Open Lock', description='Unlock actuator for maintenance.', button_text='Open Lock', action="sendHardware('open_lock')" %}{% include 'partials/action_card.html' %}{% endwith %}
-    {% with title='Close Lock', description='Lock actuator after servicing.', button_text='Close Lock', action="sendHardware('close_lock')", button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
-    {% with title='Capture Image', description='Trigger camera capture pipeline.', button_text='Capture', action="sendHardware('capture_image')" %}{% include 'partials/action_card.html' %}{% endwith %}
-    {% with title='Motor Step', description='Move turning motor by one unit.', button_text='Move', action="sendHardware('move_motor', 1)" %}{% include 'partials/action_card.html' %}{% endwith %}
-    {% with title='Candle ON', description='Enable candle actuator safely.', button_text='Enable', action="sendHardware('set_candle', true)" %}{% include 'partials/action_card.html' %}{% endwith %}
-    {% with title='Candle OFF', description='Disable candle actuator safely.', button_text='Disable', action="sendHardware('set_candle', false)", button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Open Lock', description='Unlock the enclosure for maintenance.', button_text='Open Lock', action_name='open_lock', confirm_text='Open the lock? The enclosure will be accessible.' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Close Lock', description='Lock the enclosure after servicing.', button_text='Close Lock', action_name='close_lock', confirm_text='Close and lock the enclosure?', button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Open Door', description='Open the incubator door.', button_text='Open Door', action_name='open_door', confirm_text='Open the door? Temperature and humidity will drop while it is open.' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Close Door', description='Close the incubator door.', button_text='Close Door', action_name='close_door', confirm_text='Close the door now?', button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Capture Image', description='Take a snapshot with the internal camera.', button_text='Capture', action_name='capture_image' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Motor Step', description='Advance the egg turner by one step.', button_text='Move', action_name='move_motor', action_value='1', confirm_text='Turn the eggs now?' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with card_id='candle', title='Candle ON', description='Switch on the candling light for egg inspection.', button_text='Turn On', action_name='set_candle', action_value='true' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Candle OFF', description='Switch the candling light off.', button_text='Turn Off', action_name='set_candle', action_value='false', button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Test Alarm', description='Sound a short buzzer chirp to verify the alarm works.', button_text='Test', action_name='alarm_test', button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Alarm Off', description='Switch the buzzer off and silence the current alert.', button_text='Silence', action_name='alarm_off', button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
   </div>
   <p id="hardware-msg" class="hint">Awaiting command…</p>
 </section>

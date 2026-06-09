@@ -34,6 +34,38 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// ── Shared API helpers ────────────────────────────────────────────────
+// All page scripts use these instead of raw fetch so the user always sees
+// a human-readable message instead of raw JSON or a JS error object.
+async function apiRequest(url, options = {}) {
+  let res;
+  try {
+    res = await fetch(url, options);
+  } catch {
+    return { ok: false, status: 0, data: null, message: 'Cannot reach the incubator — check your connection.' };
+  }
+  let data = null;
+  try { data = await res.json(); } catch { /* non-JSON response */ }
+  if (res.status === 401) {
+    return { ok: false, status: 401, data, message: 'Please log in to do that.' };
+  }
+  if (!res.ok || (data && data.ok === false)) {
+    const detail = data && (data.detail ?? data.error);
+    const message = Array.isArray(detail)
+      ? detail.map((d) => d.msg || '').filter(Boolean).join(' ') || 'Invalid input.'
+      : detail || `Request failed (${res.status}).`;
+    return { ok: false, status: res.status, data, message };
+  }
+  return { ok: true, status: res.status, data, message: '' };
+}
+
+window.apiGet = (url) => apiRequest(url);
+window.apiPost = (url, body) => apiRequest(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body ?? {}),
+});
+
 // ── Logout ────────────────────────────────────────────────────────────
 const logoutBtn = document.getElementById('logoutBtn');
 if (logoutBtn) {

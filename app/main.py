@@ -32,6 +32,7 @@ from .models import ActionLog, DeviceConfig, SensorLog, User
 from .routes.ai import router as ai_router, set_vision_hardware
 from .routes.web import router as web_router, set_runtime_services
 from .schemas import HardwareCommand, OnboardingPayload, SetupStatus
+from .services.alert_service import AlertService
 from .services.button_service import SetupButtonService
 from .services.camera_service import CameraService
 from .services.cloud_service import CloudService
@@ -41,7 +42,7 @@ from .services.onboarding_service import OnboardingService
 from .services.setup_mode_service import SetupModeService
 from .services.vision_service import VisionService
 from .services.wifi_service import WiFiService
-from .settings_store import ensure_defaults
+from .settings_store import ensure_defaults, get_settings
 
 app = FastAPI(title="Incubator v3 — Pi Zero 2W")
 logger = logging.getLogger(__name__)
@@ -78,6 +79,8 @@ camera_service = CameraService(
 
 hardware_service = HardwareService(gpio=gpio_service, camera=camera_service)
 
+alert_service = AlertService(gpio=gpio_service)
+
 vision_service = VisionService(
     backend=settings.vision_backend,
     tflite_model_path=settings.vision_tflite_model_path,
@@ -113,6 +116,7 @@ set_runtime_services(
     onboarding_service=onboarding_service,
     hardware_service=hardware_service,
     vision_service=vision_service,
+    alert_service=alert_service,
 )
 set_vision_hardware(vision=vision_service, hardware=hardware_service)
 
@@ -120,13 +124,18 @@ set_vision_hardware(vision=vision_service, hardware=hardware_service)
 def _on_button_held(reason: str) -> None:
     """Callback from button_service — restart the AP for re-onboarding."""
     logger.info("Setup button held (%s) — starting manual hotspot", reason)
+    # Short chirp so the operator knows the press registered.
+    gpio_service.pulse_alarm(0.15)
     db = next(get_db())
     try:
         config = db.scalar(select(DeviceConfig).limit(1))
         device_id = config.device_id if config else "PI-XXXX"
     finally:
         db.close()
-    onboarding_service.start_manual_hotspot(device_id)
+    result = onboarding_service.start_manual_hotspot(device_id)
+    if result.get("ok"):
+        # Longer chirp: the hotspot is up and ready to join.
+        gpio_service.pulse_alarm(0.5)
 
 
 # ------------------------------------------------------------------
@@ -151,6 +160,14 @@ class _SensorPoller(threading.Thread):
         db = next(get_db())
         try:
             reading = gpio_service.read_temperature_humidity()
+            # Failed reads must reach the alert engine too — it tracks the
+            # offline state, caches the last good values, and drives the buzzer.
+            events = alert_service.record_reading(reading, get_settings(db))
+            for event in events:
+                logger.info("Alert event: %s", event["type"])
+                db.add(ActionLog(action=f"system.{event['type']}", payload=event["message"]))
+            if events:
+                db.commit()
             if not reading.get("ok"):
                 return
             if not settings.sensor_log_to_db:
@@ -215,6 +232,9 @@ def startup() -> None:
     gpio_service.setup()
     vision_service.setup()
     button_service.start()
+    # Prime the sensor cache once synchronously so the dashboard has data
+    # before the poller's first scheduled run.
+    _sensor_poller._poll()
     _sensor_poller.start()
 
     logger.info(
@@ -305,8 +325,14 @@ def complete_setup(payload: OnboardingPayload, response: Response, db: Session =
 
 @app.get("/api/sensors/latest")
 def sensors_latest() -> dict:
-    """Live sensor reading from DHT22.  Used by dashboard for real-time display."""
-    return gpio_service.read_temperature_humidity()
+    """Cached sensor state from the poller thread, plus active alerts.
+
+    The DHT22 is never read on the request path — a failed read blocks ~3s
+    holding the GPIO lock.  ``online`` reflects the most recent poll; the
+    cached values are the last good reading.
+    """
+    snapshot = alert_service.sensor_snapshot()
+    return {"ok": True, **snapshot, "alerts": alert_service.alert_state()}
 
 
 @app.post("/hardware/send")
@@ -318,6 +344,13 @@ def send_hardware_command(
     # Physical actuator control requires a session once an account exists.
     if (settings.require_login or has_any_user(db)) and not get_user_id_from_session(db, session_token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+    def _alarm_off() -> dict:
+        # A manual off also silences the alert engine so it does not
+        # immediately re-assert the buzzer on the next poll.
+        alert_service.silence()
+        return hardware_service.set_alarm(False)
+
     handler = {
         "open_lock": hardware_service.open_lock,
         "close_lock": hardware_service.close_lock,
@@ -333,6 +366,9 @@ def send_hardware_command(
         "read_environment": hardware_service.read_environment,
         "set_candle": lambda: hardware_service.set_candle(str(payload.value).lower() in {"1", "true", "on"}),
         "capture_image": hardware_service.capture_image,
+        "alarm_on": lambda: hardware_service.set_alarm(True),
+        "alarm_off": _alarm_off,
+        "alarm_test": alert_service.test_alarm,
     }.get(payload.action)
 
     if not handler:

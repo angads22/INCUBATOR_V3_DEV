@@ -1,9 +1,12 @@
 document.getElementById('settings-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target;
+  const btn = f.querySelector('button[type="submit"]');
   const payload = {
     target_temp_c: parseFloat(f.target_temp_c.value),
     target_humidity_pct: parseFloat(f.target_humidity_pct.value),
+    alert_temp_tolerance_c: parseFloat(f.alert_temp_tolerance_c.value),
+    alert_humidity_tolerance_pct: parseFloat(f.alert_humidity_tolerance_pct.value),
     heater_enabled: f.heater_enabled.checked,
     fan_enabled: f.fan_enabled.checked,
     turner_enabled: f.turner_enabled.checked,
@@ -19,15 +22,11 @@ document.getElementById('settings-form')?.addEventListener('submit', async (e) =
     msg.classList.add('feedback-visible');
   }
 
+  btn.disabled = true;
   try {
-    const res = await fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    showMsg(data.ok ? 'Settings saved.' : (data.error || data.detail || 'Save failed.'));
-  } catch (err) {
-    showMsg(`Request failed: ${err}`);
+    const res = await apiPost('/api/settings', payload);
+    showMsg(res.ok ? 'Settings saved.' : res.message);
+  } finally {
+    btn.disabled = false;
   }
 });

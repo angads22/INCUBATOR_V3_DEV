@@ -29,6 +29,22 @@
 .stack-list { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 8px; }
 .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .status-chip { padding: 6px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 700; border: 1px solid transparent; }
+
+.alert-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  border: 1px solid var(--warn);
+  background: rgba(245, 158, 11, 0.12);
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 18px;
+}
+.alert-banner strong { color: var(--warn); }
+.alert-banner-text { margin: 4px 0 0; }
+
 .status-ok { color: #052c1b; background: rgba(52, 211, 153, 0.9); }
 .status-info { color: #d9f3ff; background: rgba(56, 189, 248, 0.2); border-color: rgba(56, 189, 248, 0.5); }
 .status-warn { color: #422006; background: rgba(245, 158, 11, 0.9); }

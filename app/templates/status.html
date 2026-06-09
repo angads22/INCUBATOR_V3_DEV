@@ -7,7 +7,7 @@
     <div class="chip-row">
       {% with label='Hardware: ' ~ health.hardware, tone=('ok' if health.hardware == 'online' else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
       {% with label='Sensors: ' ~ health.sensors, tone=('ok' if health.sensors == 'online' else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
-      {% with label='Alarms: ' ~ health.alarms, tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+      {% with label='Alarms: ' ~ health.alarms, tone=health.alarms_tone %}{% include 'partials/status_chip.html' %}{% endwith %}
       {% with label='Setup mode: ' ~ health.setup_mode, tone=('warn' if health.setup_mode == 'on' else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
       {% with label='GPIO: ' ~ ('mock' if health.gpio_mock else 'live'), tone=('warn' if health.gpio_mock else 'ok') %}{% include 'partials/status_chip.html' %}{% endwith %}
     </div>
@@ -17,13 +17,16 @@
 
   <article class="card">
     <h3>Live Sensor Reading</h3>
-    {% if environment and environment.ok %}
+    {% if environment and environment.has_reading %}
     <div class="metrics-grid compact-metrics">
-      {% with label='Temperature', value='%.2f°C'|format(environment.temperature_c), hint=('Live' if not environment.mock else 'Simulated') %}{% include 'partials/metric_card.html' %}{% endwith %}
-      {% with label='Humidity', value='%.1f%%'|format(environment.humidity_pct), hint=('Live' if not environment.mock else 'Simulated') %}{% include 'partials/metric_card.html' %}{% endwith %}
+      {% with label='Temperature', value='%.2f°C'|format(environment.temperature_c), hint=('Simulated' if environment.mock else ('Live' if environment.online else 'Last known')) %}{% include 'partials/metric_card.html' %}{% endwith %}
+      {% with label='Humidity', value='%.1f%%'|format(environment.humidity_pct), hint=('Simulated' if environment.mock else ('Live' if environment.online else 'Last known')) %}{% include 'partials/metric_card.html' %}{% endwith %}
     </div>
+    {% if not environment.online %}
+    <p class="muted">Sensor is offline — showing the last known reading{% if environment.read_at %} from {{ environment.read_at }}{% endif %}. Check the DHT22 sensor wiring (data pin GPIO{{ health.dht_pin }}).</p>
+    {% endif %}
     {% else %}
-    <p class="muted">No sensor reading available. Check DHT22 wiring on GPIO{{ health.get('dht_pin', '4') }}.</p>
+    <p class="muted">No sensor reading available yet. Check the DHT22 sensor wiring (data pin GPIO{{ health.dht_pin }}).</p>
     {% endif %}
   </article>
 

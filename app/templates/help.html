@@ -1,19 +1,62 @@
 {% extends 'base.html' %}
 {% block content %}
-{% with eyebrow='Guidance', title='How to Use Your Incubator', subtitle='Quick local-first walkthrough of the main tabs and settings.' %}{% include 'partials/section_header.html' %}{% endwith %}
+{% with eyebrow='Guidance', title='How to Use Your Incubator', subtitle='Day-to-day operation, what the status indicators mean, and how to recover when something goes wrong.' %}{% include 'partials/section_header.html' %}{% endwith %}
 <section class="two-col">
   <article class="card">
     <h3>Main Tabs</h3>
     <ul class="stack-list">
-      <li><strong>Home:</strong> Snapshot of temperature, humidity, status chips, and quick actions.</li>
-      <li><strong>Status:</strong> Current health view for hardware link, sensors, alarms, and setup mode state.</li>
-      <li><strong>Help:</strong> Local onboarding support and operating tips.</li>
+      <li><strong>Home:</strong> Live temperature and humidity, active alerts, quick actions, and recent events. Readings refresh automatically — the "Updated Xs ago" note shows how fresh they are.</li>
+      <li><strong>Status:</strong> Hardware link health, sensor state, alarms, and output state (heater, fan, door, lock, candling light).</li>
+      <li><strong>Hardware:</strong> Manual controls — lock, door, egg turner, camera, candling light, and the alarm test. Actions that affect the eggs ask for confirmation first.</li>
+      <li><strong>Settings</strong> (profile menu, top right): targets, alert tolerances, device toggles, and Wi-Fi.</li>
     </ul>
   </article>
+
   <article class="card">
-    <h3>Where settings live</h3>
-    <p>Use the top-right profile bubble to open account, network settings, and device settings.</p>
-    <p class="muted">You can also link/add an account later from the same menu.</p>
+    <h3>Status chips explained</h3>
+    <ul class="stack-list">
+      <li><strong>Sensors: online/offline</strong> — whether the last DHT22 read succeeded. When offline, pages show the last known reading, clearly labelled.</li>
+      <li><strong>Alarms: none / N active</strong> — alerts fire when a reading stays outside target ± tolerance, or the sensor stops responding.</li>
+      <li><strong>Setup mode / Hotspot active</strong> — the device is broadcasting its own Wi-Fi ({{ ap_ssid_prefix }}-XXXX) for onboarding or recovery.</li>
+      <li><strong>GPIO: mock</strong> — the app is running without real hardware (development mode); readings are simulated.</li>
+    </ul>
+  </article>
+
+  <article class="card">
+    <h3>Troubleshooting: Wi-Fi</h3>
+    <ul class="stack-list">
+      <li>To change networks, open <strong>Settings → Network</strong>, scan, pick the new network, and enter its password.</li>
+      <li>If the device is unreachable, hold the setup button for {{ hold_seconds }} seconds — the buzzer chirps, and the device starts its own hotspot. Join it and open <code>http://{{ ap_ip }}:8000</code>.</li>
+      <li>After switching networks, your phone or laptop may still be on the old network — join the new one and reload the page.</li>
+    </ul>
+  </article>
+
+  <article class="card">
+    <h3>Troubleshooting: sensor &amp; alarm</h3>
+    <ul class="stack-list">
+      <li><strong>Sensor offline:</strong> check the DHT22 wiring (data pin GPIO{{ dht_pin }}). The dashboard keeps showing the last good reading with its timestamp, never fake values.</li>
+      <li><strong>Alarm sounding:</strong> the dashboard banner says why. Press <strong>Silence alarm</strong> to quiet the buzzer — the alert stays visible until the cause clears.</li>
+      <li><strong>Too many alerts:</strong> widen the alert tolerances in <strong>Settings</strong>, or untick "Alarm Enabled" to disable the buzzer entirely (alerts still appear on screen).</li>
+      <li><strong>Test it works:</strong> use <strong>Hardware → Test Alarm</strong> for a short chirp.</li>
+    </ul>
+  </article>
+
+  <article class="card">
+    <h3>Candling eggs</h3>
+    <ul class="stack-list">
+      <li>Open <strong>Hardware</strong> and press <strong>Candle ON</strong> to light the candling LED, then <strong>Capture</strong> for a photo.</li>
+      <li>Automated analysis: <code>POST /api/vision/candle</code> runs the full pipeline (light on → capture → AI analysis → light off).</li>
+      <li>Remember to press <strong>Candle OFF</strong> when you finish manual inspection.</li>
+    </ul>
+  </article>
+
+  <article class="card">
+    <h3>Forgot your password?</h3>
+    <ul class="stack-list">
+      <li>Hold the device's setup button for {{ hold_seconds }} seconds (the buzzer chirps when it registers).</li>
+      <li>Open <a href="/reset-password">Reset password</a> and enter your username or email with a new password.</li>
+      <li>This works only while standing at the device — it is the proof that you own it.</li>
+    </ul>
   </article>
 </section>
 {% endblock %}

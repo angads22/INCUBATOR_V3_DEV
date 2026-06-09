@@ -77,6 +77,13 @@ def destroy_session(db: Session, session_token: str | None) -> None:
     db.commit()
 
 
+def destroy_user_sessions(db: Session, user_id: int) -> None:
+    """Invalidate every session for a user (e.g. after a password reset)."""
+    for row in db.scalars(select(AuthSession).where(AuthSession.user_id == user_id)).all():
+        db.delete(row)
+    db.commit()
+
+
 def has_any_user(db: Session) -> bool:
     """True once at least one account exists (used to auto-enforce login)."""
     return db.scalar(select(User.id).limit(1)) is not None

@@ -1,5 +1,6 @@
-<article class="card action-card">
+<article class="card action-card"{% if card_id %} id="{{ card_id }}"{% endif %}>
   <h3>{{ title }}</h3>
   <p class="muted">{{ description }}</p>
-  <button class="btn {{ button_tone or 'btn-primary' }}" type="button" onclick="{{ action }}">{{ button_text }}</button>
+  <button class="btn {{ button_tone or 'btn-primary' }}" type="button"
+          data-action="{{ action_name }}"{% if action_value is defined and action_value is not none %} data-value="{{ action_value }}"{% endif %}{% if confirm_text %} data-confirm="{{ confirm_text }}"{% endif %}>{{ button_text }}</button>
 </article>

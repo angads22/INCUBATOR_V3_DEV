@@ -233,6 +233,29 @@ class GPIOService:
             self._mock_state["alarm"] = on
             return {"ok": True, "alarm": on}
 
+    def pulse_alarm(self, seconds: float = 0.2) -> dict[str, Any]:
+        """Brief buzzer chirp for operator feedback (button press, alarm test).
+
+        A latched alarm (set_alarm) owns the pin — while an alert is sounding
+        the chirp is skipped rather than toggling the alarm off behind the
+        alert engine's back.  The off-edge runs on a timer so the GPIO lock
+        is never held across a sleep.
+        """
+        with self._lock:
+            if self._mock_state["alarm"]:
+                return {"ok": True, "pulsed": False, "alarm": True}
+            self._digital_write(self.alarm_pin, True)
+
+        def _off() -> None:
+            with self._lock:
+                if not self._mock_state["alarm"]:
+                    self._digital_write(self.alarm_pin, False)
+
+        timer = threading.Timer(max(0.05, seconds), _off)
+        timer.daemon = True
+        timer.start()
+        return {"ok": True, "pulsed": True, "alarm": False}
+
     def set_lock(self, locked: bool) -> dict[str, Any]:
         """Energise relay to LOCK, de-energise to UNLOCK (fail-safe open)."""
         with self._lock:
