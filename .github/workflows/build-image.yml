@@ -38,18 +38,28 @@ jobs:
 
       # build_image.sh downloads Raspberry Pi OS Lite (arm64), grows it, chroots
       # in (natively — no QEMU), runs init_pi.sh in IMAGE_BUILD mode, enables SSH,
-      # and writes dist/incubator-v3-<version>-<date>.img.xz (already compressed).
+      # and writes dist/incubator-v3-<version>-<date>.img.
+      #
       # --grow 2048 adds just enough root-fs headroom for the pre-baked venv +
-      # apt packages (~1 GB) while keeping the raw image small (~4.7 GB) so it
-      # flashes onto an 8 GB card. The filesystem auto-expands to fill the whole
-      # card on first boot, so nothing is lost by keeping the image compact.
+      # apt packages (~1 GB) while keeping the raw image small (~4.7 GB). The
+      # filesystem auto-expands to fill the whole card on first boot, so nothing
+      # is lost by keeping the image compact.
+      #
+      # --no-compress leaves a raw .img (NOT .img.xz). upload-artifact then zips
+      # it exactly once, so the download is a plain .zip containing a single .img
+      # — which Raspberry Pi Imager / balenaEtcher read and flash directly, with
+      # no manual unzip. (Compressing to .img.xz first produced a confusing
+      # .zip-of-.xz double nesting that tripped up the flashing tools.)
       - name: Build image
-        run: sudo ./build_image.sh --hostname "${{ github.event.inputs.hostname }}" --grow 2048
+        run: sudo ./build_image.sh --hostname "${{ github.event.inputs.hostname }}" --grow 2048 --no-compress
+
+      - name: Show built image size
+        run: ls -lh dist/
 
       - name: Upload image artifact
         uses: actions/upload-artifact@v4
         with:
           name: incubator-sd-image
-          path: dist/*.img.xz
+          path: dist/*.img
           retention-days: 14
           if-no-files-found: error
