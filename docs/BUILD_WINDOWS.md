@@ -14,9 +14,12 @@ Let GitHub build the image for you and download the result.
    - Optionally set a hostname (default `incubator`).
 3. Wait for it to finish (~10–25 min — it builds on a **native ARM64** runner,
    so the app + dependencies install at full speed with no emulation).
-4. Open the completed run → **Artifacts** → download **`incubator-sd-image`**.
-5. Unzip it to get `incubator-v3-<version>-<date>.img.xz`.
-6. Flash it (see **Flashing** below).
+4. Open the completed run → **Artifacts** → download **`incubator-sd-image`**
+   (a `.zip`, ~1 GB). The run summary also prints the exact image size.
+5. Flash it **without unzipping** (see **Flashing** below) — Raspberry Pi Imager
+   and balenaEtcher both open the `.zip` and write the `.img` inside directly.
+   (If you'd rather, unzip first to get the raw
+   `incubator-v3-<version>-<date>.img` and flash that — same result.)
 
 This uses the `.github/workflows/build-image.yml` workflow.
 
@@ -61,18 +64,28 @@ then follow the same steps as Option 2 inside the VM. Move the finished
 
 ## Flashing the image (Windows)
 
-Use **Raspberry Pi Imager** (recommended) or **balenaEtcher** — both read
-`.img.xz` directly, no manual decompression needed.
+Use **Raspberry Pi Imager** (recommended) or **balenaEtcher**. Both read the
+downloaded `.zip` (or a raw `.img`) directly — you do **not** unzip it, and you
+do **not** copy the file onto the card. The tool *writes* the image to the card.
+
+> **"Image is too large" even on a big card?** That message is almost never
+> about your card's capacity (the image is only ~4.7 GB; it auto-expands to fill
+> the card on first boot). It usually means either (a) you tried to *copy* the
+> file onto the card in File Explorer — FAT32 rejects files over 4 GB; use a
+> flashing tool instead — or (b) an old Imager version. **Update to the latest
+> Raspberry Pi Imager** and use **Write**.
 
 **Raspberry Pi Imager**
-1. Install from <https://www.raspberrypi.com/software/>.
-2. *Choose OS* → scroll down → **Use custom** → pick the `.img.xz`.
-3. *Choose Storage* → your microSD card.
+1. Install/update from <https://www.raspberrypi.com/software/> (use the newest).
+2. *Choose OS* → scroll down → **Use custom** → pick the downloaded `.zip`
+   (or the `.img` if you unzipped it).
+3. *Choose Storage* → your microSD card. Check it shows the card's real size
+   (e.g. ~32 GB); if it shows tiny, try another reader or wipe the card first.
 4. **Write**. (Skip the OS-customisation prompt — this image self-configures.)
 
 **balenaEtcher**
 1. Install from <https://etcher.balena.io/>.
-2. *Flash from file* → the `.img.xz` → select the SD card → **Flash**.
+2. *Flash from file* → the `.zip` (or `.img`) → select the SD card → **Flash**.
 
 Then insert the card into the Pi and power on. It broadcasts the
 **`Incubator-XXXX`** Wi-Fi hotspot; join it and open
