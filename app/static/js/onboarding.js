@@ -1,11 +1,26 @@
 let currentStep = 0;
 let selectedSsid = '';
 
+const WIZARD_LABELS = [
+  'Welcome', 'Wi-Fi network', 'Wi-Fi password',
+  'Operator account', 'Device name', 'Quick tour', 'Finishing up',
+];
+
 function showStep(n) {
   document.querySelectorAll('.wizard-step').forEach((el) => el.classList.remove('active'));
   const target = document.querySelector(`.wizard-step[data-step="${n}"]`);
   if (target) target.classList.add('active');
   currentStep = n;
+
+  // Progress indicator (optional — guarded so it never breaks the wizard).
+  const total = WIZARD_LABELS.length - 1; // steps 0..6
+  const fill = document.getElementById('wizardProgressFill');
+  const label = document.getElementById('wizardStepLabel');
+  if (fill) fill.style.width = `${Math.round((n / total) * 100)}%`;
+  if (label) {
+    label.textContent =
+      `Step ${Math.min(n + 1, WIZARD_LABELS.length)} of ${WIZARD_LABELS.length} · ${WIZARD_LABELS[n] || ''}`;
+  }
 }
 
 // Generic prev navigation
