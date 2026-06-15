@@ -2,6 +2,22 @@
 {% block content %}
 <section class="auth-wrap">
   <form id="login-form" class="card auth-card">
+    <div class="auth-brand">
+      <span class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <defs>
+            <linearGradient id="eggGradAuth" x1="4" y1="2" x2="20" y2="22" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#ffd27a"/>
+              <stop offset="0.55" stop-color="#ff9d6c"/>
+              <stop offset="1" stop-color="#ff7eb6"/>
+            </linearGradient>
+          </defs>
+          <path d="M12 2.5c-3.7 0-6.9 5.3-6.9 9.7a6.9 6.9 0 0 0 13.8 0c0-4.4-3.2-9.7-6.9-9.7Z" fill="url(#eggGradAuth)"/>
+          <path d="M9.9 6.6c-1.2 1.2-2 3-2.2 4.7" stroke="#fff" stroke-opacity="0.55" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <h1 class="brand">Incubator&nbsp;v3</h1>
+    </div>
     <h2>Secure Operator Login</h2>
     <p class="muted">Sign in to access manual controls and configuration panels.</p>
     <label>Username<input name="username" required /></label>

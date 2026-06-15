@@ -66,6 +66,15 @@ window.apiPost = (url, body) => apiRequest(url, {
   body: JSON.stringify(body ?? {}),
 });
 
+// ── Highlight the active nav link ─────────────────────────────────────
+const navPath = window.location.pathname;
+document.querySelectorAll('.nav-links a').forEach((a) => {
+  const href = a.getAttribute('href');
+  if (href === navPath || (href !== '/' && navPath.startsWith(href))) {
+    a.classList.add('active');
+  }
+});
+
 // ── Logout ────────────────────────────────────────────────────────────
 const logoutBtn = document.getElementById('logoutBtn');
 if (logoutBtn) {
