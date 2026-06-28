@@ -31,6 +31,9 @@
 #                        Default: latest Raspberry Pi OS Lite arm64.
 #    --out <dir>         Output directory (default: ./dist).
 #    --hostname <name>   Pi hostname (default: incubator).
+#    --wifi-country <CC> Wi-Fi regulatory country, ISO 3166-1 alpha-2 (default:
+#                        US). Required for the radio to transmit — on Bookworm
+#                        the WLAN stays rfkill-blocked until a country is set.
 #    --user <name>       Create an OS login user for SSH (default: incubator
 #                        when --password is given).
 #    --password <pw>     Password for the SSH login user (enables SSH login).
@@ -53,6 +56,7 @@ BASE_INPUT=""
 OUT_DIR="${REPO_DIR}/dist"
 CACHE_DIR="${REPO_DIR}/.image-cache"
 PI_HOSTNAME="incubator"
+WIFI_COUNTRY="US"   # ISO 3166-1 alpha-2; unblocks the WLAN radio on Bookworm
 SSH_USER=""
 SSH_PASS=""
 ENABLE_SSH=1
@@ -84,6 +88,7 @@ while [[ $# -gt 0 ]]; do
         --base)        BASE_INPUT="${2:-}"; shift 2 ;;
         --out)         OUT_DIR="${2:-}"; shift 2 ;;
         --hostname)    PI_HOSTNAME="${2:-}"; shift 2 ;;
+        --wifi-country) WIFI_COUNTRY="${2:-}"; shift 2 ;;
         --user)        SSH_USER="${2:-}"; shift 2 ;;
         --password)    SSH_PASS="${2:-}"; shift 2 ;;
         --cache)       CACHE_DIR="${2:-}"; shift 2 ;;
@@ -97,6 +102,10 @@ done
 
 [[ "$EUID" -ne 0 ]] && error "Run as root: sudo $0 $*"
 [[ "$(uname -s)" == "Linux" ]] || error "This builder must run on Linux (needs loop mounts + chroot)."
+
+# Normalise + validate the Wi-Fi country (ISO 3166-1 alpha-2).
+WIFI_COUNTRY="$(printf '%s' "${WIFI_COUNTRY}" | tr '[:lower:]' '[:upper:]')"
+[[ "$WIFI_COUNTRY" =~ ^[A-Z]{2}$ ]] || error "Invalid --wifi-country '${WIFI_COUNTRY}' (expect a 2-letter code like US, GB, DE)."
 
 VERSION="$(grep -oP 'VERSION\s*=\s*"\K[^"]+' "${REPO_DIR}/app/version.py" 2>/dev/null || echo dev)"
 HOST_ARCH="$(uname -m)"
@@ -338,6 +347,7 @@ install_app() {
     step "Installing dependencies + service inside image (this can take a while under emulation)..."
     chroot "$ROOT_MNT" /usr/bin/env \
         INCUBATOR_IMAGE_BUILD=1 DEBIAN_FRONTEND=noninteractive \
+        INCUBATOR_WIFI_COUNTRY="${WIFI_COUNTRY}" \
         /bin/bash /opt/incubator/init_pi.sh /opt/incubator \
         || error "In-image install failed (see output above)."
 }
@@ -401,6 +411,14 @@ verify_artifact() {
     if mount -o ro "${loop}p2" "$r" 2>/dev/null; then
         grep -q "PARTUUID=" "$r/etc/fstab"            || { echo "::error title=build_image.sh::artifact fstab not using PARTUUID"; ok=0; }
         ! grep -qiE "ROOTDEV|BOOTDEV" "$r/etc/fstab"   || { echo "::error title=build_image.sh::artifact fstab still has placeholder"; ok=0; }
+        # Wi-Fi country must be baked in, else the radio stays rfkill-blocked and
+        # the onboarding hotspot never appears.
+        if [[ -f "$r/etc/systemd/system/incubator-wifi-country.service" ]]; then
+            grep -q "iw reg set [A-Z][A-Z]" "$r/etc/systemd/system/incubator-wifi-country.service" \
+                || { echo "::error title=build_image.sh::wifi-country unit has no 'iw reg set <CC>'"; ok=0; }
+        else
+            echo "::error title=build_image.sh::Wi-Fi regulatory country not configured in image"; ok=0
+        fi
         umount "$r" 2>/dev/null || umount -lf "$r" 2>/dev/null
     else
         echo "::error title=build_image.sh::verify: cannot mount ${loop}p2"; ok=0

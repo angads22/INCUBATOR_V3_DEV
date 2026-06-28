@@ -23,6 +23,13 @@ DATA_DIR="/var/incubator"
 # checks — the service starts on the first real boot instead.
 IMAGE_BUILD="${INCUBATOR_IMAGE_BUILD:-0}"
 
+# Wi-Fi regulatory country (ISO 3166-1 alpha-2). On RPi OS Bookworm the WLAN
+# radio is rfkill soft-blocked until a country is set, so the onboarding hotspot
+# never appears without it. Passed in by build_image.sh; defaults to US.
+WIFI_COUNTRY="${INCUBATOR_WIFI_COUNTRY:-US}"
+[[ "$WIFI_COUNTRY" =~ ^[A-Za-z]{2}$ ]] || WIFI_COUNTRY="US"
+WIFI_COUNTRY="${WIFI_COUNTRY^^}"
+
 # ── Colour helpers ────────────────────────────────────────────
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
 info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
@@ -61,9 +68,15 @@ apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv python3-dev \
     git curl ca-certificates \
     network-manager \
+    rfkill iw \
     "$GPIO_RUNTIME_PKG" \
     libjpeg-dev zlib1g-dev \
     || error "Failed to install essential system packages."
+
+# Regulatory database — lets `iw reg set <country>` actually take effect.
+# Best-effort: a Bookworm Lite image normally already ships it.
+apt-get install -y --no-install-recommends wireless-regdb \
+    || warn "wireless-regdb not installed — regulatory domain may not apply."
 
 # Camera + BLAS are heavier and only used for vision/candling, not for the
 # first-boot setup/auth flow. Their maintainer scripts (libcamera, etc.) can
@@ -87,6 +100,37 @@ if [[ "$IMAGE_BUILD" == "1" ]]; then
 else
     systemctl enable --now NetworkManager || true
 fi
+
+# ── Wi-Fi regulatory country (unblocks the radio) ────────────
+# Without a country set, Bookworm keeps the WLAN radio rfkill soft-blocked and
+# the onboarding hotspot never comes up. Persist the country and make sure the
+# radio is unblocked + the regulatory domain applied on every boot.
+info "Configuring Wi-Fi regulatory country: ${WIFI_COUNTRY}"
+if command -v raspi-config &>/dev/null; then
+    raspi-config nonint do_wifi_country "${WIFI_COUNTRY}" || warn "raspi-config do_wifi_country failed (continuing)."
+fi
+# crda regdomain (best-effort; harmless if crda is absent on Bookworm).
+echo "REGDOMAIN=${WIFI_COUNTRY}" > /etc/default/crda 2>/dev/null || true
+
+# Oneshot unit: unblock WLAN + apply the regulatory domain before the radio is
+# used. Ordered before NetworkManager and the app so the hotspot can start.
+cat > /etc/systemd/system/incubator-wifi-country.service <<EOF
+[Unit]
+Description=Incubator: unblock WLAN radio and set Wi-Fi regulatory domain
+Before=NetworkManager.service ${SERVICE_NAME}.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'rfkill unblock wlan || true; iw reg set ${WIFI_COUNTRY} || true'
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable incubator-wifi-country.service 2>/dev/null \
+    || ln -sf /etc/systemd/system/incubator-wifi-country.service \
+        /etc/systemd/system/multi-user.target.wants/incubator-wifi-country.service
 
 # ── Create install directory and copy files ──────────────────
 mkdir -p "${INSTALL_DIR}"
@@ -150,6 +194,13 @@ if [ ! -f "${ENV_FILE}" ]; then
     AP_PASS="$(dd if=/dev/urandom bs=9 count=1 2>/dev/null | base64 | tr -dc 'A-Za-z0-9' | cut -c1-12)"
     sed -i "s|INCUBATOR_AP_PASSWORD=.*|INCUBATOR_AP_PASSWORD=${AP_PASS}|" "${ENV_FILE}"
     info "AP password set to: ${AP_PASS}  (saved in ${ENV_FILE})"
+    # Bake the Wi-Fi country so the running app applies the same regulatory
+    # domain before starting the hotspot.
+    if grep -q '^INCUBATOR_WIFI_COUNTRY=' "${ENV_FILE}"; then
+        sed -i "s|^INCUBATOR_WIFI_COUNTRY=.*|INCUBATOR_WIFI_COUNTRY=${WIFI_COUNTRY}|" "${ENV_FILE}"
+    else
+        echo "INCUBATOR_WIFI_COUNTRY=${WIFI_COUNTRY}" >> "${ENV_FILE}"
+    fi
 else
     warn "${ENV_FILE} already exists — skipping (edit manually if needed)"
     chmod 600 "${ENV_FILE}" 2>/dev/null || true
