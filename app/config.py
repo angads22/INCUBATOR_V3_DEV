@@ -42,6 +42,10 @@ class Settings:
     ap_ip: str = field(default_factory=lambda: os.getenv("INCUBATOR_AP_IP", "10.42.0.1"))
     # Auto-start hotspot when device has no WiFi config on boot
     auto_hotspot_on_unclaimed: bool = field(default_factory=lambda: os.getenv("INCUBATOR_AUTO_HOTSPOT", "true").lower() == "true")
+    # Wi-Fi regulatory country (ISO 3166-1 alpha-2). On RPi OS Bookworm the WLAN
+    # radio is rfkill soft-blocked until a country is set, so the hotspot never
+    # comes up without this. Baked into the image by build_image.sh / init_pi.sh.
+    wifi_country: str = field(default_factory=lambda: os.getenv("INCUBATOR_WIFI_COUNTRY", "US").strip().upper())
 
     # --- Camera ---
     camera_backend: str = field(default_factory=lambda: os.getenv("CAMERA_BACKEND", "picamera2"))  # picamera2 | opencv | mock

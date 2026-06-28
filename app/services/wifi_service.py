@@ -21,10 +21,13 @@ import re
 import subprocess
 from dataclasses import dataclass
 
+from ..config import settings
+
 logger = logging.getLogger(__name__)
 
 _SAFE_SSID_RE = re.compile(r"^[\w\s\-\.@#!]{1,32}$")
 _SAFE_PASS_RE = re.compile(r"^[\x20-\x7E]{8,63}$")
+_SAFE_COUNTRY_RE = re.compile(r"^[A-Z]{2}$")
 _HOTSPOT_CON_NAME = "incubator-hotspot"
 
 
@@ -58,6 +61,37 @@ class WiFiNetwork:
 
 class WiFiService:
     """NetworkManager wrapper — safe, local-first, with dev fallbacks."""
+
+    def __init__(self, country: str | None = None) -> None:
+        # Regulatory country drives `iw reg set` so the radio is allowed to
+        # transmit on the local channels. Validated because it is shelled out.
+        c = (country or settings.wifi_country or "US").strip().upper()
+        if not _SAFE_COUNTRY_RE.match(c):
+            logger.warning("Invalid Wi-Fi country %r — defaulting to 'US'", c)
+            c = "US"
+        self._country = c
+
+    # ------------------------------------------------------------------
+    # Radio readiness
+    # ------------------------------------------------------------------
+
+    def _prepare_radio(self) -> None:
+        """Unblock the WLAN radio and set the regulatory domain.
+
+        On RPi OS Bookworm the radio stays rfkill soft-blocked until a Wi-Fi
+        country is set, which makes `nmcli ... hotspot` fail. This is
+        best-effort: on a dev box without rfkill/iw the missing tools must not
+        abort onboarding, so FileNotFoundError is downgraded to debug.
+        """
+        for cmd in (["rfkill", "unblock", "wlan"], ["iw", "reg", "set", self._country]):
+            try:
+                res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+                if res.returncode != 0:
+                    logger.warning("%s failed (rc=%d): %s", " ".join(cmd), res.returncode, res.stderr.strip())
+            except FileNotFoundError:
+                logger.debug("%s not found — skipping radio prep", cmd[0])
+            except Exception as exc:
+                logger.warning("Error running %s: %s", " ".join(cmd), exc)
 
     # ------------------------------------------------------------------
     # Scanning
@@ -103,6 +137,9 @@ class WiFiService:
         try:
             ssid = _safe_ssid(ssid)
             password = _safe_pass(password)
+            # Bookworm soft-blocks the radio until a country is set — unblock it
+            # and apply the regulatory domain before asking nmcli for an AP.
+            self._prepare_radio()
             # Delete any stale hotspot connection first
             _nmcli("connection", "delete", _HOTSPOT_CON_NAME, check=False)
             result = _nmcli(
@@ -116,7 +153,7 @@ class WiFiService:
             if result.returncode == 0:
                 logger.info("Hotspot '%s' started", ssid)
                 return True
-            logger.warning("nmcli hotspot failed (rc=%d): %s", result.returncode, result.stderr.strip())
+            logger.error("nmcli hotspot failed (rc=%d): %s", result.returncode, result.stderr.strip())
         except ValueError as exc:
             logger.warning("Hotspot rejected — invalid credentials: %s", exc)
         except FileNotFoundError:
