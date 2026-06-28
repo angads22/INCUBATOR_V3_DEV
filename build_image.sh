@@ -106,6 +106,23 @@ LOOP_DEV=""
 RESOLV_BACKED_UP=0
 NEED_EMULATION=0   # set to 1 in ensure_tools when the host is not arm64
 
+# Unmount a path with a REAL (non-lazy) umount, retrying a few times. A lazy
+# umount (-lf) detaches the mount but lets writeback happen later — if we then
+# detach the loop device the partition edits never reach the backing .img. So
+# only fall back to lazy if a real umount genuinely keeps failing, and sync
+# afterwards to give that writeback the best chance of landing.
+umount_real() {
+    local mp="$1" i
+    mountpoint -q "${mp}" 2>/dev/null || return 0
+    for i in 1 2 3 4 5; do
+        umount "${mp}" 2>/dev/null && return 0
+        sync; sleep 1
+    done
+    warn "Real umount of ${mp} failed; falling back to lazy umount (edits may not flush)."
+    umount -lf "${mp}" 2>/dev/null
+    sync
+}
+
 # ── Cleanup (idempotent; runs on any exit) ───────────────────────────────────
 cleanup() {
     set +e
@@ -114,11 +131,15 @@ cleanup() {
         [[ "${RESOLV_BACKED_UP}" == "1" && -e "${ROOT_MNT}/etc/resolv.conf.incubator-bak" ]] && \
             mv -f "${ROOT_MNT}/etc/resolv.conf.incubator-bak" "${ROOT_MNT}/etc/resolv.conf" 2>/dev/null
         rm -f "${ROOT_MNT}/usr/bin/qemu-aarch64-static" 2>/dev/null
+        # Flush page-cache writes (cmdline.txt/fstab edits) to the backing image
+        # BEFORE unmounting + detaching the loop device, then unmount for real.
+        sync
         for m in dev/pts dev proc sys boot/firmware boot ""; do
-            mp="${ROOT_MNT}/${m}"
-            mountpoint -q "${mp}" 2>/dev/null && { umount "${mp}" 2>/dev/null || umount -lf "${mp}" 2>/dev/null; }
+            umount_real "${ROOT_MNT}/${m}"
         done
     fi
+    # One more sync so any buffered block writes hit the .img before we detach.
+    sync
     [[ -n "${LOOP_DEV}" ]] && losetup -d "${LOOP_DEV}" 2>/dev/null
     LOOP_DEV=""
 }
@@ -360,6 +381,36 @@ configure_boot() {
     fi
 }
 
+# Verify the FINAL ARTIFACT (the real bytes on disk), not the page-cache view we
+# already released. Re-attach the written .img read-only and assert the boot
+# edits actually persisted — build #12 passed the in-build guards yet shipped
+# root=ROOTDEV because the writes never flushed to the backing image.
+verify_artifact() {
+    local img="$1" loop b r ok=1
+    step "Verifying boot config persisted in the final image..."
+    loop="$(losetup -fP --show "$img")" || error "verify: losetup failed on ${img}"
+    [[ -e "${loop}p2" ]] || { sleep 1; partprobe "$loop" 2>/dev/null || true; }
+    b="$(mktemp -d)"; r="$(mktemp -d)"
+    if mount -o ro "${loop}p1" "$b" 2>/dev/null; then
+        grep -q "root=PARTUUID=" "$b/cmdline.txt"     || { echo "::error title=build_image.sh::artifact cmdline has no PARTUUID"; ok=0; }
+        ! grep -qE "ROOTDEV|BOOTDEV" "$b/cmdline.txt"  || { echo "::error title=build_image.sh::artifact cmdline still has placeholder"; ok=0; }
+        umount "$b" 2>/dev/null || umount -lf "$b" 2>/dev/null
+    else
+        echo "::error title=build_image.sh::verify: cannot mount ${loop}p1"; ok=0
+    fi
+    if mount -o ro "${loop}p2" "$r" 2>/dev/null; then
+        grep -q "PARTUUID=" "$r/etc/fstab"            || { echo "::error title=build_image.sh::artifact fstab not using PARTUUID"; ok=0; }
+        ! grep -qiE "ROOTDEV|BOOTDEV" "$r/etc/fstab"   || { echo "::error title=build_image.sh::artifact fstab still has placeholder"; ok=0; }
+        umount "$r" 2>/dev/null || umount -lf "$r" 2>/dev/null
+    else
+        echo "::error title=build_image.sh::verify: cannot mount ${loop}p2"; ok=0
+    fi
+    rmdir "$b" "$r" 2>/dev/null || true
+    losetup -d "$loop" 2>/dev/null || true
+    [[ "$ok" == "1" ]] || error "Final artifact failed boot-config verification (see ::error annotations above)."
+    info "Verified: final image boots by PARTUUID (no placeholders)."
+}
+
 # ── Repack the finished image ────────────────────────────────────────────────
 finalize() {
     step "Unmounting and finalizing..."
@@ -371,6 +422,9 @@ finalize() {
     local out_img="${OUT_DIR}/incubator-v3-${VERSION}-${stamp}.img"
     mv "$WORK_IMG" "$out_img"
     rm -rf "$WORK_DIR"
+
+    # Assert on the real packaged bytes before the slow xz step.
+    verify_artifact "$out_img"
 
     local final="$out_img"
     if [[ "$COMPRESS" == "1" ]]; then
