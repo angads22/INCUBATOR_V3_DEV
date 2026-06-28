@@ -67,6 +67,12 @@ jobs:
       - name: Build image
         run: sudo ./build_image.sh --hostname "${{ github.event.inputs.hostname }}" --wifi-country "${{ github.event.inputs.wifi_country }}" --grow 2048
 
+      # build_image.sh runs under sudo, so dist/ ends up root-owned. Hand it back
+      # to the runner user so the later (non-root) steps can write the checksum
+      # into dist/ and read the assets.
+      - name: Fix dist ownership
+        run: sudo chown -R "$(id -u):$(id -g)" dist
+
       - name: Show built image size
         run: ls -lh dist/
 
