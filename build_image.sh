@@ -186,6 +186,15 @@ ensure_tools() {
         fi
     fi
 
+    # zerofree zeroes the ext4 free space before compression so xz can crush it
+    # (a mostly-empty 4.8 GB image shrinks to a few hundred MB). Best-effort: if
+    # it can't be installed, finalize() just skips the zeroing and compresses a
+    # larger-but-still-valid image.
+    if ! command -v zerofree >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+        apt-get install -y --no-install-recommends zerofree >/dev/null 2>&1 \
+            || warn "Could not install zerofree — free-space zeroing will be skipped (image compresses less)."
+    fi
+
     # Cross-arch emulation is only needed when the host is not arm64.
     if [[ "$HOST_ARCH" == "aarch64" || "$HOST_ARCH" == "arm64" ]]; then
         info "Native arm64 host — no emulation needed."
@@ -429,6 +438,26 @@ verify_artifact() {
     info "Verified: final image boots by PARTUUID (no placeholders)."
 }
 
+# Zero the ext4 free space so xz can compress it away. zerofree operates on the
+# block device of an UNMOUNTED filesystem, so we attach a fresh loop on the
+# finished image (nothing mounted) and run it on the root partition. The boot
+# (FAT) partition is left as-is. Best-effort: a missing/failed zerofree just
+# yields a larger compressed image, never a broken one.
+shrink_freespace() {
+    local img="$1" loop
+    command -v zerofree >/dev/null 2>&1 || { warn "zerofree not installed — skipping free-space zeroing (image compresses less)."; return 0; }
+    step "Zeroing ext4 free space for better compression..."
+    loop="$(losetup -fP --show "$img")" || { warn "shrink: losetup failed — skipping zeroing."; return 0; }
+    [[ -e "${loop}p2" ]] || { sleep 1; partprobe "$loop" 2>/dev/null || true; }
+    if [[ -e "${loop}p2" ]]; then
+        e2fsck -fy "${loop}p2" >/dev/null 2>&1 || true   # zerofree refuses an unclean fs
+        zerofree "${loop}p2" || warn "zerofree failed — image compresses less (continuing)."
+    else
+        warn "shrink: root partition not found on ${loop} — skipping zeroing."
+    fi
+    losetup -d "$loop" 2>/dev/null || true
+}
+
 # ── Repack the finished image ────────────────────────────────────────────────
 finalize() {
     step "Unmounting and finalizing..."
@@ -443,6 +472,9 @@ finalize() {
 
     # Assert on the real packaged bytes before the slow xz step.
     verify_artifact "$out_img"
+
+    # Crush the free space, then compress so the release download stays small.
+    shrink_freespace "$out_img"
 
     local final="$out_img"
     if [[ "$COMPRESS" == "1" ]]; then
