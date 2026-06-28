@@ -323,6 +323,28 @@ install_app() {
 
 # ── Headless boot configuration ──────────────────────────────────────────────
 configure_boot() {
+    # Extract PARTUUIDs from the loop-mounted partitions and update boot config.
+    local root_partuuid boot_partuuid
+    root_partuuid="$(blkid -s PARTUUID -o value "${LOOP_DEV}p2")"
+    boot_partuuid="$(blkid -s PARTUUID -o value "${LOOP_DEV}p1")"
+    [[ -n "$root_partuuid" && -n "$boot_partuuid" ]] || error "Could not read PARTUUIDs"
+    info "Root PARTUUID: ${root_partuuid}, Boot PARTUUID: ${boot_partuuid}"
+
+    # Update kernel cmdline to use the real root PARTUUID (must stay ONE line).
+    sed -i "s|root=[^[:space:]]*|root=PARTUUID=${root_partuuid}|" "${BOOT_MNT}/cmdline.txt"
+
+    # Update fstab: point / and /boot[/firmware] at the real PARTUUIDs.
+    if [[ -f "${ROOT_MNT}/etc/fstab" ]]; then
+        sed -i -E \
+            -e "s#^[^[:space:]]+([[:space:]]+/boot(/firmware)?[[:space:]])#PARTUUID=${boot_partuuid}\1#" \
+            -e "s#^[^[:space:]]+([[:space:]]+/[[:space:]])#PARTUUID=${root_partuuid}\1#" \
+            "${ROOT_MNT}/etc/fstab"
+    fi
+
+    # Guard: ensure cmdline.txt has a valid PARTUUID root= and no placeholders remain.
+    grep -q "root=PARTUUID=" "${BOOT_MNT}/cmdline.txt" || error "cmdline root= not a PARTUUID"
+    ! grep -qE "ROOTDEV|BOOTDEV" "${BOOT_MNT}/cmdline.txt" || error "placeholder left in cmdline"
+
     if [[ "$ENABLE_SSH" == "1" ]]; then
         info "Enabling SSH server."
         touch "${BOOT_MNT}/ssh"
