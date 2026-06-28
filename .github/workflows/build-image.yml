@@ -1,8 +1,15 @@
 name: Build SD image
 
-# Manually triggered. Builds the flashable Pi image in the cloud and uploads it
-# as a downloadable artifact — useful if you don't have a Linux machine to run
+# Manually triggered. Builds the flashable Pi image in the cloud and publishes
+# it as a GitHub RELEASE asset — useful if you don't have a Linux machine to run
 # build_image.sh on (e.g. Windows users): run this, then download + flash.
+#
+# Why a release asset (not a workflow artifact): Actions artifacts are one big
+# zip served from Azure blob storage with NO HTTP range support, so a dropped
+# browser download can't resume and restarts from 0. Release assets are served
+# from a CDN that supports range requests, so they resume on drops — in the
+# browser, a download manager, or `wget -c` / `curl -L -C -` — and aren't
+# wrapped in the Actions-artifact zip.
 #
 # Runs build_image.sh on a NATIVE arm64 runner. That's the whole trick: on real
 # ARM hardware the in-image apt + pip install runs natively, with no QEMU. Every
@@ -16,6 +23,10 @@ on:
         description: "Pi hostname"
         default: "incubator"
         required: false
+      wifi_country:
+        description: "Wi-Fi regulatory country (ISO 3166-1 alpha-2, e.g. US, GB, DE)"
+        default: "US"
+        required: false
 
 jobs:
   build:
@@ -23,6 +34,9 @@ jobs:
     # emulation involved, so the build is both reliable and fast.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
+    # Needed to create the release + tag that carry the .img.xz asset.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -38,28 +52,64 @@ jobs:
 
       # build_image.sh downloads Raspberry Pi OS Lite (arm64), grows it, chroots
       # in (natively — no QEMU), runs init_pi.sh in IMAGE_BUILD mode, enables SSH,
-      # and writes dist/incubator-v3-<version>-<date>.img.
+      # runs the verify_artifact gate on the RAW image, zeroes the ext4 free space
+      # (zerofree), then compresses to dist/incubator-v3-<version>-<date>.img.xz.
       #
       # --grow 2048 adds just enough root-fs headroom for the pre-baked venv +
-      # apt packages (~1 GB) while keeping the raw image small (~4.7 GB). The
-      # filesystem auto-expands to fill the whole card on first boot, so nothing
-      # is lost by keeping the image compact.
+      # apt packages (~1 GB). The filesystem auto-expands to fill the whole card
+      # on first boot, so nothing is lost by keeping the image compact.
       #
-      # --no-compress leaves a raw .img (NOT .img.xz). upload-artifact then zips
-      # it exactly once, so the download is a plain .zip containing a single .img
-      # — which Raspberry Pi Imager / balenaEtcher read and flash directly, with
-      # no manual unzip. (Compressing to .img.xz first produced a confusing
-      # .zip-of-.xz double nesting that tripped up the flashing tools.)
+      # The image is compressed to .img.xz: a mostly-empty 4.8 GB image crushes
+      # to a few hundred MB. Raspberry Pi Imager / balenaEtcher read .img.xz
+      # directly via "Use custom" — no manual unzip. (The old zip-of-xz nesting
+      # problem only affected the Actions-artifact path; release assets aren't
+      # zipped, so it doesn't apply here.)
       - name: Build image
-        run: sudo ./build_image.sh --hostname "${{ github.event.inputs.hostname }}" --grow 2048 --no-compress
+        run: sudo ./build_image.sh --hostname "${{ github.event.inputs.hostname }}" --wifi-country "${{ github.event.inputs.wifi_country }}" --grow 2048
 
       - name: Show built image size
         run: ls -lh dist/
 
+      # Derive the release tag (img-<version>-<date>) and a checksum so the
+      # download can be integrity-checked after a resumed transfer.
+      - name: Prepare release metadata
+        id: meta
+        run: |
+          ver="$(grep -oP 'VERSION\s*=\s*"\K[^"]+' app/version.py 2>/dev/null || echo dev)"
+          stamp="$(date +%Y%m%d)"
+          echo "tag=img-${ver}-${stamp}" >> "$GITHUB_OUTPUT"
+          echo "version=${ver}" >> "$GITHUB_OUTPUT"
+          ( cd dist && sha256sum *.img.xz > SHA256SUMS.txt )
+          cat dist/SHA256SUMS.txt
+
+      # Publish the .img.xz (+ checksum) as a release asset on a CDN that
+      # supports HTTP range requests, so the download resumes on a flaky link.
+      - name: Publish image as a release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Incubator v3 SD image ${{ steps.meta.outputs.version }}
+          body: |
+            Flashable Raspberry Pi SD-card image for Incubator v3.
+
+            **Download `incubator-v3-*.img.xz`** and flash it directly with
+            Raspberry Pi Imager ("Use custom") or balenaEtcher — no manual unzip.
+
+            This asset is served from a CDN with HTTP range support, so the
+            download resumes if it drops: in the browser, a download manager,
+            or `wget -c <url>` / `curl -L -C - -O <url>`. Verify with
+            `sha256sum -c SHA256SUMS.txt`.
+          files: |
+            dist/*.img.xz
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true
+
+      # Also keep a workflow-artifact copy (smaller now that it's compressed).
+      # The release asset above is the recommended, resumable download.
       - name: Upload image artifact
         uses: actions/upload-artifact@v4
         with:
           name: incubator-sd-image
-          path: dist/*.img
+          path: dist/*.img.xz
           retention-days: 14
           if-no-files-found: error
