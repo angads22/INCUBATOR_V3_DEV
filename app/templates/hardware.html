@@ -1,6 +1,22 @@
 {% extends 'base.html' %}
 {% block content %}
 {% with eyebrow='Manual Control', title='Hardware Control Panel', subtitle='Direct command access with explicit operator actions.' %}{% include 'partials/section_header.html' %}{% endwith %}
+
+<section class="card" style="margin-bottom:18px">
+  <h3>Candling tray</h3>
+  <p class="muted">Switch on the candling light, then tap each egg to log what you see: fertile → uncertain → clear → removed. Saved locally on this device.</p>
+  <div class="candling-tray" id="candlingTray" aria-label="Candling tray">
+    {% for i in range(24) %}<span class="egg" data-egg="{{ i }}" data-state="clear" role="button" tabindex="0" aria-label="Egg {{ i + 1 }}"></span>{% endfor %}
+  </div>
+  <div class="candling-legend">
+    <span><i style="background:var(--egg-fertile)"></i> Fertile</span>
+    <span><i style="background:var(--egg-uncertain)"></i> Uncertain</span>
+    <span><i style="background:var(--egg-clear)"></i> Clear</span>
+    <span><i style="border:1px dashed rgba(70,50,20,.4)"></i> Removed</span>
+    <button type="button" id="candlingReset" class="btn btn-ghost" style="margin-left:auto;min-height:34px;padding:6px 12px">Reset tray</button>
+  </div>
+</section>
+
 <section class="card">
   <div class="action-grid">
     {% with title='Open Lock', description='Unlock the enclosure for maintenance.', button_text='Open Lock', action_name='open_lock', confirm_text='Open the lock? The enclosure will be accessible.' %}{% include 'partials/action_card.html' %}{% endwith %}
@@ -19,4 +35,38 @@
 {% endblock %}
 {% block scripts %}
 <script src="/static/js/hardware.js"></script>
+<script>
+// Candling tray — tap an egg to cycle its state; state persists locally so a
+// candling session survives a page reload. No backend: it is an inspection aid.
+(() => {
+  const tray = document.getElementById('candlingTray');
+  if (!tray) return;
+  const KEY = 'lifeloop-candling';
+  const STATES = ['clear', 'fertile', 'uncertain', 'removed'];
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { saved = {}; }
+  const persist = () => localStorage.setItem(KEY, JSON.stringify(saved));
+
+  tray.querySelectorAll('.egg').forEach((egg) => {
+    const id = egg.dataset.egg;
+    if (saved[id]) egg.dataset.state = saved[id];
+    const cycle = () => {
+      const next = STATES[(STATES.indexOf(egg.dataset.state) + 1) % STATES.length];
+      egg.dataset.state = next;
+      saved[id] = next;
+      persist();
+    };
+    egg.addEventListener('click', cycle);
+    egg.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cycle(); }
+    });
+  });
+
+  document.getElementById('candlingReset')?.addEventListener('click', () => {
+    saved = {};
+    persist();
+    tray.querySelectorAll('.egg').forEach((egg) => { egg.dataset.state = 'clear'; });
+  });
+})();
+</script>
 {% endblock %}

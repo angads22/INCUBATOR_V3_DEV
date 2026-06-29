@@ -556,6 +556,7 @@ class SettingsUpdate(BaseModel):
     target_humidity_pct: float | None = Field(default=None, ge=0.0, le=100.0)
     alert_temp_tolerance_c: float | None = Field(default=None, ge=0.1, le=10.0)
     alert_humidity_tolerance_pct: float | None = Field(default=None, ge=1.0, le=50.0)
+    incubation_day: int | None = Field(default=None, ge=0, le=21)
     heater_enabled: bool | None = None
     fan_enabled: bool | None = None
     turner_enabled: bool | None = None
@@ -578,6 +579,8 @@ def api_settings_update(
         updates["alert_temp_tolerance_c"] = str(payload.alert_temp_tolerance_c)
     if payload.alert_humidity_tolerance_pct is not None:
         updates["alert_humidity_tolerance_pct"] = str(payload.alert_humidity_tolerance_pct)
+    if payload.incubation_day is not None:
+        updates["incubation_day"] = str(payload.incubation_day)
     if payload.heater_enabled is not None:
         updates["heater_enabled"] = "true" if payload.heater_enabled else "false"
         if _hardware_service:

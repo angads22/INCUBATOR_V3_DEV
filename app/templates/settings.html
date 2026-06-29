@@ -25,7 +25,9 @@
       <label>Target Humidity (%, 0–100)<input type="number" step="0.1" min="0" max="100" name="target_humidity_pct" value="{{ settings.target_humidity_pct }}" required></label>
       <label>Alert tolerance — temp (±°C)<input type="number" step="0.1" min="0.1" max="10" name="alert_temp_tolerance_c" value="{{ settings.get('alert_temp_tolerance_c', '1.0') }}" required></label>
       <label>Alert tolerance — humidity (±%)<input type="number" step="0.5" min="1" max="50" name="alert_humidity_tolerance_pct" value="{{ settings.get('alert_humidity_tolerance_pct', '10') }}" required></label>
+      <label>Incubation day (0–21)<input type="number" step="1" min="0" max="21" name="incubation_day" value="{{ settings.get('incubation_day', '0') }}"></label>
     </div>
+    <p class="muted">The incubation day drives the day-progress loop ring on the dashboard (21-day cycle).</p>
     <p class="muted">Readings outside target ± tolerance raise an alert and sound the buzzer (when the alarm is enabled).</p>
     <div class="toggle-grid">
       <label><input type="checkbox" name="heater_enabled" {% if settings.heater_enabled == 'true' %}checked{% endif %}> Heater Enabled</label>

@@ -19,7 +19,7 @@
     <h3>Live Sensor Reading</h3>
     {% if environment and environment.has_reading %}
     <div class="metrics-grid compact-metrics">
-      {% with label='Temperature', value='%.2f°C'|format(environment.temperature_c), hint=('Simulated' if environment.mock else ('Live' if environment.online else 'Last known')) %}{% include 'partials/metric_card.html' %}{% endwith %}
+      {% with label='Temperature', value='%.2f°C'|format(environment.temperature_c), hint=('Simulated' if environment.mock else ('Live' if environment.online else 'Last known')), temp_c=environment.temperature_c %}{% include 'partials/metric_card.html' %}{% endwith %}
       {% with label='Humidity', value='%.1f%%'|format(environment.humidity_pct), hint=('Simulated' if environment.mock else ('Live' if environment.online else 'Last known')) %}{% include 'partials/metric_card.html' %}{% endwith %}
     </div>
     {% if not environment.online %}
