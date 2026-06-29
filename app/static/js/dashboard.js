@@ -20,7 +20,14 @@
   }
 
   function render(data) {
-    tempEl.textContent = fmt(data.temperature_c, '°C');
+    if (data.temperature_c == null) {
+      tempEl.removeAttribute('data-temp-c');
+      tempEl.textContent = '—';
+    } else {
+      tempEl.dataset.tempC = data.temperature_c;
+      // Respect the °C/°F header toggle when one is present.
+      tempEl.textContent = window.formatTemp ? window.formatTemp(data.temperature_c) : fmt(data.temperature_c, '°C');
+    }
     humEl.textContent = fmt(data.humidity_pct, '%');
     offlineRow.hidden = !!data.online;
     if (!data.online) {

@@ -5,19 +5,20 @@ html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
   min-height: 100vh;
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-family: var(--font-ui);
   font-size: 16px;
   line-height: 1.5;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
   color: var(--text);
   background-color: var(--bg);
-  /* Layered ambiance: a warm incubator glow up top, cool depth below. */
+  /* Warm cream paper with a subtle grain + a soft glow of incubator warmth. */
   background-image:
-    radial-gradient(900px 480px at 12% -8%, rgba(255, 168, 105, 0.10), transparent 60%),
-    radial-gradient(820px 520px at 92% 4%, rgba(92, 200, 255, 0.10), transparent 58%),
-    radial-gradient(1100px 700px at 50% 118%, rgba(54, 180, 246, 0.08), transparent 60%),
-    linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 38%);
-  background-attachment: fixed;
+    radial-gradient(900px 520px at 12% -8%, rgba(194, 112, 42, 0.06), transparent 60%),
+    radial-gradient(820px 540px at 92% 2%, rgba(177, 130, 42, 0.05), transparent 58%),
+    radial-gradient(rgba(120, 95, 55, 0.05) 0.5px, transparent 0.5px),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+  background-size: auto, auto, 4px 4px, auto;
+  background-attachment: fixed, fixed, fixed, fixed;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -34,10 +35,10 @@ body {
   gap: 16px;
   align-items: center;
   padding: 13px clamp(16px, 4vw, 28px);
-  border-bottom: 1px solid var(--line-soft);
-  background: rgba(11, 16, 24, 0.72);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border-bottom: 1px solid var(--line);
+  background: rgba(251, 247, 239, 0.82);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
 }
 
 /* Brand lockup (logo mark + wordmark) */

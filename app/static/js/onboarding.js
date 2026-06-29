@@ -88,15 +88,32 @@ async function loadWifiNetworks() {
         document.querySelectorAll('.wifi-item').forEach((el) => el.classList.remove('selected'));
         item.classList.add('selected');
         selectedSsid = net.ssid;
+        const manual = document.getElementById('manualSsid');
+        if (manual) manual.value = '';
         nextBtn.disabled = false;
       });
       listEl.appendChild(item);
     });
   } catch {
-    msgEl.textContent = 'Scan failed. You can continue and configure Wi-Fi later in network settings.';
+    msgEl.textContent = 'Scan failed. You can still continue by typing your network name below.';
     nextBtn.disabled = false;
   }
 }
+
+// Manual SSID entry — the single-radio Pi often can't scan while its own
+// hotspot is up, so let the operator just type the network name.
+document.getElementById('manualSsid')?.addEventListener('input', (e) => {
+  const value = e.target.value.trim();
+  const nextBtn = document.getElementById('wifiNextBtn');
+  if (value) {
+    document.querySelectorAll('.wifi-item').forEach((el) => el.classList.remove('selected'));
+    selectedSsid = value;
+    if (nextBtn) nextBtn.disabled = false;
+  } else {
+    selectedSsid = '';
+    if (nextBtn) nextBtn.disabled = true;
+  }
+});
 
 // Step 3: Account fields toggle
 document.getElementById('createAccountCheck')?.addEventListener('change', (e) => {

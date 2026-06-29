@@ -7,6 +7,7 @@ document.getElementById('settings-form')?.addEventListener('submit', async (e) =
     target_humidity_pct: parseFloat(f.target_humidity_pct.value),
     alert_temp_tolerance_c: parseFloat(f.alert_temp_tolerance_c.value),
     alert_humidity_tolerance_pct: parseFloat(f.alert_humidity_tolerance_pct.value),
+    incubation_day: parseInt(f.incubation_day.value, 10) || 0,
     heater_enabled: f.heater_enabled.checked,
     fan_enabled: f.fan_enabled.checked,
     turner_enabled: f.turner_enabled.checked,

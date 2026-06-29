@@ -29,6 +29,10 @@
       <p class="muted">Choose the network your incubator should use for normal operation.</p>
       <p id="wifiScanMsg" class="hint">Scanning for networks&hellip;</p>
       <div id="wifiList" class="wifi-list"></div>
+      <label class="manual-ssid">Can't see your network? Enter its name manually
+        <input id="manualSsid" type="text" placeholder="Wi-Fi network name (SSID)" autocomplete="off" />
+      </label>
+      <p class="muted hint">While the setup hotspot is on, this device can't always scan for other networks — typing the name works just as well.</p>
       <div class="wizard-nav">
         <button class="btn btn-ghost" type="button" data-prev>Back</button>
         <button class="btn btn-primary" type="button" data-next id="wifiNextBtn" disabled>Next</button>

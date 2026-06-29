@@ -1,21 +1,15 @@
 <header class="topbar">
   <div class="brand-lockup">
-    <span class="brand-mark">
-      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <defs>
-          <linearGradient id="eggGrad" x1="4" y1="2" x2="20" y2="22" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#ffd27a"/>
-            <stop offset="0.55" stop-color="#ff9d6c"/>
-            <stop offset="1" stop-color="#ff7eb6"/>
-          </linearGradient>
-        </defs>
-        <path d="M12 2.5c-3.7 0-6.9 5.3-6.9 9.7a6.9 6.9 0 0 0 13.8 0c0-4.4-3.2-9.7-6.9-9.7Z" fill="url(#eggGrad)"/>
-        <path d="M9.9 6.6c-1.2 1.2-2 3-2.2 4.7" stroke="#fff" stroke-opacity="0.55" stroke-width="1.3" stroke-linecap="round"/>
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" stroke-dasharray="37 13" transform="rotate(-90 12 12)"/>
+        <circle cx="12" cy="4" r="2.4" fill="currentColor"/>
       </svg>
     </span>
     <div class="brand-text">
-      <p class="eyebrow">Incubator Controller</p>
-      <h1 class="brand">Incubator Control</h1>
+      <h1 class="brand">Life Loop</h1>
+      <p class="eyebrow">Incubation, full circle</p>
     </div>
   </div>
   <nav class="nav-links">
@@ -23,19 +17,29 @@
     <a href="/status">Status</a>
     <a href="/help">Help</a>
   </nav>
-  <div class="profile-wrap">
-    <button id="profileBtn" class="btn btn-ghost profile-btn" type="button" aria-haspopup="true" aria-expanded="false">
-      <span class="profile-icon">&#9679;</span>
-      <span class="profile-caret">&#9660;</span>
+  <div class="header-controls">
+    <div class="theme-switch" id="themeSwitch" role="group" aria-label="Accent theme">
+      <button type="button" class="theme-dot" data-theme-choice="clay" title="Clay" aria-label="Clay theme"></button>
+      <button type="button" class="theme-dot" data-theme-choice="sage" title="Sage" aria-label="Sage theme"></button>
+      <button type="button" class="theme-dot" data-theme-choice="harvest" title="Harvest" aria-label="Harvest theme"></button>
+    </div>
+    <button id="unitToggle" class="unit-toggle" type="button" aria-label="Toggle temperature unit" title="Switch °F / °C">
+      <span data-unit="C">°C</span><span data-unit="F">°F</span>
     </button>
-    <div id="profileMenu" class="profile-dropdown" hidden>
-      <a href="/settings">Settings</a>
-      <a href="/settings#network">Network Settings</a>
-      <a href="/settings#device">Device Settings</a>
-      <hr class="menu-divider" />
-      <a href="/onboarding">Setup / Onboarding</a>
-      <hr class="menu-divider" />
-      <button id="logoutBtn" class="menu-item menu-logout" type="button">Logout</button>
+    <div class="profile-wrap">
+      <button id="profileBtn" class="btn btn-ghost profile-btn" type="button" aria-haspopup="true" aria-expanded="false">
+        <span class="profile-icon">&#9679;</span>
+        <span class="profile-caret">&#9660;</span>
+      </button>
+      <div id="profileMenu" class="profile-dropdown" hidden>
+        <a href="/settings">Settings</a>
+        <a href="/settings#network">Network Settings</a>
+        <a href="/settings#device">Device Settings</a>
+        <hr class="menu-divider" />
+        <a href="/onboarding">Setup / Onboarding</a>
+        <hr class="menu-divider" />
+        <button id="logoutBtn" class="menu-item menu-logout" type="button">Logout</button>
+      </div>
     </div>
   </div>
 </header>

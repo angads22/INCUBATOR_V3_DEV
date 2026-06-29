@@ -132,6 +132,19 @@ systemctl enable incubator-wifi-country.service 2>/dev/null \
     || ln -sf /etc/systemd/system/incubator-wifi-country.service \
         /etc/systemd/system/multi-user.target.wants/incubator-wifi-country.service
 
+# ── Captive-portal DNS hijack (setup hotspot) ────────────────
+# NetworkManager's shared (AP) mode runs its own dnsmasq. Resolving every
+# domain to the AP IP while the hotspot is up makes phones/laptops fire their
+# "sign in to network" captive-portal flow, which the app's :80 responder
+# turns into the onboarding page. This only affects the shared/AP connection;
+# once the Pi joins a real network as a client it is not in shared mode.
+info "Installing captive-portal DNS config for the setup hotspot..."
+mkdir -p /etc/NetworkManager/dnsmasq-shared.d
+cat > /etc/NetworkManager/dnsmasq-shared.d/090-incubator-captive.conf <<EOF
+# Resolve all names to the incubator AP so the onboarding portal auto-opens.
+address=/#/${INCUBATOR_AP_IP:-10.42.0.1}
+EOF
+
 # ── Create install directory and copy files ──────────────────
 mkdir -p "${INSTALL_DIR}"
 if [[ "$IMAGE_BUILD" == "1" && "$REPO_DIR" == "$INSTALL_DIR" ]]; then
