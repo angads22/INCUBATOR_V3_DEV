@@ -50,6 +50,7 @@ class OnboardingService:
         self._ap_ip = ap_ip
         self._auto_hotspot = auto_hotspot
         self._hotspot_active = False
+        self._captive = None  # CaptivePortalResponder, lazily created with the hotspot
 
     # ------------------------------------------------------------------
     # Public API
@@ -72,6 +73,7 @@ class OnboardingService:
             ok = self._wifi.start_hotspot(ssid, self._ap_password)
             self._hotspot_active = ok
             if ok:
+                self._start_captive_responder()
                 logger.info(
                     "Hotspot active. Connect to '%s' and open http://%s:8000",
                     ssid,
@@ -88,6 +90,8 @@ class OnboardingService:
         self._setup.enter_setup_mode("manual_trigger")
         ok = self._wifi.start_hotspot(ssid, self._ap_password)
         self._hotspot_active = ok
+        if ok:
+            self._start_captive_responder()
         return {
             "ok": ok,
             "ssid": ssid,
@@ -96,15 +100,45 @@ class OnboardingService:
         }
 
     def complete(self, ssid: str, password: str) -> bool:
-        """Called after onboarding wizard finishes.  Switches to client WiFi."""
+        """Called after onboarding wizard finishes. Switches to client WiFi.
+
+        The Pi Zero 2 W has a single radio, so the AP and the client connection
+        cannot coexist on wlan0. Tear the hotspot (and captive responder) down
+        FIRST, then join the client network — otherwise the connect attempt
+        races the still-running AP and setup hangs. The HTTP handler schedules
+        this as a background task so the response is already on the wire before
+        the network flips out from under it.
+        """
         self._setup.exit_setup_mode()
-        connected = False
-        if ssid:
-            connected = self._wifi.connect_client(ssid, password)
+        self._stop_captive_responder()
         if self._hotspot_active:
             self._wifi.stop_hotspot()
             self._hotspot_active = False
+        connected = False
+        if ssid:
+            connected = self._wifi.connect_client(ssid, password)
         return connected
+
+    # ------------------------------------------------------------------
+    # Captive portal responder (best-effort; only while the hotspot is up)
+    # ------------------------------------------------------------------
+
+    def _start_captive_responder(self) -> None:
+        try:
+            from .captive_portal import CaptivePortalResponder
+
+            if self._captive is None:
+                self._captive = CaptivePortalResponder(f"http://{self._ap_ip}:8000/onboarding")
+            self._captive.start()
+        except Exception as exc:  # noqa: BLE001 — never let this break onboarding
+            logger.warning("Could not start captive portal responder: %s", exc)
+
+    def _stop_captive_responder(self) -> None:
+        try:
+            if self._captive is not None:
+                self._captive.stop()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("captive responder stop: %s", exc)
 
     def is_hotspot_active(self) -> bool:
         return self._hotspot_active

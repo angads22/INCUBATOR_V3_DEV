@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -503,7 +503,12 @@ def onboarding_wifi_scan() -> dict:
 
 
 @router.post("/onboarding/complete")
-def onboarding_complete(payload: HotspotSetupPayload, response: Response, db: Session = Depends(get_db)) -> dict:
+def onboarding_complete(
+    payload: HotspotSetupPayload,
+    response: Response,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> dict:
     config = db.scalar(select(DeviceConfig).limit(1))
     if not config:
         config = DeviceConfig(device_id=f"PI-{__import__('uuid').uuid4().hex[:8].upper()}", claimed=False)
@@ -540,13 +545,20 @@ def onboarding_complete(payload: HotspotSetupPayload, response: Response, db: Se
     if new_user is not None:
         _set_session_cookie(response, create_session(db, new_user.id, settings.session_ttl_seconds))
 
-    # Switch from AP to client WiFi
+    # Switch from AP to client Wi-Fi AFTER this response is sent. On the
+    # single-radio Pi the switch tears down the very hotspot serving this
+    # request, so doing it inline would drop the reply and hang the wizard.
+    # A background task runs once the response is on the wire.
     if _onboarding_service:
-        _onboarding_service.complete(payload.ssid or "", payload.wifi_password or "")
+        background_tasks.add_task(
+            _onboarding_service.complete, payload.ssid or "", payload.wifi_password or ""
+        )
     elif _setup_mode_service:
         _setup_mode_service.exit_setup_mode()
         if _wifi_service and payload.ssid:
-            _wifi_service.connect_client(payload.ssid, payload.wifi_password or "")
+            background_tasks.add_task(
+                _wifi_service.connect_client, payload.ssid, payload.wifi_password or ""
+            )
 
     return {"ok": True, "device_name": payload.device_name, "claimed": bool(config.claimed)}
 
