@@ -308,3 +308,24 @@ body[data-unit="F"] .unit-toggle span[data-unit="F"] { background: var(--accent)
 .turn-time { font-family: var(--font-mono); color: var(--muted); font-size: 0.85rem; }
 .turn-row.is-done { opacity: 0.6; }
 .turn-row.is-next { border-color: var(--accent); background: var(--accent-soft); }
+
+/* ── Update-available popup ──────────────────────────────────────── */
+.update-popup {
+  position: fixed; right: clamp(12px, 3vw, 24px); bottom: clamp(12px, 3vw, 24px);
+  width: min(340px, calc(100vw - 24px)); z-index: 200;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg); padding: 18px 18px 16px;
+  opacity: 0; transform: translateY(12px); transition: opacity 0.28s ease, transform 0.28s ease;
+}
+.update-popup.show { opacity: 1; transform: translateY(0); }
+.update-popup-close {
+  position: absolute; top: 8px; right: 10px; border: none; background: none;
+  font-size: 1.3rem; line-height: 1; color: var(--faint); cursor: pointer; padding: 4px;
+}
+.update-popup-close:hover { color: var(--text); }
+.update-popup-eyebrow { margin: 0; color: var(--accent-ink); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.update-popup-title { margin: 4px 0 8px; font-family: var(--font-serif); font-weight: 600; font-size: 1.2rem; }
+.update-popup-title span { font-family: var(--font-mono); font-size: 0.95rem; color: var(--accent-ink); }
+.update-popup-notes { margin: 0 0 8px; color: var(--muted); font-size: 0.86rem; max-height: 4.5em; overflow: hidden; }
+.update-popup-steps { margin: 0 0 12px; color: var(--muted); font-size: 0.84rem; }
+.update-popup .btn { width: 100%; }

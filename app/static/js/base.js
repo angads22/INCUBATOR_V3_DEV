@@ -138,3 +138,37 @@ if (logoutBtn) {
     applyTempUnit();
   });
 })();
+
+// ── Life Loop: update-available popup (dashboard only) ────────────────
+// Quiet by design: only on the dashboard, only when online, and only when a
+// newer release exists that hasn't already been dismissed for that version.
+(() => {
+  if (window.location.pathname !== '/') return;
+  if (navigator.onLine === false) return;
+  const popup = document.getElementById('updatePopup');
+  if (!popup) return;
+  const KEY = 'lifeloop-update-dismissed';
+
+  fetch('/api/update-check')
+    .then((r) => r.json())
+    .then((d) => {
+      if (!d || !d.update_available || !d.latest) return;
+      if (localStorage.getItem(KEY) === d.latest) return;
+
+      document.getElementById('updateVersion').textContent = d.latest;
+      const notes = document.getElementById('updateNotes');
+      if (d.notes) { notes.textContent = d.notes; notes.hidden = false; }
+      const link = document.getElementById('updateLink');
+      if (d.url) link.href = d.url; else link.hidden = true;
+
+      popup.hidden = false;
+      requestAnimationFrame(() => requestAnimationFrame(() => popup.classList.add('show')));
+
+      document.getElementById('updateDismiss')?.addEventListener('click', () => {
+        localStorage.setItem(KEY, d.latest);
+        popup.classList.remove('show');
+        popup.addEventListener('transitionend', () => { popup.hidden = true; }, { once: true });
+      });
+    })
+    .catch(() => { /* offline / unavailable — stay quiet */ });
+})();

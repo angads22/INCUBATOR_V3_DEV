@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
 import re
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 
@@ -627,6 +631,69 @@ def api_logout(
     destroy_session(db, session_token)
     _clear_session_cookie(response)
     return {"ok": True}
+
+
+# ------------------------------------------------------------------
+# Update check — newer GitHub release available?
+# ------------------------------------------------------------------
+
+_GITHUB_LATEST_RELEASE = "https://api.github.com/repos/angads22/INCUBATOR_V3_DEV/releases/latest"
+_UPDATE_TTL_SECONDS = 6 * 3600
+# Process-wide cache so we poll GitHub at most a few times a day, and never on
+# the request hot path once warm.
+_update_cache: dict[str, Any] = {"ts": 0.0, "data": None}
+
+
+def _is_newer_version(latest: str, current: str) -> bool:
+    """True when `latest` is a strictly newer M.mm version than `current`."""
+    from ..version import parse_version
+
+    try:
+        return parse_version(latest) > parse_version(current)
+    except (ValueError, AttributeError):
+        return False
+
+
+@router.get("/api/update-check")
+def api_update_check() -> dict:
+    """Report whether a newer release exists on GitHub.
+
+    Cached ~6h and fully offline-safe: any network error (no internet on a
+    first-boot appliance, rate limit, etc.) returns update_available=false so
+    the UI simply stays quiet.
+    """
+    now = time.time()
+    cached = _update_cache.get("data")
+    if cached is not None and now - _update_cache["ts"] < _UPDATE_TTL_SECONDS:
+        return cached
+
+    result = {"update_available": False, "latest": None, "url": None, "notes": ""}
+    try:
+        import httpx
+
+        resp = httpx.get(
+            _GITHUB_LATEST_RELEASE,
+            timeout=4.0,
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "incubator-v3"},
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            tag = (data.get("tag_name") or "").strip()
+            # Release tags look like "img-1.40-20260628"; pull the M.mm version.
+            match = re.search(r"(\d+\.\d{2})", tag)
+            latest = match.group(1) if match else tag
+            result = {
+                "update_available": _is_newer_version(latest, settings.app_version),
+                "latest": latest or None,
+                "url": data.get("html_url"),
+                "notes": (data.get("body") or "").strip()[:280],
+            }
+            # Only cache successful lookups so a transient outage retries soon.
+            _update_cache["data"] = result
+            _update_cache["ts"] = now
+    except Exception as exc:  # noqa: BLE001 — offline must never raise to the UI
+        logger.debug("update-check skipped (offline or unavailable): %s", exc)
+    return result
 
 
 # ------------------------------------------------------------------

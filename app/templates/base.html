@@ -15,6 +15,16 @@
   <main class="app-main container">
     {% block content %}{% endblock %}
   </main>
+
+  <div id="updatePopup" class="update-popup" hidden role="dialog" aria-live="polite" aria-label="Software update available">
+    <button class="update-popup-close" id="updateDismiss" type="button" aria-label="Dismiss">&times;</button>
+    <p class="update-popup-eyebrow">Update available</p>
+    <h3 class="update-popup-title">Life Loop <span id="updateVersion"></span></h3>
+    <p class="update-popup-notes" id="updateNotes" hidden></p>
+    <p class="update-popup-steps">Re-flash the SD card with the new image, or on the device run <code>git pull</code> and restart the incubator service.</p>
+    <a id="updateLink" class="btn btn-primary" href="#" target="_blank" rel="noopener">View release</a>
+  </div>
+
   <script src="/static/js/base.js"></script>
   {% block scripts %}{% endblock %}
 </body>
