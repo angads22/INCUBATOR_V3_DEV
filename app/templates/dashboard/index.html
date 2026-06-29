@@ -12,10 +12,35 @@
 
 <section class="dashboard-grid home-dashboard appliance-home">
   <div class="panel-group">
+    {% set inc_day = settings.get('incubation_day', '0') | int %}
+    {% set inc_total = 21 %}
+    {% set inc_pct = ((inc_day / inc_total * 100) | round | int) if inc_total else 0 %}
+    {% set days_left = (inc_total - inc_day) if inc_total > inc_day else 0 %}
     <article class="card home-hero">
-      <p class="eyebrow">Device</p>
+      <p class="eyebrow">Device · Life loop</p>
       <p class="device-name">{{ home_summary.device_name }}</p>
       <p class="muted">Device ID: {{ home_summary.device_id }}</p>
+
+      <div class="loop-ring" style="--pct: {{ inc_pct }}" role="img"
+           aria-label="Incubation day {{ inc_day }} of {{ inc_total }}">
+        <div class="loop-ring-inner">
+          <span class="loop-day">Day {{ inc_day }}</span>
+          <span class="loop-of">of {{ inc_total }}</span>
+        </div>
+      </div>
+      <p class="loop-caption">
+        {% if inc_day == 0 %}Set the incubation day in Settings to start the loop.
+        {% elif days_left > 0 %}{{ days_left }} day{{ 's' if days_left != 1 else '' }} to hatch.
+        {% else %}Hatch window — keep the lockdown humidity high.{% endif %}
+      </p>
+
+      <div class="chip-row" style="margin-top:12px">
+        {% if alerts.active %}<span class="status-pill is-attention">Attention</span>
+        {% elif inc_day >= 19 %}<span class="status-pill is-hatching">Hatching</span>
+        {% elif inc_day >= 18 %}<span class="status-pill is-lockdown">Lockdown · d{{ inc_day }}</span>
+        {% else %}<span class="status-pill is-healthy">Healthy</span>{% endif %}
+      </div>
+
       <h2 class="hero-state">{{ home_summary.current_state_summary }}</h2>
       <p class="muted">{{ home_summary.state_detail }}</p>
       <div class="chip-row">
@@ -35,7 +60,7 @@
     <article class="card">
       <h3>Overview / incubator health</h3>
       <div class="metrics-grid compact-metrics">
-        {% with label='Temperature', value=('%.1f°C'|format(sensor.temperature_c) if sensor.temperature_c is not none else '—'), hint='Target %.1f°C'|format(live.target_temp_c), value_id='liveTemp' %}{% include 'partials/metric_card.html' %}{% endwith %}
+        {% with label='Temperature', value=('%.1f°C'|format(sensor.temperature_c) if sensor.temperature_c is not none else '—'), hint='Target %.1f°C'|format(live.target_temp_c), value_id='liveTemp', temp_c=sensor.temperature_c %}{% include 'partials/metric_card.html' %}{% endwith %}
         {% with label='Humidity', value=('%.1f%%'|format(sensor.humidity_pct) if sensor.humidity_pct is not none else '—'), hint='Target %.1f%%'|format(live.target_humidity_pct), value_id='liveHum' %}{% include 'partials/metric_card.html' %}{% endwith %}
       </div>
       <div class="chip-row" id="sensorOfflineRow"{% if sensor.online %} hidden{% endif %}>

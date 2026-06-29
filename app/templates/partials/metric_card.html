@@ -1,6 +1,6 @@
 <article class="card metric-card">
   <p class="metric-label">{{ label }}</p>
-  <p class="metric-value"{% if value_id %} id="{{ value_id }}"{% endif %}>{{ value }}</p>
+  <p class="metric-value"{% if value_id %} id="{{ value_id }}"{% endif %}{% if temp_c is defined and temp_c is not none %} data-temp-c="{{ temp_c }}"{% endif %}>{{ value }}</p>
   {% if hint %}
   <p class="metric-hint">{{ hint }}</p>
   {% endif %}

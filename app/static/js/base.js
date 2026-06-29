@@ -83,3 +83,58 @@ if (logoutBtn) {
     window.location.href = '/login';
   });
 }
+
+// ── Life Loop: accent theme + temperature unit ────────────────────────
+// Persisted in localStorage so the operator's choice survives reloads. The
+// theme attribute is applied to <html> (see tokens.css [data-theme] rules).
+(() => {
+  const THEME_KEY = 'lifeloop-theme';
+  const UNIT_KEY = 'lifeloop-unit';
+  const THEMES = ['clay', 'sage', 'harvest'];
+  const root = document.documentElement;
+
+  // -- Accent theme --
+  function applyTheme(name) {
+    const theme = THEMES.includes(name) ? name : 'clay';
+    root.setAttribute('data-theme', theme);
+    document.querySelectorAll('.theme-dot').forEach((dot) => {
+      dot.classList.toggle('active', dot.dataset.themeChoice === theme);
+    });
+  }
+  applyTheme(localStorage.getItem(THEME_KEY) || 'clay');
+  document.querySelectorAll('.theme-dot').forEach((dot) => {
+    dot.addEventListener('click', () => {
+      const choice = dot.dataset.themeChoice;
+      localStorage.setItem(THEME_KEY, choice);
+      applyTheme(choice);
+    });
+  });
+
+  // -- Temperature unit (°C / °F) --
+  const getUnit = () => (localStorage.getItem(UNIT_KEY) === 'F' ? 'F' : 'C');
+  const cToF = (c) => (c * 9) / 5 + 32;
+
+  // Shared formatter so live-polling scripts render in the chosen unit too.
+  window.formatTemp = (c) => {
+    if (c == null || Number.isNaN(Number(c))) return '—';
+    return getUnit() === 'F'
+      ? `${cToF(Number(c)).toFixed(1)}°F`
+      : `${Number(c).toFixed(1)}°C`;
+  };
+
+  // Re-render every element tagged with a Celsius source value.
+  window.applyTempUnit = () => {
+    document.body.setAttribute('data-unit', getUnit());
+    document.querySelectorAll('[data-temp-c]').forEach((el) => {
+      const c = el.getAttribute('data-temp-c');
+      if (c === '' || c == null) return;
+      el.textContent = (el.dataset.tempPrefix || '') + window.formatTemp(parseFloat(c));
+    });
+  };
+  applyTempUnit();
+
+  document.getElementById('unitToggle')?.addEventListener('click', () => {
+    localStorage.setItem(UNIT_KEY, getUnit() === 'F' ? 'C' : 'F');
+    applyTempUnit();
+  });
+})();

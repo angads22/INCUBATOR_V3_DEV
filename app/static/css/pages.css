@@ -7,22 +7,19 @@
 
 .home-hero {
   background:
-    radial-gradient(120% 140% at 100% 0%, rgba(255, 168, 105, 0.12), transparent 55%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 45%),
+    radial-gradient(120% 140% at 100% 0%, var(--accent-soft), transparent 60%),
     var(--panel);
-  border-color: rgba(255, 197, 138, 0.22);
+  border-color: var(--line);
 }
-.device-name { margin: 0 0 6px; font-size: 1.3rem; font-weight: 800; letter-spacing: -0.01em; }
-.home-hero .device-name { font-size: 1.6rem; margin-bottom: 2px; }
+.device-name { margin: 0 0 6px; font-family: var(--font-serif); font-size: 1.4rem; font-weight: 600; letter-spacing: -0.01em; }
+.home-hero .device-name { font-size: 1.7rem; margin-bottom: 2px; }
 .hero-state {
   margin: 10px 0 0;
-  font-size: 1.5rem;
-  font-weight: 800;
+  font-family: var(--font-serif);
+  font-size: 1.6rem;
+  font-weight: 700;
   letter-spacing: -0.02em;
-  background: var(--brand-grad);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--accent-ink);
 }
 .next-step-btn { width: 100%; text-align: center; text-decoration: none; margin-top: 6px; }
 .compact-metrics .metric-card { min-height: 0; }
@@ -40,13 +37,13 @@
   border: 1px solid var(--line);
   text-decoration: none;
   color: var(--text);
-  background: rgba(255, 255, 255, 0.015);
+  background: var(--panel-soft);
 }
-.quick-action-item:hover { background: var(--panel-soft); border-color: var(--primary); }
+.quick-action-item:hover { background: var(--panel-2); border-color: var(--accent); }
 .quick-action-label { font-weight: 700; }
 .quick-action-detail { color: var(--muted); font-size: 0.86rem; }
-.quick-action-item.tone-primary { border-color: rgba(92, 200, 255, 0.5); background: rgba(92, 200, 255, 0.06); }
-.quick-action-item.tone-secondary { border-color: rgba(156, 173, 198, 0.4); }
+.quick-action-item.tone-primary { border-color: var(--accent); background: var(--accent-soft); }
+.quick-action-item.tone-secondary { border-color: var(--line); }
 .quick-action-item.tone-ghost { border-color: var(--line); }
 .future-card { opacity: 0.96; }
 
@@ -72,8 +69,7 @@
   height: 100%;
   width: 0;
   border-radius: var(--radius-pill);
-  background: var(--brand-grad);
-  box-shadow: 0 0 14px rgba(255, 157, 108, 0.5);
+  background: var(--accent);
   transition: width 0.45s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .wizard-step-label {
@@ -98,27 +94,28 @@
   padding: 12px 15px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.015);
+  background: var(--panel-soft);
   color: var(--text);
   cursor: pointer;
   text-align: left;
   width: 100%;
 }
-.wifi-item:hover { background: var(--panel-soft); }
-.wifi-item.selected { border-color: var(--primary); background: rgba(92, 200, 255, 0.1); box-shadow: var(--ring); }
+.wifi-item:hover { background: var(--panel-2); }
+.wifi-item.selected { border-color: var(--accent); background: var(--accent-soft); box-shadow: var(--ring); }
 .wifi-ssid { font-weight: 600; }
-.wifi-strength { color: var(--muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.wifi-strength { color: var(--muted); font-size: 0.85rem; font-family: var(--font-mono); }
 
 .account-fields { display: none; grid-template-columns: 1fr; gap: 10px; margin-top: 12px; }
 .badge-optional {
-  font-size: 0.66rem;
-  color: var(--brand-b);
+  font-size: 0.62rem;
+  color: var(--accent-ink);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   vertical-align: middle;
   margin-left: 8px;
-  border: 1px solid rgba(255, 157, 108, 0.4);
+  border: 1px solid var(--accent-soft);
+  background: var(--accent-soft);
   border-radius: var(--radius-pill);
   padding: 3px 9px;
 }

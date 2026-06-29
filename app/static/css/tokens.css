@@ -1,52 +1,133 @@
+/* ============================================================================
+   Life Loop design tokens — "Incubation, full circle."
+   Warm cream paper surfaces, clay/sage/harvest accent themes, self-hosted fonts.
+   The whole app is re-skinned from here: pages share these CSS variables.
+   ============================================================================ */
+
+/* ── Self-hosted fonts (device is offline on first boot — no CDN) ─────────── */
+/* Spectral — serif: page titles, brand wordmark */
+@font-face { font-family: "Spectral"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("/static/fonts/spectral-500.woff2") format("woff2"); }
+@font-face { font-family: "Spectral"; font-style: italic; font-weight: 500; font-display: swap;
+  src: url("/static/fonts/spectral-500-italic.woff2") format("woff2"); }
+@font-face { font-family: "Spectral"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("/static/fonts/spectral-600.woff2") format("woff2"); }
+@font-face { font-family: "Spectral"; font-style: normal; font-weight: 700; font-display: swap;
+  src: url("/static/fonts/spectral-700.woff2") format("woff2"); }
+
+/* Hanken Grotesk — UI text */
+@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("/static/fonts/hanken-grotesk-400.woff2") format("woff2"); }
+@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("/static/fonts/hanken-grotesk-500.woff2") format("woff2"); }
+@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("/static/fonts/hanken-grotesk-600.woff2") format("woff2"); }
+@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 700; font-display: swap;
+  src: url("/static/fonts/hanken-grotesk-700.woff2") format("woff2"); }
+@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 800; font-display: swap;
+  src: url("/static/fonts/hanken-grotesk-800.woff2") format("woff2"); }
+
+/* IBM Plex Mono — sensor readouts */
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("/static/fonts/ibm-plex-mono-400.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("/static/fonts/ibm-plex-mono-500.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("/static/fonts/ibm-plex-mono-600.woff2") format("woff2"); }
+
 :root {
-  /* ── Surfaces ─────────────────────────────────────────────── */
-  --bg: #090d14;
-  --bg-2: #0d1521;
-  --panel: #141d2c;
-  --panel-soft: #1b2638;
-  --panel-2: #1f2c41;
-  --line: #2a3750;
-  --line-soft: #1f2a3d;
+  /* ── Type families ───────────────────────────────────────────── */
+  --font-ui: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-serif: "Spectral", Georgia, "Times New Roman", serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 
-  /* ── Text ─────────────────────────────────────────────────── */
-  --text: #eef3fb;
-  --muted: #9cadc6;
-  --faint: #6b7c97;
+  /* ── Surfaces (warm cream / paper) ───────────────────────────── */
+  --bg: #efe7d6;
+  --bg-2: #e6dac3;
+  --panel: #fbf7ef;
+  --panel-soft: #f3ecdd;
+  --panel-2: #ece3d0;
+  --line: #e6dcc6;
+  --line-soft: #ece3d0;
 
-  /* ── Functional accent (interactive: buttons, focus, links) ── */
-  --primary: #5cc8ff;
-  --primary-strong: #36b4f6;
-  --primary-ink: #042033;
+  /* ── Text (warm ink) ─────────────────────────────────────────── */
+  --text: #2c2620;
+  --muted: #6f6557;
+  --faint: #9a8e78;
 
-  /* ── Brand accent (identity: logo, wordmark, key numbers) ──── */
-  /* Warm honey→coral — evokes the gentle heat of an incubator. */
-  --brand-a: #ffd27a;
-  --brand-b: #ff9d6c;
-  --brand-c: #ff7eb6;
-  --brand-grad: linear-gradient(120deg, var(--brand-a) 0%, var(--brand-b) 52%, var(--brand-c) 100%);
-  --primary-grad: linear-gradient(135deg, #6fd0ff 0%, var(--primary-strong) 100%);
+  /* ── Accent theme (default: Clay). Overridden by [data-theme]. ── */
+  --accent: #c2702a;
+  --accent-strong: #b06a3a;
+  --accent-soft: #f1ddc4;
+  --accent-ink: #7c4517;
+  --accent-contrast: #fffaf2; /* text on a filled accent surface */
 
-  /* ── Semantic states ──────────────────────────────────────── */
-  --ok: #35d6a4;
-  --warn: #f6a623;
-  --danger: #fb7185;
-  --info: #6cb6ff;
+  /* Functional accent (buttons, focus, links) maps to the theme accent. */
+  --primary: var(--accent);
+  --primary-strong: var(--accent-strong);
+  --primary-ink: var(--accent-contrast);
+  --primary-grad: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
 
-  /* ── Shape & depth ────────────────────────────────────────── */
+  /* Brand identity gradient (harvest → clay) for the wordmark / hero. */
+  --brand-a: #dca94a;
+  --brand-b: #c2702a;
+  --brand-c: #b06a3a;
+  --brand-grad: linear-gradient(120deg, var(--brand-a) 0%, var(--brand-b) 55%, var(--brand-c) 100%);
+
+  /* ── Semantic states (warm palette) ──────────────────────────── */
+  --ok: #6f8b4e;        /* sage */
+  --ok-soft: #e0e7cf;
+  --warn: #b1822a;      /* harvest */
+  --warn-soft: #eee0bd;
+  --danger: #b0492a;    /* warm terracotta-red */
+  --danger-soft: #f1d6c8;
+  --info: #8a7f6c;      /* warm neutral */
+  --info-soft: #ece3d0;
+
+  /* ── Candling egg states ─────────────────────────────────────── */
+  --egg-fertile: #7d9e57;
+  --egg-uncertain: #dca94a;
+  --egg-clear: #ddd2bb;
+  --egg-removed: #c2b89f;
+
+  /* ── Shape & depth ───────────────────────────────────────────── */
   --radius: 16px;
   --radius-sm: 11px;
-  --radius-lg: 22px;
+  --radius-lg: 18px;
   --radius-pill: 999px;
-  --shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
-  --shadow-lg: 0 22px 55px rgba(0, 0, 0, 0.46);
-  --shadow-glow: 0 8px 30px rgba(92, 200, 255, 0.28);
-  --ring: 0 0 0 3px rgba(92, 200, 255, 0.22);
+  --shadow: 0 1px 2px rgba(70, 50, 20, 0.04), 0 10px 24px -14px rgba(70, 50, 20, 0.22);
+  --shadow-lg: 0 24px 60px -18px rgba(70, 50, 20, 0.4);
+  --shadow-glow: 0 8px 24px -8px rgba(194, 112, 42, 0.3);
+  --ring: 0 0 0 3px rgba(194, 112, 42, 0.22);
 
-  /* ── Spacing scale ────────────────────────────────────────── */
+  /* Ring/track colour for the day-progress loop and progress bars. */
+  --track: #e7dcc8;
+
+  /* ── Spacing scale ───────────────────────────────────────────── */
   --sp-1: 6px;
   --sp-2: 10px;
   --sp-3: 14px;
   --sp-4: 18px;
   --sp-5: 24px;
   --sp-6: 32px;
+}
+
+/* ── Accent themes — switched by the header theme picker (base.js) ───────── */
+:root[data-theme="sage"] {
+  --accent: #6f8b4e;
+  --accent-strong: #5f7e3e;
+  --accent-soft: #e0e7cf;
+  --accent-ink: #42532c;
+  --brand-a: #9bb06a;
+  --brand-b: #6f8b4e;
+  --brand-c: #5f7e3e;
+}
+:root[data-theme="harvest"] {
+  --accent: #b1822a;
+  --accent-strong: #8a6a22;
+  --accent-soft: #eee0bd;
+  --accent-ink: #6e4f16;
+  --brand-a: #dca94a;
+  --brand-b: #b1822a;
+  --brand-c: #8a6a22;
 }
