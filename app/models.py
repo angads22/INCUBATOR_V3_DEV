@@ -110,6 +110,28 @@ class StageTest(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
 
+class EggPhoto(Base):
+    """A stored, labeled egg photo managed by the storage janitor.
+
+    Each row owns a JPEG on disk under <captures_dir>/eggs. The janitor prunes
+    the OLDEST non-pinned rows (and their files) when the SD card gets close to
+    full, so labeled candling photos accumulate safely without ever wedging the
+    appliance on a full disk. ``pinned`` photos are never auto-deleted.
+    """
+
+    __tablename__ = "egg_photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    egg_id: Mapped[int | None] = mapped_column(ForeignKey("eggs.id"), nullable=True)
+    label: Mapped[str] = mapped_column(String(64), default="egg", nullable=False)
+    path: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    backend: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
 

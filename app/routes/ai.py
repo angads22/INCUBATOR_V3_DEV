@@ -46,6 +46,7 @@ from ..services.vision_service import VisionService
 
 if TYPE_CHECKING:
     from ..services.hardware_service import HardwareService
+    from ..services.storage_service import StorageService
 
 router = APIRouter()
 
@@ -58,6 +59,7 @@ def _require_user(db: Session, session_token: str | None) -> None:
 # Populated at startup via set_runtime_services in web.py
 _vision_service: VisionService = VisionService()  # default mock — replaced at startup
 _hardware_service: "HardwareService | None" = None
+_storage_service: "StorageService | None" = None
 llm_service = LLMService()
 
 
@@ -66,6 +68,12 @@ def set_vision_hardware(vision: VisionService, hardware: "HardwareService | None
     global _vision_service, _hardware_service
     _vision_service = vision
     _hardware_service = hardware
+
+
+def set_storage_service(storage: "StorageService | None") -> None:
+    """Wire the egg-photo store so candling captures are saved + auto-pruned."""
+    global _storage_service
+    _storage_service = storage
 
 
 # ------------------------------------------------------------------
@@ -144,6 +152,23 @@ def candle_and_analyze(payload: CandleRequest, db: Session = Depends(get_db)) ->
     # 5. Persist
     if payload.persist and vision_result.get("ok") and payload.egg_id:
         _persist_result(db, payload.egg_id, image_path, vision_result)
+
+    # 6. Store the candling photo as a labeled, auto-pruned egg photo so the
+    #    captured frame is kept (and the SD card protected) without extra steps.
+    if payload.persist and _storage_service is not None and image_path:
+        try:
+            _storage_service.register(
+                db,
+                image_path,
+                label=str(vision_result.get("label", "egg")),
+                egg_id=payload.egg_id,
+                backend=str(vision_result.get("backend", "unknown")),
+                confidence=float(vision_result.get("confidence", 0.0) or 0.0),
+            )
+        except Exception as exc:  # noqa: BLE001 — storage must never break candling
+            import logging
+
+            logging.getLogger(__name__).warning("Could not store candling photo: %s", exc)
 
     return {
         "endpoint": "vision.candle",
