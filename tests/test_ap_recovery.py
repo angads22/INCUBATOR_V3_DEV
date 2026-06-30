@@ -49,10 +49,12 @@ def test_stale_ap_profiles_are_purged_then_open_ap_started(monkeypatch):
     assert "HomeWifi" not in deleted
     assert "Wired connection 1" not in deleted
 
-    # And the new hotspot is OPEN (no password argument to nmcli).
-    hotspot = next(c for c in calls if "hotspot" in c)
-    assert "password" not in hotspot
-    assert "Incubator-NEW9" in hotspot
+    # And the freshly-built AP is OPEN: created with our SSID and no WPA key.
+    flat = [tok for c in calls for tok in c]
+    add = next(c for c in calls if "add" in c)
+    assert "Incubator-NEW9" in add
+    assert "wpa-psk" not in flat
+    assert "802-11-wireless-security.psk" not in flat
 
 
 # ── OnboardingService: DB resolver wins over any stale static password ────────

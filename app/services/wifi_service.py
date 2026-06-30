@@ -147,22 +147,40 @@ class WiFiService:
             # phone sees several "Incubator-XXXX" networks (often locked with an
             # old key). Collapse them to the single open AP we're about to start.
             self._purge_ap_connections(ssid)
-            args = [
-                "device", "wifi", "hotspot",
-                "con-name", _HOTSPOT_CON_NAME,
-                "ifname", "wlan0",
-                "ssid", ssid,
+            # Build the AP connection EXPLICITLY. Do NOT use `nmcli device wifi
+            # hotspot` for the open case: with no password it auto-generates a
+            # random WPA2 key and brings the AP up *locked* — which is exactly
+            # why the setup network kept asking for a password. Creating the
+            # connection by hand lets us leave the security setting off entirely
+            # (= a genuinely open network) or add WPA-PSK only when a password
+            # is configured.
+            add = _nmcli(
+                "connection", "add", "type", "wifi",
+                "ifname", "wlan0", "con-name", _HOTSPOT_CON_NAME,
+                "autoconnect", "no", "ssid", ssid,
+                check=False,
+            )
+            if add.returncode != 0:
+                logger.error("nmcli add hotspot failed (rc=%d): %s", add.returncode, add.stderr.strip())
+                return False
+            mods = [
+                "802-11-wireless.mode", "ap",
+                "802-11-wireless.band", "bg",
+                "ipv4.method", "shared",
             ]
-            # An empty password means an OPEN setup network: omit the password
-            # flag entirely so nmcli leaves the AP unsecured (passing an empty
-            # string would make nmcli demand a valid WPA key and fail).
+            # Only attach security when a password is set; otherwise the
+            # connection has no wifi-sec at all and broadcasts OPEN.
             if password:
-                args += ["password", password]
-            result = _nmcli(*args, check=False)
+                mods += [
+                    "802-11-wireless-security.key-mgmt", "wpa-psk",
+                    "802-11-wireless-security.psk", password,
+                ]
+            _nmcli("connection", "modify", _HOTSPOT_CON_NAME, *mods, check=False)
+            result = _nmcli("connection", "up", _HOTSPOT_CON_NAME, check=False)
             if result.returncode == 0:
-                logger.info("Hotspot '%s' started", ssid)
+                logger.info("Hotspot '%s' started (%s)", ssid, "secured" if password else "open")
                 return True
-            logger.error("nmcli hotspot failed (rc=%d): %s", result.returncode, result.stderr.strip())
+            logger.error("nmcli up hotspot failed (rc=%d): %s", result.returncode, result.stderr.strip())
         except ValueError as exc:
             logger.warning("Hotspot rejected — invalid credentials: %s", exc)
         except FileNotFoundError:
