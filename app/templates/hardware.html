@@ -3,6 +3,17 @@
 {% with eyebrow='Manual Control', title='Hardware Control Panel', subtitle='Direct command access with explicit operator actions.' %}{% include 'partials/section_header.html' %}{% endwith %}
 
 <section class="card" style="margin-bottom:18px">
+  <h3>Camera preview</h3>
+  <p class="muted">Live snapshot from the incubator camera, refreshed every few seconds. Use “Capture &amp; analyze” to run the vision model on the current frame.</p>
+  <div class="cam-preview"><img id="camPreview" alt="Camera preview" /></div>
+  <div class="button-row" style="margin-top:12px">
+    <button id="camToggle" class="btn btn-secondary" type="button">Pause</button>
+    <button id="camAnalyze" class="btn btn-primary" type="button">Capture &amp; analyze</button>
+  </div>
+  <p id="camMsg" class="hint"></p>
+</section>
+
+<section class="card" style="margin-bottom:18px">
   <h3>Candling tray</h3>
   <p class="muted">Switch on the candling light, then tap each egg to log what you see: fertile → uncertain → clear → removed. Saved locally on this device.</p>
   <div class="candling-tray" id="candlingTray" aria-label="Candling tray">
@@ -35,6 +46,49 @@
 {% endblock %}
 {% block scripts %}
 <script src="/static/js/hardware.js"></script>
+<script>
+// Camera preview — snapshot-refresh (light on a Pi Zero). Polls a fresh JPEG
+// every few seconds; "Capture & analyze" runs the vision model on a frame.
+(() => {
+  const img = document.getElementById('camPreview');
+  const toggle = document.getElementById('camToggle');
+  const analyze = document.getElementById('camAnalyze');
+  const msg = document.getElementById('camMsg');
+  if (!img) return;
+  const PERIOD = 3000;
+  let live = true;
+  let timer = null;
+
+  function refresh() {
+    if (!live) return;
+    // Cache-buster so the browser actually re-fetches the frame.
+    img.src = `/api/camera/snapshot?fresh=1&t=${Date.now()}`;
+  }
+  img.addEventListener('error', () => { msg.textContent = 'No camera image yet — is the camera connected?'; });
+  img.addEventListener('load', () => { if (msg.textContent.startsWith('No camera')) msg.textContent = ''; });
+
+  function start() { live = true; toggle.textContent = 'Pause'; refresh(); timer = setInterval(refresh, PERIOD); }
+  function stop() { live = false; toggle.textContent = 'Resume'; if (timer) clearInterval(timer); timer = null; }
+  toggle?.addEventListener('click', () => (live ? stop() : start()));
+
+  analyze?.addEventListener('click', async () => {
+    analyze.disabled = true;
+    msg.textContent = 'Capturing and analyzing…';
+    const res = await apiPost('/api/vision/candle', { persist: false });
+    if (res.ok && res.data) {
+      const d = res.data;
+      const conf = d.confidence != null ? ` (${Math.round(d.confidence * 100)}%)` : '';
+      msg.textContent = d.label ? `Result: ${d.label}${conf}` : (d.error || 'Analysis complete.');
+      if (d.image_url) { stop(); img.src = `${d.image_url}?t=${Date.now()}`; }
+    } else {
+      msg.textContent = res.message || 'Analysis failed.';
+    }
+    analyze.disabled = false;
+  });
+
+  start();
+})();
+</script>
 <script>
 // Candling tray — tap an egg to cycle its state; state persists locally so a
 // candling session survives a page reload. No backend: it is an inspection aid.

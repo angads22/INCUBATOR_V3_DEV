@@ -77,9 +77,24 @@ class CameraService:
             return {"ok": False, "error": str(exc), "backend": "opencv"}
 
     def _capture_mock(self, path: Path) -> dict[str, Any]:
-        # Write a deterministic placeholder large enough for downstream
-        # vision-service minimum-size validation (_MIN_IMAGE_BYTES = 512).
-        path.write_bytes(b"MOCK_IMAGE" * 64)
+        # Produce a VALID placeholder JPEG so the preview/serving endpoints show
+        # a real image on a dev box or a unit with no camera. Falls back to a
+        # raw byte blob if Pillow is somehow unavailable (still > the vision
+        # service's 512-byte minimum).
+        try:
+            from datetime import datetime
+
+            from PIL import Image, ImageDraw
+
+            w, h = 480, 360
+            img = Image.new("RGB", (w, h), (239, 231, 214))  # Life Loop cream
+            draw = ImageDraw.Draw(img)
+            draw.ellipse((w // 2 - 70, h // 2 - 90, w // 2 + 70, h // 2 + 90), fill=(194, 112, 42))
+            draw.text((16, 14), "MOCK CAMERA", fill=(44, 38, 32))
+            draw.text((16, h - 24), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), fill=(111, 101, 87))
+            img.save(str(path), "JPEG", quality=80)
+        except Exception:  # noqa: BLE001 — never let the mock backend fail
+            path.write_bytes(b"MOCK_IMAGE" * 64)
         return {"ok": True, "image_path": str(path), "backend": "mock", "mock": True}
 
     # ------------------------------------------------------------------

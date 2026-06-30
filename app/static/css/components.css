@@ -329,3 +329,11 @@ body[data-unit="F"] .unit-toggle span[data-unit="F"] { background: var(--accent)
 .update-popup-notes { margin: 0 0 8px; color: var(--muted); font-size: 0.86rem; max-height: 4.5em; overflow: hidden; }
 .update-popup-steps { margin: 0 0 12px; color: var(--muted); font-size: 0.84rem; }
 .update-popup .btn { width: 100%; }
+
+/* ── Camera preview ──────────────────────────────────────────────── */
+.cam-preview {
+  margin-top: 12px; border-radius: var(--radius); overflow: hidden;
+  border: 1px solid var(--line); background: var(--panel-2);
+  aspect-ratio: 4 / 3; display: grid; place-items: center;
+}
+.cam-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
