@@ -307,9 +307,22 @@ def build_daemon() -> ControlDaemon:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    daemon = build_daemon()
     import signal
 
+    from ..config import settings
+
+    # The unit can be enabled on every image; the flag is the real switch.
+    # When disabled, idle quietly (don't touch GPIO) so it can't contend with
+    # the web app, and don't exit (Restart=always would thrash).
+    if not settings.control_daemon_enabled:
+        logger.info("Control daemon disabled (CONTROL_DAEMON_ENABLED=false) — idling.")
+        stop = threading.Event()
+        signal.signal(signal.SIGTERM, lambda *_: stop.set())
+        signal.signal(signal.SIGINT, lambda *_: stop.set())
+        stop.wait()
+        return
+
+    daemon = build_daemon()
     signal.signal(signal.SIGTERM, lambda *_: daemon.stop())
     signal.signal(signal.SIGINT, lambda *_: daemon.stop())
     daemon.run()
