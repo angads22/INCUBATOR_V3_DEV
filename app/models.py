@@ -49,6 +49,13 @@ class Egg(Base):
     incubator_id: Mapped[int] = mapped_column(ForeignKey("incubators.id"), nullable=False)
     label: Mapped[str | None] = mapped_column(String(64), nullable=True)
     state: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)
+    # Region-of-interest for per-egg crops from a full camera frame. When unset
+    # the camera service returns the full frame. Pixel coordinates in the
+    # full-resolution image.
+    roi_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    roi_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    roi_w: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    roi_h: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class SensorLog(Base):
@@ -80,6 +87,26 @@ class ModelResult(Base):
     predicted_label: Mapped[str] = mapped_column(String(64), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     raw_output: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+
+
+class StageTest(Base):
+    """One incubation-stage test from the Testing tab.
+
+    Persists predicted-vs-actual so effectiveness (MAE in days) accumulates
+    across sessions. ``actual_day`` is null until the operator records ground
+    truth for the image.
+    """
+
+    __tablename__ = "stage_tests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    image_path: Mapped[str] = mapped_column(Text, nullable=False)
+    predicted_day: Mapped[float] = mapped_column(Float, nullable=False)
+    stage: Mapped[str] = mapped_column(String(32), default="unclear", nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    actual_day: Mapped[float | None] = mapped_column(Float, nullable=True)
+    backend: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
 

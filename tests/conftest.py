@@ -11,6 +11,9 @@ os.environ.setdefault("CAMERA_BACKEND", "mock")
 os.environ.setdefault("VISION_BACKEND", "mock")
 os.environ.setdefault("INCUBATOR_AUTO_HOTSPOT", "false")
 os.environ.setdefault("INCUBATOR_BUTTON_MOCK_FILE", os.path.join(tempfile.gettempdir(), "btn_mock"))
+# Keep capture/preview writes inside the temp dir, never the repo or SD card.
+os.environ.setdefault("CAMERA_IMAGE_DIR", os.path.join(tempfile.gettempdir(), "incubator_test_captures"))
+os.environ.setdefault("CAMERA_FRAME_DIR", os.path.join(tempfile.gettempdir(), "incubator_test_frames"))
 
 import pytest
 from fastapi.testclient import TestClient

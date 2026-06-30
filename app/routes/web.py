@@ -324,6 +324,7 @@ def dashboard(
             "next_step": next_step,
             "quick_actions": quick_actions,
             "vision_backend": settings.vision_backend,
+            "camera_stream_enabled": settings.camera_stream_enabled,
             "recent_activity": [
                 _format_activity(row)
                 for row in db.scalars(

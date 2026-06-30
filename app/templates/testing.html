@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block content %}
+{% with eyebrow='Testing', title='Vision Model Testing', subtitle='Run the local model on egg images, estimate how far along each egg is, and measure predicted vs actual.' %}{% include 'partials/section_header.html' %}{% endwith %}
+
+<section class="two-col">
+  <div class="panel-group">
+    <article class="card">
+      <h3>Backend</h3>
+      <p class="muted">Predictions run through <code>vision_service.predict_stage()</code>. The default heuristic backend needs no trained model — drop a <code>stage.tflite</code> in and switch to measure it against this baseline.</p>
+      <div class="chip-row">
+        {% with label='Stage backend: ' ~ stage_backend, tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label='Incubation: ' ~ incubation_days ~ ' days', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label='Camera: ' ~ camera_backend, tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+      </div>
+    </article>
+
+    <article class="card">
+      <h3>1 · Choose images</h3>
+      <p class="muted">Upload candled egg photos, capture from a live egg, or pick from saved captures. Works with no camera and no GPU.</p>
+
+      <label style="display:grid;gap:6px;color:var(--muted);font-size:0.9rem;font-weight:600;margin-top:6px">
+        Upload images
+        <input type="file" id="testingUpload" accept="image/*" multiple />
+      </label>
+
+      <div class="form-grid" style="margin-top:14px">
+        <label style="display:grid;gap:6px;color:var(--muted);font-size:0.9rem;font-weight:600">
+          Capture from a live egg
+          <select id="testingEggSelect">
+            <option value="">Full frame (no ROI)</option>
+            {% for egg in eggs %}
+            <option value="{{ egg.id }}">{{ egg.label }}{% if egg.has_roi %} · calibrated{% else %} · no ROI{% endif %}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div style="display:flex;align-items:end">
+          <button type="button" id="testingCaptureBtn" class="btn btn-secondary" style="width:100%">Capture from camera</button>
+        </div>
+      </div>
+
+      <div class="button-row" style="margin-top:14px">
+        <button type="button" id="testingLoadCaptures" class="btn btn-ghost">Load saved captures</button>
+        <button type="button" id="testingClearStaged" class="btn btn-ghost">Clear selection</button>
+      </div>
+      <div id="testingCapturesGrid" class="chip-row" style="margin-top:12px"></div>
+
+      <p class="muted" style="margin-top:14px">Selected images</p>
+      <div id="testingStaged" class="chip-row" style="margin-top:6px"></div>
+      <button type="button" id="testingPredictBtn" class="btn btn-primary" style="margin-top:14px;width:100%">Predict all</button>
+      <p id="testingMsg" class="hint">Select images, then predict.</p>
+    </article>
+  </div>
+
+  <div class="panel-group">
+    <article class="card">
+      <h3>2 · Predictions</h3>
+      <p class="muted">Per image: estimated day, stage, confidence, the raw features, and which backend produced it. Type the actual day to record it.</p>
+      <div id="testingResults" style="display:grid;gap:12px;margin-top:8px"></div>
+      <p id="testingResultsEmpty" class="muted">No predictions yet.</p>
+    </article>
+
+    <article class="card">
+      <h3>Effectiveness</h3>
+      <div class="metrics-grid">
+        {% with label='MAE (days)', value='—', value_id='testingMae', hint='Mean abs error vs actual' %}{% include 'partials/metric_card.html' %}{% endwith %}
+        {% with label='Recorded', value='0', value_id='testingRecorded', hint='Tests with a known day' %}{% include 'partials/metric_card.html' %}{% endwith %}
+      </div>
+      <div class="button-row" style="margin-top:14px">
+        <button type="button" id="testingRefresh" class="btn btn-ghost">Refresh</button>
+        <div style="display:flex;gap:10px">
+          <a id="testingExport" class="btn btn-ghost" href="/api/testing/results.csv">Export CSV</a>
+          <button type="button" id="testingClearResults" class="btn btn-secondary">Clear</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;margin-top:14px">
+        <table id="testingSavedTable" style="width:100%;border-collapse:collapse;font-size:0.86rem">
+          <thead>
+            <tr style="text-align:left;color:var(--faint)">
+              <th style="padding:6px 8px;border-bottom:1px solid var(--line)">Image</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--line)">Pred</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--line)">Actual</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--line)">Err</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--line)">Stage</th>
+              <th style="padding:6px 8px;border-bottom:1px solid var(--line)">Backend</th>
+            </tr>
+          </thead>
+          <tbody id="testingSavedBody"></tbody>
+        </table>
+      </div>
+      <p id="testingSavedEmpty" class="muted">No saved tests yet.</p>
+    </article>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/testing.js"></script>
+{% endblock %}

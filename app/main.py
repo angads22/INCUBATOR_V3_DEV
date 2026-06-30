@@ -31,6 +31,8 @@ from .config import settings
 from .database import Base, engine, get_db
 from .models import ActionLog, DeviceConfig, SensorLog, User
 from .routes.ai import router as ai_router, set_vision_hardware
+from .routes.camera import router as camera_router, set_camera_service
+from .routes.testing import router as testing_router, set_testing_services
 from .routes.web import router as web_router, set_runtime_services
 from .schemas import HardwareCommand, OnboardingPayload, SetupStatus
 from .services.alert_service import AlertService
@@ -52,6 +54,8 @@ BASE_DIR = Path(__file__).resolve().parent
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 app.include_router(web_router)
 app.include_router(ai_router)
+app.include_router(camera_router)
+app.include_router(testing_router)
 
 # ------------------------------------------------------------------
 # Service wiring
@@ -76,6 +80,9 @@ camera_service = CameraService(
     backend=settings.camera_backend,
     image_dir=settings.camera_image_dir,
     resolution=(settings.camera_resolution_w, settings.camera_resolution_h),
+    preview_resolution=(settings.camera_preview_w, settings.camera_preview_h),
+    preview_fps=settings.camera_preview_fps,
+    frame_dir=settings.camera_frame_dir,
 )
 
 hardware_service = HardwareService(gpio=gpio_service, camera=camera_service)
@@ -88,6 +95,9 @@ vision_service = VisionService(
     api_url=settings.vision_api_url,
     api_key=settings.vision_api_key,
     confidence_threshold=settings.vision_confidence_threshold,
+    stage_backend=settings.vision_stage_backend,
+    stage_model_path=settings.vision_stage_model_path,
+    incubation_days=settings.incubation_days,
 )
 
 setup_mode_service = SetupModeService()
@@ -120,6 +130,8 @@ set_runtime_services(
     alert_service=alert_service,
 )
 set_vision_hardware(vision=vision_service, hardware=hardware_service)
+set_camera_service(camera_service)
+set_testing_services(vision_service)
 
 
 def _on_button_held(reason: str) -> None:
@@ -272,12 +284,35 @@ _sensor_poller = _SensorPoller(settings.sensor_poll_interval_seconds)
 # App lifecycle
 # ------------------------------------------------------------------
 
+def _ensure_egg_roi_columns() -> None:
+    """Add eggs.roi_* columns to a pre-existing SQLite DB if missing.
+
+    ``Base.metadata.create_all`` creates new tables (e.g. stage_tests) but never
+    alters existing ones, so a DB created before the ROI columns existed needs a
+    tiny add-column-if-missing pass. No-op when the columns already exist.
+    """
+    from sqlalchemy import inspect, text
+
+    try:
+        inspector = inspect(engine)
+        if "eggs" not in inspector.get_table_names():
+            return  # create_all will build it with the columns already present
+        existing = {col["name"] for col in inspector.get_columns("eggs")}
+        with engine.begin() as conn:
+            for col in ("roi_x", "roi_y", "roi_w", "roi_h"):
+                if col not in existing:
+                    conn.execute(text(f"ALTER TABLE eggs ADD COLUMN {col} INTEGER"))
+    except Exception as exc:  # noqa: BLE001 — never block startup on a schema patch
+        logger.warning("ROI column check skipped: %s", exc)
+
+
 @app.on_event("startup")
 def startup() -> None:
     # Ensure database directory exists
     Path("./database").mkdir(exist_ok=True)
 
     Base.metadata.create_all(bind=engine)
+    _ensure_egg_roi_columns()
 
     db = next(get_db())
     try:
