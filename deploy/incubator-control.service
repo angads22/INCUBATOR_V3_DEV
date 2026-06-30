@@ -1,0 +1,22 @@
+[Unit]
+# Safety-critical incubation control (heater / humidity / egg-turn).
+# Runs as its OWN process so an app/UI update — which restarts only
+# incubator.service — never pauses control. The OTA agent must NEVER restart
+# this unit; that is what keeps incubation running through an update.
+Description=Incubator v3 control loop (survives app updates)
+After=local-fs.target
+Wants=incubator-wifi-country.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=__INSTALL_DIR__
+EnvironmentFile=/etc/incubator.env
+# Fail-safe is applied by the daemon on start and on clean stop.
+ExecStart=__INSTALL_DIR__/.venv/bin/python -m app.control
+Restart=always
+RestartSec=3
+SupplementaryGroups=gpio dialout
+
+[Install]
+WantedBy=multi-user.target
