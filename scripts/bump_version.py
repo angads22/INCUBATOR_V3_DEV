@@ -25,7 +25,9 @@ version_file.write_text(text)
 
 pyproject = Path("pyproject.toml")
 ptxt = pyproject.read_text()
-ptxt = re.sub(r'version = "[0-9]+\.[0-9]{2}"', f'version = "{new_version}"', ptxt)
+# Match the packaging version regardless of two- or three-part form
+# (e.g. "1.40" or "1.40.0") and normalise it to the M.mm source-of-truth.
+ptxt = re.sub(r'version = "[0-9]+\.[0-9]+(?:\.[0-9]+)?"', f'version = "{new_version}"', ptxt)
 pyproject.write_text(ptxt)
 
 print(f"Updated version: {VERSION} -> {new_version}")
