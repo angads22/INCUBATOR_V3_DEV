@@ -1,6 +1,8 @@
 __pycache__/
 *.py[cod]
 *.db
+# Runtime camera captures (default CAMERA_IMAGE_DIR=./captures)
+captures/
 .venv/
 uv.lock
 *.egg-info/

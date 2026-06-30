@@ -123,3 +123,33 @@ def test_predict_rejects_path_outside_allowed_roots(client):
     # Path traversal / arbitrary read must be refused (no allowed image).
     r = client.post("/api/testing/predict", data={"paths": "/etc/passwd"})
     assert r.status_code == 400
+
+
+def test_captures_listing_skips_symlinks_escaping_roots(client, tmp_path):
+    # A symlink inside the captures dir pointing outside must NOT be listed —
+    # otherwise its resolved (external) path would leak in the response.
+    import os
+    from pathlib import Path
+
+    from app.config import settings
+
+    secret = tmp_path / "secret_outside.jpg"
+    secret.write_bytes(_jpeg())
+    captures = Path(settings.captures_dir)
+    captures.mkdir(parents=True, exist_ok=True)
+    link = captures / "leak.jpg"
+    if link.exists() or link.is_symlink():
+        link.unlink()
+    try:
+        os.symlink(secret, link)
+    except (OSError, NotImplementedError):
+        import pytest as _pytest
+        _pytest.skip("symlinks unsupported on this platform")
+
+    try:
+        body = client.get("/api/testing/captures").json()
+        paths = [c["path"] for c in body["captures"]]
+        assert str(secret.resolve()) not in paths
+        assert all("secret_outside" not in p for p in paths)
+    finally:
+        link.unlink()

@@ -108,6 +108,17 @@ def _allowed_roots() -> list[Path]:
     return resolved
 
 
+def _within_roots(resolved: Path, roots: list[Path]) -> bool:
+    """True if a resolved path sits under any allowed root."""
+    for root in roots:
+        try:
+            resolved.relative_to(root)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
 def _resolve_allowed(path_str: str) -> Path | None:
     """Resolve a client-supplied path and confirm it sits under an allowed root.
 
@@ -120,14 +131,8 @@ def _resolve_allowed(path_str: str) -> Path | None:
         candidate = Path(path_str).resolve()
     except Exception:  # noqa: BLE001
         return None
-    for root in _allowed_roots():
-        try:
-            candidate.relative_to(root)
-        except ValueError:
-            continue
-        if candidate.is_file():
-            return candidate
-        return None
+    if _within_roots(candidate, _allowed_roots()) and candidate.is_file():
+        return candidate
     return None
 
 
@@ -357,13 +362,22 @@ def api_testing_captures(
     _require_api_user(db, session_token)
     seen: set[str] = set()
     items: list[dict[str, Any]] = []
-    for root in _allowed_roots():
+    roots = _allowed_roots()
+    for root in roots:
         if not root.is_dir():
             continue
         for p in sorted(root.rglob("*")):
             if p.suffix.lower() not in _IMAGE_EXTS or not p.is_file():
                 continue
-            key = str(p.resolve())
+            try:
+                resolved = p.resolve()
+            except OSError:
+                continue
+            # Skip symlinks that escape the allowed roots — never disclose paths
+            # to files outside the capture directories.
+            if not _within_roots(resolved, roots):
+                continue
+            key = str(resolved)
             if key in seen:
                 continue
             seen.add(key)
