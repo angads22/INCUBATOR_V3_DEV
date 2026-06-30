@@ -1,0 +1,7 @@
+# Fleet unit roster — copy to hub/units.csv and edit.
+# One row per incubator: <mac>,<name>,<ip>
+#   mac  — the unit's wlan0/eth0 MAC (ip link / `cat /sys/class/net/wlan0/address` on the unit)
+#   name — friendly hostname; becomes <name>.<DNS_DOMAIN>  (use incubator1, incubator2, …)
+#   ip   — the static/reserved LAN IP for that unit
+b8:27:eb:11:22:33,incubator1,192.168.1.101
+b8:27:eb:44:55:66,incubator2,192.168.1.102
