@@ -114,6 +114,9 @@ class VisionService:
         stage_model_path: str = "/var/incubator/models/vision/stage.tflite",
         incubation_days: int = 21,
     ) -> None:
+        # _configured_backend is what the operator asked for ("auto" detects a
+        # dropped-in model); self.backend is what we resolve to at setup().
+        self._configured_backend = backend
         self.backend = backend
         self.tflite_model_path = tflite_model_path
         self.api_url = api_url.strip()
@@ -122,6 +125,7 @@ class VisionService:
         self._interpreter: Any = None
         self._labels: list[str] = []
         self._tflite_ready = False
+        self._tflite_attempted = False  # lazy-load guard: load on first command
         # --- Incubation-stage estimator (Testing tab) ---
         self.stage_backend = stage_backend
         self.stage_model_path = stage_model_path
@@ -134,13 +138,45 @@ class VisionService:
     # Lifecycle
     # ------------------------------------------------------------------
 
+    def _resolve_backend(self) -> str:
+        """Pick the backend at launch. "auto" (the default) is plug-and-play:
+        a dropped-in TFLite model wins, else a configured API, else mock."""
+        b = self._configured_backend
+        if b == "auto":
+            if Path(self.tflite_model_path).exists():
+                return "tflite"
+            if self.api_url:
+                return "api"
+            return "mock"
+        return b
+
     def setup(self) -> None:
-        """Load model if needed.  Called once at startup."""
-        if self.backend == "tflite":
-            self._load_tflite()
-        elif self.backend == "api" and not self.api_url:
+        """Resolve the backend at startup — but DO NOT load the model here.
+
+        On a Pi Zero 2 W we keep idle CPU/RAM low: the TFLite interpreter is
+        lazy-loaded on the first on-command inference (candle / analyze), and
+        inference only ever runs on command — there is no background loop.
+        """
+        self.backend = self._resolve_backend()
+        if self.backend == "api" and not self.api_url:
             logger.warning("VISION_BACKEND=api but VISION_API_URL is not set — falling back to mock")
             self.backend = "mock"
+        model_present = Path(self.tflite_model_path).exists()
+        logger.info(
+            "Vision backend=%s (configured=%s, model_present=%s) — on-device inference is "
+            "lazy + on-command only",
+            self.backend, self._configured_backend, model_present,
+        )
+
+    def _ensure_tflite_loaded(self) -> bool:
+        """Load the TFLite interpreter on first use (idempotent)."""
+        if self._tflite_ready:
+            return True
+        if self._tflite_attempted:
+            return False  # already tried and failed — don't thrash on every call
+        self._tflite_attempted = True
+        self._load_tflite()
+        return self._tflite_ready
 
     def _load_tflite(self) -> None:
         model_path = Path(self.tflite_model_path)
@@ -159,6 +195,46 @@ class VisionService:
             logger.warning("tflite_runtime not installed — install with: pip install tflite-runtime")
         except Exception as exc:
             logger.error("TFLite model load failed: %s", exc)
+
+    def reload(self) -> dict[str, Any]:
+        """Re-detect and reset models — call after dropping in / uploading one."""
+        self._interpreter = None
+        self._labels = []
+        self._tflite_ready = False
+        self._tflite_attempted = False
+        self._stage_interpreter = None
+        self._stage_labels = []
+        self._stage_loaded = False
+        self.setup()
+        return self.status()
+
+    def status(self) -> dict[str, Any]:
+        """What's configured + available, without forcing a load."""
+        cls_path = Path(self.tflite_model_path)
+        stage_path = Path(self.stage_model_path)
+        return {
+            "ok": True,
+            "configured_backend": self._configured_backend,
+            "backend": self.backend,
+            "ready": self.backend != "tflite" or self._tflite_ready or cls_path.exists(),
+            "on_command_only": True,
+            "classifier": {
+                "path": str(cls_path),
+                "available": cls_path.exists(),
+                "loaded": self._tflite_ready,
+                "labels": list(self._labels),
+            },
+            "api_configured": bool(self.api_url),
+            "confidence_threshold": self.confidence_threshold,
+            "stage": {
+                "backend": self.stage_backend,
+                "path": str(stage_path),
+                "available": stage_path.exists(),
+                "loaded": self._stage_interpreter is not None,
+                "labels": list(self._stage_labels),
+            },
+            "incubation_days": self.incubation_days,
+        }
 
     def _load_labels(self, model_path: Path) -> None:
         labels_path = model_path.with_suffix(".txt")
@@ -182,8 +258,12 @@ class VisionService:
         if self.backend != "mock" and not self._image_valid(image_path):
             return {"ok": False, "error": "Image file missing or too small", "path": image_path}
 
-        if self.backend == "tflite" and self._tflite_ready:
-            return self._analyze_tflite(image_path)
+        # On-command, lazy: load the interpreter the first time it's actually
+        # needed (keeps the Pi idle until the operator asks for analysis).
+        if self.backend == "tflite":
+            if self._ensure_tflite_loaded():
+                return self._analyze_tflite(image_path)
+            return self._mock_result(image_path)  # model unavailable → safe default
         if self.backend == "api" and self.api_url:
             return self._analyze_via_api(image_path)
         return self._mock_result(image_path)
