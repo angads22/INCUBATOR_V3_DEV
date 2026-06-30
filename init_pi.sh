@@ -231,6 +231,22 @@ sed \
 systemctl enable "${SERVICE_NAME}" 2>/dev/null \
     || ln -sf "${SERVICE_FILE}" "/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service"
 
+# ── Control daemon unit (Phase 3) ─────────────────────────────
+# Always-on control loop that survives app updates. Safe to enable on every
+# image: the daemon idles (no GPIO) until CONTROL_DAEMON_ENABLED=true, so it
+# never contends with the web app. Flip the flag in /etc/incubator.env (and
+# restart both units) to activate closed-loop control — validate on a unit with
+# no eggs incubating first.
+if [ -f "${INSTALL_DIR}/deploy/incubator-control.service" ]; then
+    info "Installing control-daemon service (idle until CONTROL_DAEMON_ENABLED)..."
+    sed -e "s|__INSTALL_DIR__|${INSTALL_DIR}|g" \
+        "${INSTALL_DIR}/deploy/incubator-control.service" \
+        > /etc/systemd/system/incubator-control.service
+    systemctl enable incubator-control.service 2>/dev/null \
+        || ln -sf /etc/systemd/system/incubator-control.service \
+            "/etc/systemd/system/multi-user.target.wants/incubator-control.service"
+fi
+
 # ── GPIO permissions ─────────────────────────────────────────
 # Add the service user (root) to gpio group — already root so skip.
 # If you change User= in the service file, add that user to gpio group.

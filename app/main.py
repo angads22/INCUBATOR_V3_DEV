@@ -144,6 +144,16 @@ def _on_button_held(reason: str) -> None:
 # remote-over-bus command. Returns {"ok": False, "error": "unknown_action"}
 # for an unrecognised action rather than raising.
 def execute_hardware_action(action: str, value: Any = None) -> dict:
+    # When the control daemon owns heater/fan/turner, route those commands to it
+    # rather than driving the pins here — the web app must not fight the daemon.
+    if settings.control_daemon_enabled:
+        from .control.bridge import control_command_for, enqueue_command
+
+        mapped = control_command_for(action, value)
+        if mapped is not None:
+            enqueue_command(settings.control_command_path, mapped[0], mapped[1])
+            return {"ok": True, "queued": action, "via": "control-daemon"}
+
     def _alarm_off() -> dict:
         # A manual off also silences the alert engine so it does not
         # immediately re-assert the buzzer on the next poll.
@@ -214,7 +224,13 @@ class _SensorPoller(threading.Thread):
     def _poll(self) -> None:
         db = next(get_db())
         try:
-            reading = gpio_service.read_temperature_humidity()
+            if settings.control_daemon_enabled:
+                # The control daemon owns the DHT — read its published state
+                # instead of touching the sensor (avoids single-radio/pin races).
+                from .control.bridge import daemon_reading
+                reading = daemon_reading(settings.control_state_path)
+            else:
+                reading = gpio_service.read_temperature_humidity()
             # Failed reads must reach the alert engine too — it tracks the
             # offline state, caches the last good values, and drives the buzzer.
             events = alert_service.record_reading(reading, get_settings(db))
