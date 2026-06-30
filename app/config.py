@@ -85,6 +85,24 @@ class Settings:
     # Total incubation length for the configured species (chicken = 21 days).
     incubation_days: int = field(default_factory=lambda: int(os.getenv("INCUBATION_DAYS", "21")))
 
+    # --- Egg-photo storage + auto-prune (protects the SD card) ---
+    # Labeled egg photos are saved under <captures_dir>/eggs and tracked in the
+    # egg_photos table. A janitor deletes the OLDEST non-pinned photos when the
+    # SD card gets close to full, so the appliance never wedges on a full disk.
+    capture_storage_enabled: bool = field(default_factory=lambda: os.getenv("CAPTURE_STORAGE_ENABLED", "true").lower() == "true")
+    # Start pruning once free space on the captures filesystem drops below this.
+    capture_min_free_mb: int = field(default_factory=lambda: int(os.getenv("CAPTURE_MIN_FREE_MB", "300")))
+    # Prune oldest photos until at least this much is free again (hysteresis so
+    # we don't delete one photo per capture right at the threshold).
+    capture_target_free_mb: int = field(default_factory=lambda: int(os.getenv("CAPTURE_TARGET_FREE_MB", "600")))
+    # Optional hard cap on the egg-photo directory itself (MB). 0 disables it and
+    # leaves only the free-space trigger active.
+    capture_max_dir_mb: int = field(default_factory=lambda: int(os.getenv("CAPTURE_MAX_DIR_MB", "1024")))
+    # Always keep at least this many of the newest photos, even under pressure.
+    capture_keep_min: int = field(default_factory=lambda: int(os.getenv("CAPTURE_KEEP_MIN", "12")))
+    # Optional age cap (days). Photos older than this are pruned first. 0 disables.
+    capture_retention_days: int = field(default_factory=lambda: int(os.getenv("CAPTURE_RETENTION_DAYS", "0")))
+
     # --- Sensor polling ---
     sensor_poll_interval_seconds: int = field(default_factory=lambda: int(os.getenv("SENSOR_POLL_INTERVAL", "30")))
     sensor_log_to_db: bool = field(default_factory=lambda: os.getenv("SENSOR_LOG_TO_DB", "true").lower() == "true")

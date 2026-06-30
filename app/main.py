@@ -30,8 +30,9 @@ from .auth import create_session, get_user_id_from_session, has_any_user, hash_p
 from .config import settings
 from .database import Base, engine, get_db
 from .models import ActionLog, DeviceConfig, SensorLog, User
-from .routes.ai import router as ai_router, set_vision_hardware
+from .routes.ai import router as ai_router, set_vision_hardware, set_storage_service as set_ai_storage
 from .routes.camera import router as camera_router, set_camera_service
+from .routes.captures import router as captures_router, set_capture_services
 from .routes.testing import router as testing_router, set_testing_services
 from .routes.web import router as web_router, set_runtime_services
 from .schemas import HardwareCommand, OnboardingPayload, SetupStatus
@@ -43,6 +44,7 @@ from .services.gpio_service import GPIOService
 from .services.hardware_service import HardwareService
 from .services.onboarding_service import OnboardingService
 from .services.setup_mode_service import SetupModeService
+from .services.storage_service import StorageService
 from .services.vision_service import VisionService
 from .services.wifi_service import WiFiService
 from .settings_store import ensure_defaults, get_settings
@@ -55,6 +57,7 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 app.include_router(web_router)
 app.include_router(ai_router)
 app.include_router(camera_router)
+app.include_router(captures_router)
 app.include_router(testing_router)
 
 # ------------------------------------------------------------------
@@ -86,6 +89,16 @@ camera_service = CameraService(
 )
 
 hardware_service = HardwareService(gpio=gpio_service, camera=camera_service)
+
+storage_service = StorageService(
+    captures_dir=settings.captures_dir,
+    enabled=settings.capture_storage_enabled,
+    min_free_mb=settings.capture_min_free_mb,
+    target_free_mb=settings.capture_target_free_mb,
+    max_dir_mb=settings.capture_max_dir_mb,
+    keep_min=settings.capture_keep_min,
+    retention_days=settings.capture_retention_days,
+)
 
 alert_service = AlertService(gpio=gpio_service)
 
@@ -146,7 +159,9 @@ set_runtime_services(
     alert_service=alert_service,
 )
 set_vision_hardware(vision=vision_service, hardware=hardware_service)
+set_ai_storage(storage_service)
 set_camera_service(camera_service)
+set_capture_services(storage_service, camera_service)
 set_testing_services(vision_service)
 
 
@@ -252,6 +267,13 @@ class _SensorPoller(threading.Thread):
     def _poll(self) -> None:
         db = next(get_db())
         try:
+            # Keep the SD card from filling up: prune oldest egg photos whenever
+            # free space drops below the configured headroom. Cheap (a disk stat
+            # + a query) and a no-op unless under pressure.
+            try:
+                storage_service.enforce(db)
+            except Exception as exc:  # noqa: BLE001 — never let the janitor break polling
+                logger.debug("storage enforce skipped: %s", exc)
             if settings.control_daemon_enabled:
                 # The control daemon owns the DHT — read its published state
                 # instead of touching the sensor (avoids single-radio/pin races).
@@ -365,6 +387,12 @@ def startup() -> None:
         cloud_result = cloud_service.register_device(device_id)
         if cloud_result.get("enabled"):
             logger.info("cloud_register: ok=%s", cloud_result.get("ok"))
+
+        # Clear any photo backlog at boot (e.g. card filled while powered off).
+        try:
+            storage_service.enforce(db)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("startup storage enforce skipped: %s", exc)
     finally:
         db.close()
 

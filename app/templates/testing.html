@@ -89,9 +89,63 @@
       </div>
       <p id="testingSavedEmpty" class="muted">No saved tests yet.</p>
     </article>
+
+    <article class="card">
+      <h3>Photo storage</h3>
+      <p class="muted">Labeled egg photos are kept on the SD card. When space runs low the oldest photos are removed automatically (pinned ones are always kept), so the device never fills up.</p>
+      <div class="metrics-grid">
+        {% with label='Photos', value='—', value_id='storagePhotoCount', hint='Stored egg photos' %}{% include 'partials/metric_card.html' %}{% endwith %}
+        {% with label='Free space', value='—', value_id='storageFreeMb', hint='Room left on the card' %}{% include 'partials/metric_card.html' %}{% endwith %}
+      </div>
+      <p id="storagePressure" class="hint"></p>
+      <div class="button-row" style="margin-top:14px">
+        <button type="button" id="storageRefresh" class="btn btn-ghost">Refresh</button>
+        <button type="button" id="storagePruneBtn" class="btn btn-secondary">Free up space now</button>
+      </div>
+      <p id="storageMsg" class="hint"></p>
+    </article>
   </div>
 </section>
 {% endblock %}
 {% block scripts %}
 <script src="/static/js/testing.js"></script>
+<script>
+  // Photo-storage status + manual prune. Self-contained so it stays independent
+  // of testing.js.
+  (function () {
+    var refresh = document.getElementById('storageRefresh');
+    if (!refresh) return;
+
+    async function load() {
+      try {
+        var res = await fetch('/api/captures/storage');
+        if (!res.ok) return;
+        var s = await res.json();
+        document.getElementById('storagePhotoCount').textContent = s.photo_count;
+        document.getElementById('storageFreeMb').textContent =
+          (s.free_mb != null ? s.free_mb + ' MB' : '—');
+        var p = document.getElementById('storagePressure');
+        p.textContent = s.under_pressure
+          ? 'Storage is getting full — oldest photos will be trimmed automatically.'
+          : 'Plenty of room.' + (s.pinned_count ? ' ' + s.pinned_count + ' photo(s) pinned.' : '');
+      } catch (e) { /* ignore */ }
+    }
+
+    refresh.addEventListener('click', load);
+    document.getElementById('storagePruneBtn').addEventListener('click', async function () {
+      var msg = document.getElementById('storageMsg');
+      msg.textContent = 'Freeing up space…';
+      try {
+        var res = await fetch('/api/captures/prune', { method: 'POST' });
+        var data = await res.json();
+        msg.textContent = data.deleted
+          ? 'Removed ' + data.deleted + ' old photo(s).'
+          : 'Nothing to remove — storage is healthy.';
+        load();
+      } catch (e) { msg.textContent = 'Could not reach the device.'; }
+    });
+
+    load();
+  })();
+</script>
 {% endblock %}
