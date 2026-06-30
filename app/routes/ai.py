@@ -4,8 +4,15 @@ AI/Vision API routes.
 Endpoints:
   POST /api/vision/analyze          — Analyze an already-captured image
   POST /api/vision/candle           — Capture + analyze in one shot (candling flow)
+  GET  /api/vision/status           — What model is configured/available/loaded
+  GET  /api/vision/results          — Recent candling analyses
+  POST /api/vision/reload           — Re-detect a model dropped onto the device
+  POST /api/vision/model            — Upload a .tflite (+labels) — plug and play
   POST /api/ai/chat                 — LLM help chat
   POST /api/ai/explain-status       — LLM status explanation
+
+Inference is ON-COMMAND ONLY (no background loop) and the model is lazy-loaded
+on first use, so an idle Pi Zero isn't taxed.
 
 VISION INTEGRATION NOTES
 ------------------------
@@ -22,12 +29,16 @@ and point VISION_API_URL at your proxy endpoint.  No code changes needed here.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Cookie, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
+from ..auth import get_user_id_from_session, has_any_user
+from ..config import settings
 from ..database import get_db
 from ..models import ModelResult
 from ..services.llm_service import LLMService
@@ -37,6 +48,12 @@ if TYPE_CHECKING:
     from ..services.hardware_service import HardwareService
 
 router = APIRouter()
+
+
+def _require_user(db: Session, session_token: str | None) -> None:
+    """Gate model management once an operator account exists (mirrors web routes)."""
+    if (settings.require_login or has_any_user(db)) and not get_user_id_from_session(db, session_token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
 # Populated at startup via set_runtime_services in web.py
 _vision_service: VisionService = VisionService()  # default mock — replaced at startup
@@ -133,6 +150,92 @@ def candle_and_analyze(payload: CandleRequest, db: Session = Depends(get_db)) ->
         "image_path": image_path,
         **vision_result,
     }
+
+
+# ------------------------------------------------------------------
+# Vision model management — plug and play
+# ------------------------------------------------------------------
+
+@router.get("/api/vision/status")
+def vision_status(
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict[str, Any]:
+    """What model is configured/available, and whether it's loaded. Inference
+    is on-command only (no background loop), so this never triggers a load."""
+    _require_user(db, session_token)
+    return _vision_service.status()
+
+
+@router.get("/api/vision/results")
+def vision_results(
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict[str, Any]:
+    """Recent candling/vision analyses from the model_results table."""
+    _require_user(db, session_token)
+    limit = max(1, min(limit, 100))
+    rows = db.scalars(select(ModelResult).order_by(desc(ModelResult.created_at)).limit(limit)).all()
+    return {
+        "ok": True,
+        "results": [
+            {
+                "id": r.id,
+                "egg_id": r.egg_id,
+                "label": r.predicted_label,
+                "confidence": r.confidence,
+                "backend": r.model_backend,
+                "created_at": r.created_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.post("/api/vision/reload")
+def vision_reload(
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict[str, Any]:
+    """Re-detect models after one is dropped onto the device (scp / SD card)."""
+    _require_user(db, session_token)
+    return {"endpoint": "vision.reload", **_vision_service.reload()}
+
+
+@router.post("/api/vision/model")
+async def vision_install_model(
+    kind: str = Form("classifier"),
+    model: UploadFile = File(...),
+    labels: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict[str, Any]:
+    """Plug-and-play installer: upload a .tflite (+ optional labels.txt) and the
+    device picks it up immediately — no env edits, no restart.
+
+    kind: "classifier" (egg analysis) | "stage" (incubation-day estimator).
+    """
+    _require_user(db, session_token)
+    if kind not in ("classifier", "stage"):
+        raise HTTPException(status_code=400, detail="kind must be 'classifier' or 'stage'")
+    if not model.filename or not model.filename.endswith(".tflite"):
+        raise HTTPException(status_code=400, detail="model must be a .tflite file")
+
+    target = Path(_vision_service.tflite_model_path if kind == "classifier" else _vision_service.stage_model_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(await model.read())
+
+    if labels is not None and labels.filename:
+        labels_path = target.with_suffix(".txt") if kind == "classifier" else target.with_name("stage_labels.txt")
+        labels_path.write_bytes(await labels.read())
+
+    # If a stage model was installed, flip the stage backend on so it's used.
+    if kind == "stage":
+        _vision_service.stage_backend = "tflite"
+
+    status_after = _vision_service.reload()
+    return {"endpoint": "vision.model.install", "installed": kind, "path": str(target), **status_after}
 
 
 # ------------------------------------------------------------------

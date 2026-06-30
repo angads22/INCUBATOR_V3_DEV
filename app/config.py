@@ -66,8 +66,9 @@ class Settings:
     captures_dir: str = field(default_factory=lambda: os.getenv("INCUBATOR_CAPTURES_DIR", os.getenv("CAMERA_IMAGE_DIR", "./captures")))
 
     # --- Vision model ---
-    # Backend: 'tflite' for local on-device inference, 'api' for remote, 'mock' for dev
-    vision_backend: str = field(default_factory=lambda: os.getenv("VISION_BACKEND", "mock"))
+    # Backend: 'auto' (plug-and-play: use a dropped-in model, else API, else mock),
+    # 'tflite' (force on-device), 'api' (force remote), 'mock' (force dev).
+    vision_backend: str = field(default_factory=lambda: os.getenv("VISION_BACKEND", "auto"))
     vision_tflite_model_path: str = field(default_factory=lambda: os.getenv("VISION_TFLITE_MODEL", "./models/vision/model.tflite"))
     vision_api_url: str = field(default_factory=lambda: os.getenv("VISION_API_URL", "").strip())
     vision_api_key: str = field(default_factory=lambda: os.getenv("VISION_API_KEY", "").strip())

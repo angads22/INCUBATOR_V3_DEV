@@ -14,6 +14,10 @@ os.environ.setdefault("INCUBATOR_BUTTON_MOCK_FILE", os.path.join(tempfile.gettem
 # Keep capture/preview writes inside the temp dir, never the repo or SD card.
 os.environ.setdefault("CAMERA_IMAGE_DIR", os.path.join(tempfile.gettempdir(), "incubator_test_captures"))
 os.environ.setdefault("CAMERA_FRAME_DIR", os.path.join(tempfile.gettempdir(), "incubator_test_frames"))
+# Vision model paths under temp so the upload/install tests never write to the
+# repo or an unwritable system path.
+os.environ.setdefault("VISION_TFLITE_MODEL", os.path.join(tempfile.gettempdir(), "incubator_test_models", "model.tflite"))
+os.environ.setdefault("VISION_STAGE_MODEL", os.path.join(tempfile.gettempdir(), "incubator_test_models", "stage.tflite"))
 
 import pytest
 from fastapi.testclient import TestClient
