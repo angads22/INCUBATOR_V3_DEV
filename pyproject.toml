@@ -18,6 +18,8 @@ dependencies = [
   "email-validator>=2.2.0",
   # Templating
   "jinja2>=3.1.0",
+  # Multipart form parsing (Testing-tab image uploads)
+  "python-multipart>=0.0.9",
   # Image handling (for vision pre-processing)
   "pillow>=10.0.0",
   # HTTP client for cloud sync and OTA checks

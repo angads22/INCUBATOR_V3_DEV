@@ -52,6 +52,18 @@ class Settings:
     camera_image_dir: str = field(default_factory=lambda: os.getenv("CAMERA_IMAGE_DIR", "./captures"))
     camera_resolution_w: int = field(default_factory=lambda: int(os.getenv("CAMERA_RES_W", "1920")))
     camera_resolution_h: int = field(default_factory=lambda: int(os.getenv("CAMERA_RES_H", "1080")))
+    # Low-res preview stream (additive — used by the live-preview card + MJPEG endpoint).
+    camera_preview_w: int = field(default_factory=lambda: int(os.getenv("CAMERA_PREVIEW_W", "640")))
+    camera_preview_h: int = field(default_factory=lambda: int(os.getenv("CAMERA_PREVIEW_H", "480")))
+    camera_preview_fps: float = field(default_factory=lambda: float(os.getenv("CAMERA_PREVIEW_FPS", "1.0")))
+    # Live preview card + MJPEG stream are off by default so behaviour is unchanged.
+    camera_stream_enabled: bool = field(default_factory=lambda: os.getenv("CAMERA_STREAM_ENABLED", "false").lower() == "true")
+    # Transient preview frames live in tmpfs (RAM), never the SD card.
+    camera_frame_dir: str = field(default_factory=lambda: os.getenv("CAMERA_FRAME_DIR", "/run/incubator/frames"))
+    # Directory the Testing tab browses for saved captures. Defaults to the
+    # capture dir so laptop dev works out of the box; the Pi env sets
+    # /var/incubator/captures.
+    captures_dir: str = field(default_factory=lambda: os.getenv("INCUBATOR_CAPTURES_DIR", os.getenv("CAMERA_IMAGE_DIR", "./captures")))
 
     # --- Vision model ---
     # Backend: 'tflite' for local on-device inference, 'api' for remote, 'mock' for dev
@@ -60,6 +72,14 @@ class Settings:
     vision_api_url: str = field(default_factory=lambda: os.getenv("VISION_API_URL", "").strip())
     vision_api_key: str = field(default_factory=lambda: os.getenv("VISION_API_KEY", "").strip())
     vision_confidence_threshold: float = field(default_factory=lambda: float(os.getenv("VISION_CONFIDENCE_THRESHOLD", "0.65")))
+
+    # --- Vision: incubation-stage estimator (Testing tab) ---
+    # 'heuristic' works today with no trained model; 'tflite' loads a dropped-in
+    # model; 'mock' returns a fixed result for dev/CI.
+    vision_stage_backend: str = field(default_factory=lambda: os.getenv("VISION_STAGE_BACKEND", "heuristic"))
+    vision_stage_model_path: str = field(default_factory=lambda: os.getenv("VISION_STAGE_MODEL", "/var/incubator/models/vision/stage.tflite"))
+    # Total incubation length for the configured species (chicken = 21 days).
+    incubation_days: int = field(default_factory=lambda: int(os.getenv("INCUBATION_DAYS", "21")))
 
     # --- Sensor polling ---
     sensor_poll_interval_seconds: int = field(default_factory=lambda: int(os.getenv("SENSOR_POLL_INTERVAL", "30")))

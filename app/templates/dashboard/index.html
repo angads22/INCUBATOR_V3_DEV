@@ -77,6 +77,15 @@
   </div>
 
   <div class="panel-group">
+    {% if camera_stream_enabled %}
+    <article class="card">
+      <h3>Live camera</h3>
+      <img src="/api/camera/stream" alt="Live incubator camera preview"
+           style="width:100%;border-radius:var(--radius-sm);border:1px solid var(--line);display:block" />
+      <p class="muted hint">Low-resolution preview (~1 fps). Full-resolution stills via the camera API.</p>
+    </article>
+    {% endif %}
+
     <article class="card">
       <h3>Quick actions</h3>
       <div class="quick-actions-grid">
