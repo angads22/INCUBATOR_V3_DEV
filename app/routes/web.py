@@ -251,7 +251,8 @@ def dashboard(
     # Determine next-step card
     if hotspot_active or setup_mode:
         current_state_summary = "Hotspot active — waiting for setup"
-        state_detail = f"Connect to Wi-Fi '{ap_ssid}' (password: {settings.ap_password}) then open http://{settings.ap_ip}:8000"
+        _ap_cred = f"(password: {settings.ap_password}) " if settings.ap_password else "(open network) "
+        state_detail = f"Connect to Wi-Fi '{ap_ssid}' {_ap_cred}then open http://{settings.ap_ip}:8000"
         next_step = {
             "title": "Finish setup via hotspot",
             "body": f"Join '{ap_ssid}' on your phone or laptop and complete the wizard.",

@@ -317,13 +317,26 @@ def startup() -> None:
     db = next(get_db())
     try:
         config = db.scalar(select(DeviceConfig).limit(1))
+        # Prefer the identity provisioned by firstboot (INCUBATOR_DEVICE_ID,
+        # derived from the Pi serial). Falling back to a random UUID here is what
+        # made a single unit look like "two incubators": firstboot named it
+        # PI-<serial> in the env / hostname / cloud while the app minted an
+        # unrelated UUID for the setup AP. Only generate a UUID when no provisioned
+        # id exists (e.g. a dev laptop with no env file).
+        provisioned_id = settings.device_id or f"PI-{uuid.uuid4().hex[:8].upper()}"
         if not config:
-            device_id = f"PI-{uuid.uuid4().hex[:8].upper()}"
             claim_code = f"PAIR-{secrets.token_hex(3).upper()}"
-            config = DeviceConfig(device_id=device_id, claimed=False, claim_code=claim_code)
+            config = DeviceConfig(device_id=provisioned_id, claimed=False, claim_code=claim_code)
             db.add(config)
             db.commit()
-            logger.info("First boot — device_id=%s claim_code=%s", device_id, claim_code)
+            logger.info("First boot — device_id=%s claim_code=%s", provisioned_id, claim_code)
+        elif settings.device_id and not config.claimed and config.device_id != settings.device_id:
+            # An already-flashed unit that diverged before this fix: realign the
+            # DB to the provisioned id while it is still unclaimed so the AP,
+            # hostname, and cloud all agree on one identity.
+            logger.info("Reconciling device_id %s -> %s", config.device_id, settings.device_id)
+            config.device_id = settings.device_id
+            db.commit()
 
         device_id = config.device_id
         device_name = config.device_name or ""

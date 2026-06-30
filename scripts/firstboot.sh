@@ -56,9 +56,10 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     chmod 600 "${ENV_FILE}"
 fi
 
-# Randomise AP password
-AP_PASS="$(dd if=/dev/urandom bs=9 count=1 2>/dev/null | base64 | tr -dc 'A-Za-z0-9' | cut -c1-12)"
-sed -i "s|INCUBATOR_AP_PASSWORD=.*|INCUBATOR_AP_PASSWORD=${AP_PASS}|" "${ENV_FILE}"
+# Open setup network — no Wi-Fi password. The operator joins "Incubator-XXXX"
+# and creates their account in the captive-portal wizard; security lives in the
+# account login, not a printed AP key.
+sed -i "s|INCUBATOR_AP_PASSWORD=.*|INCUBATOR_AP_PASSWORD=|" "${ENV_FILE}"
 
 # Inject device ID into env file
 if ! grep -q "^INCUBATOR_DEVICE_ID=" "${ENV_FILE}"; then
@@ -81,8 +82,7 @@ _log "First-boot provisioning complete."
 echo ""
 echo "  Device ID:   ${DEVICE_ID}"
 echo "  Hostname:    ${NEW_HOSTNAME}"
-echo "  AP SSID:     Incubator-${SHORT_ID^^}"
-echo "  AP Password: ${AP_PASS}  (also in ${ENV_FILE})"
+echo "  AP SSID:     Incubator-${SHORT_ID^^}  (open — no password)"
 echo "  Dashboard:   http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo '10.42.0.1'):8000"
 echo ""
 echo "  Logs:  journalctl -u incubator -f"
