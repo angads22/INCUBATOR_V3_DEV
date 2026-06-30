@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodic incubator OTA update check
+
+[Timer]
+# First check 10 min after boot, then every 15 min. Persistent catches up a
+# missed check after downtime.
+OnBootSec=10min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

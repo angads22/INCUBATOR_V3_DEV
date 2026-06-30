@@ -247,6 +247,38 @@ if [ -f "${INSTALL_DIR}/deploy/incubator-control.service" ]; then
             "/etc/systemd/system/multi-user.target.wants/incubator-control.service"
 fi
 
+# ── OTA update timer ──────────────────────────────────────────
+# Periodically check GitHub Releases and apply newer versions (app/ota) with
+# health-checked rollback, restarting only the web service. Without this timer
+# a flashed image never auto-updates.
+if [ -f "${INSTALL_DIR}/deploy/incubator-ota.service" ]; then
+    info "Installing OTA update timer (checks GitHub Releases every 15 min)..."
+    sed -e "s|__INSTALL_DIR__|${INSTALL_DIR}|g" \
+        "${INSTALL_DIR}/deploy/incubator-ota.service" > /etc/systemd/system/incubator-ota.service
+    cp "${INSTALL_DIR}/deploy/incubator-ota.timer" /etc/systemd/system/incubator-ota.timer
+    chmod +x "${INSTALL_DIR}/scripts/ota-agent.sh" 2>/dev/null || true
+    systemctl enable incubator-ota.timer 2>/dev/null \
+        || ln -sf /etc/systemd/system/incubator-ota.timer \
+            /etc/systemd/system/timers.target.wants/incubator-ota.timer
+fi
+
+# ── Make the app a git checkout so OTA can update from GitHub ──
+# OTA applies updates by fetching/checking out release tags. The staged app has
+# no .git, so initialize one pointed at the GitHub remote and record the baked
+# version. .gitignore keeps .venv/data untracked, and OTA's force-checkout
+# leaves untracked files in place.
+APP_VERSION="$(grep -oP 'VERSION\s*=\s*"\K[^"]+' "${INSTALL_DIR}/app/version.py" 2>/dev/null || echo dev)"
+if [ ! -d "${INSTALL_DIR}/.git" ]; then
+    info "Initializing ${INSTALL_DIR} as a git checkout for OTA (version ${APP_VERSION})..."
+    git -C "${INSTALL_DIR}" init -q
+    git -C "${INSTALL_DIR}" add -A
+    git -C "${INSTALL_DIR}" -c user.email=build@incubator -c user.name=incubator-build \
+        commit -qm "Image base v${APP_VERSION}" || true
+    git -C "${INSTALL_DIR}" remote add origin https://github.com/angads22/INCUBATOR_V3_DEV.git 2>/dev/null \
+        || git -C "${INSTALL_DIR}" remote set-url origin https://github.com/angads22/INCUBATOR_V3_DEV.git
+fi
+echo "${APP_VERSION}" > "${INSTALL_DIR}/.git-ref"
+
 # ── GPIO permissions ─────────────────────────────────────────
 # Add the service user (root) to gpio group — already root so skip.
 # If you change User= in the service file, add that user to gpio group.

@@ -1,0 +1,11 @@
+[Unit]
+# Periodic OTA update check (driven by incubator-ota.timer). Pulls newer
+# GitHub Releases and applies them with health-checked auto-rollback, restarting
+# only the web service — the control daemon keeps incubation running.
+Description=Incubator OTA update check (GitHub Releases)
+After=network-online.target incubator.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=__INSTALL_DIR__/scripts/ota-agent.sh

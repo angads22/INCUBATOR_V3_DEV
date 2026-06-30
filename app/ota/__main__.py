@@ -51,9 +51,15 @@ def _current_ref() -> str:
 
 
 def _apply_ref(ref: str) -> None:
-    # Fetch the tag/sha then check it out, and reinstall deps.
+    # Forward updates: fetch the release tag from GitHub and check it out via
+    # FETCH_HEAD (a bare `git fetch origin <tag>` doesn't create a local ref).
+    # Rollback: ref is a local sha already in the repo, so `git checkout <sha>`
+    # succeeds directly and the fetch is a harmless no-op.
     subprocess.run(["git", "-C", INSTALL_DIR, "fetch", "--depth", "1", "origin", ref], check=False)
-    subprocess.run(["git", "-C", INSTALL_DIR, "checkout", "--force", ref], check=False) or \
+    checked_out = subprocess.run(
+        ["git", "-C", INSTALL_DIR, "checkout", "--force", ref], check=False
+    ).returncode == 0
+    if not checked_out:
         subprocess.run(["git", "-C", INSTALL_DIR, "checkout", "--force", "FETCH_HEAD"], check=False)
     subprocess.run(
         [f"{INSTALL_DIR}/.venv/bin/pip", "install", "--extra-index-url",
@@ -111,6 +117,17 @@ def main() -> int:
     )
     result = updater.run()
     logger.info("OTA result: %s", result)
+
+    # Persist the version we ended up on, so the next check compares correctly
+    # (otherwise a successful update would be re-applied every cycle).
+    ended = result.get("version") if result.get("updated") else (current if result.get("rolled_back") else None)
+    if ended:
+        try:
+            with open(f"{INSTALL_DIR}/.git-ref", "w") as fh:
+                fh.write(str(ended))
+        except OSError as exc:
+            logger.warning("OTA: could not write .git-ref: %s", exc)
+
     # Exit non-zero only if we ended up unhealthy after a rollback.
     return 1 if result.get("rolled_back") and not result.get("recovered") else 0
 
