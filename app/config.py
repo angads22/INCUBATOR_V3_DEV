@@ -38,7 +38,10 @@ class Settings:
     # --- Setup / Onboarding ---
     setup_button_hold_seconds: float = field(default_factory=lambda: float(os.getenv("INCUBATOR_SETUP_BUTTON_HOLD_SECONDS", "4.0")))
     ap_ssid_prefix: str = field(default_factory=lambda: os.getenv("INCUBATOR_AP_SSID_PREFIX", "Incubator"))
-    ap_password: str = field(default_factory=lambda: os.getenv("INCUBATOR_AP_PASSWORD", "setup1234"))
+    # Blank = OPEN setup network (no Wi-Fi password). The operator just joins
+    # "Incubator-XXXX", lands on the captive portal, and creates an account in
+    # the wizard. Set a non-empty value here only if you want a WPA2 setup AP.
+    ap_password: str = field(default_factory=lambda: os.getenv("INCUBATOR_AP_PASSWORD", ""))
     ap_ip: str = field(default_factory=lambda: os.getenv("INCUBATOR_AP_IP", "10.42.0.1"))
     # Auto-start hotspot when device has no WiFi config on boot
     auto_hotspot_on_unclaimed: bool = field(default_factory=lambda: os.getenv("INCUBATOR_AUTO_HOTSPOT", "true").lower() == "true")

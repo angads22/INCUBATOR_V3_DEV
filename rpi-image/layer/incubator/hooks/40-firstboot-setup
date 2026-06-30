@@ -57,9 +57,9 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     chmod 600 "${ENV_FILE}"
 fi
 
-# Always write a fresh AP password (safe to regenerate on first boot)
-AP_PASS="$(dd if=/dev/urandom bs=9 count=1 2>/dev/null | base64 | tr -dc 'A-Za-z0-9' | cut -c1-12)"
-sed -i "s|INCUBATOR_AP_PASSWORD=.*|INCUBATOR_AP_PASSWORD=${AP_PASS}|" "${ENV_FILE}"
+# Open setup network — no Wi-Fi password. The operator joins "Incubator-XXXX"
+# and creates their account in the captive-portal wizard.
+sed -i "s|INCUBATOR_AP_PASSWORD=.*|INCUBATOR_AP_PASSWORD=|" "${ENV_FILE}"
 
 # Inject Device ID into env file so the app and OTA agent can read it
 if ! grep -q "^INCUBATOR_DEVICE_ID=" "${ENV_FILE}"; then
@@ -68,7 +68,7 @@ if ! grep -q "^INCUBATOR_DEVICE_ID=" "${ENV_FILE}"; then
     echo "INCUBATOR_DEVICE_ID=${DEVICE_ID}" >> "${ENV_FILE}"
 fi
 
-_log "AP password set (saved in ${ENV_FILE})"
+_log "Setup AP is open (no Wi-Fi password)."
 
 # ── Expand root filesystem if needed ──────────────────────────────────────
 if command -v raspi-config &>/dev/null; then
@@ -78,8 +78,7 @@ fi
 # ── Mark as done ──────────────────────────────────────────────────────────
 touch "${DONE_MARKER}"
 _log "First-boot provisioning complete."
-_log "AP SSID:     Incubator-${SHORT_ID^^}"
-_log "AP Password: ${AP_PASS}"
+_log "AP SSID:     Incubator-${SHORT_ID^^}  (open — no password)"
 _log "Dashboard:   http://$(hostname -I | awk '{print $1}' 2>/dev/null || echo '10.42.0.1'):8000"
 FB_EOF
 

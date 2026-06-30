@@ -86,8 +86,9 @@ sudo bash /home/pi/incubator/init_pi.sh /opt/incubator
 ```
 
 `init_pi.sh` installs system packages, builds a Python venv, writes
-`/etc/incubator.env` with a random AP password, and enables the `incubator`
-systemd service. (`build_image.sh` reuses this same installer inside the image.)
+`/etc/incubator.env` with an open setup AP (no Wi-Fi password), and enables the
+`incubator` systemd service. (`build_image.sh` reuses this same installer inside
+the image.)
 
 ---
 
@@ -149,4 +150,6 @@ and PR.
 
 - Don't expose port 8000 directly to the internet. Use Tailscale, WireGuard, or
   a reverse proxy with HTTPS, and set `INCUBATOR_SESSION_SECURE=true`.
-- The `/etc/incubator.env` file holds the AP password and is mode `600`.
+- The setup AP is open by default (no Wi-Fi password); access control lives in
+  the operator account created during onboarding. The `/etc/incubator.env` file
+  holds secrets (API keys, device secret) and is mode `600`.

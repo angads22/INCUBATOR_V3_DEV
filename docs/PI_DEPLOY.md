@@ -78,7 +78,7 @@ sudo bash /home/pi/incubator/init_pi.sh /opt/incubator
 `init_pi.sh`:
 - Installs system packages (`python3-picamera2`, libgpiod runtime, NetworkManager, etc.)
 - Creates a Python venv with all dependencies
-- Creates `/etc/incubator.env` with a randomised AP password
+- Creates `/etc/incubator.env` with an open setup AP (no Wi-Fi password)
 - Installs and enables the `incubator` systemd service
 - Enables the camera interface
 

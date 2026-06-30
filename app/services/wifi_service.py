@@ -142,14 +142,18 @@ class WiFiService:
             self._prepare_radio()
             # Delete any stale hotspot connection first
             _nmcli("connection", "delete", _HOTSPOT_CON_NAME, check=False)
-            result = _nmcli(
+            args = [
                 "device", "wifi", "hotspot",
                 "con-name", _HOTSPOT_CON_NAME,
                 "ifname", "wlan0",
                 "ssid", ssid,
-                "password", password,
-                check=False,
-            )
+            ]
+            # An empty password means an OPEN setup network: omit the password
+            # flag entirely so nmcli leaves the AP unsecured (passing an empty
+            # string would make nmcli demand a valid WPA key and fail).
+            if password:
+                args += ["password", password]
+            result = _nmcli(*args, check=False)
             if result.returncode == 0:
                 logger.info("Hotspot '%s' started", ssid)
                 return True

@@ -202,11 +202,10 @@ if [ ! -f "${ENV_FILE}" ]; then
     info "Creating ${ENV_FILE}..."
     cp "${INSTALL_DIR}/deploy/incubator.env.example" "${ENV_FILE}"
     chmod 600 "${ENV_FILE}"
-    # Seed a random AP password — use dd+xxd to stay pipefail-safe
-    # (tr + head triggers SIGPIPE under set -euo pipefail on some shells)
-    AP_PASS="$(dd if=/dev/urandom bs=9 count=1 2>/dev/null | base64 | tr -dc 'A-Za-z0-9' | cut -c1-12)"
-    sed -i "s|INCUBATOR_AP_PASSWORD=.*|INCUBATOR_AP_PASSWORD=${AP_PASS}|" "${ENV_FILE}"
-    info "AP password set to: ${AP_PASS}  (saved in ${ENV_FILE})"
+    # Open setup network — no Wi-Fi password. The operator joins "Incubator-XXXX"
+    # and creates their account in the captive-portal wizard.
+    sed -i "s|INCUBATOR_AP_PASSWORD=.*|INCUBATOR_AP_PASSWORD=|" "${ENV_FILE}"
+    info "Setup AP is open (no Wi-Fi password)."
     # Bake the Wi-Fi country so the running app applies the same regulatory
     # domain before starting the hotspot.
     if grep -q '^INCUBATOR_WIFI_COUNTRY=' "${ENV_FILE}"; then
@@ -286,9 +285,8 @@ usermod -aG gpio,dialout,video root 2>/dev/null || true
 
 # ── Start + health check (skipped during image build) ────────
 if [[ "$IMAGE_BUILD" == "1" ]]; then
-    AP_PASS_SHOWN="$(grep INCUBATOR_AP_PASSWORD "${ENV_FILE}" | cut -d= -f2)"
     info "Image build complete — service enabled, will start on first boot."
-    info "First boot broadcasts AP 'Incubator-XXXX' (password: ${AP_PASS_SHOWN}) at http://10.42.0.1:8000"
+    info "First boot broadcasts open AP 'Incubator-XXXX' (no password) at http://10.42.0.1:8000"
     exit 0
 fi
 
@@ -308,8 +306,7 @@ if systemctl is-active --quiet "${SERVICE_NAME}"; then
     echo "  Dashboard:    http://${IP}:8000"
     echo ""
     echo "  On FIRST BOOT (no WiFi configured) the Pi broadcasts:"
-    echo "  AP SSID:  Incubator-XXXX"
-    echo "  Password: $(grep INCUBATOR_AP_PASSWORD ${ENV_FILE} | cut -d= -f2)"
+    echo "  AP SSID:  Incubator-XXXX  (open — no password)"
     echo "  URL:      http://10.42.0.1:8000"
     echo ""
     echo "  Hold the setup button (GPIO18) for 4 s to re-enter setup mode."
