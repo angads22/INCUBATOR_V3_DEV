@@ -18,6 +18,18 @@
     <p id="network-msg" class="hint"></p>
     <p class="muted">Switching networks can briefly drop this page — if it stops responding, join the new Wi-Fi and reload.</p>
   </article>
+
+  <article id="setup-network" class="card form-panel">
+    <h3>Setup network password</h3>
+    <p class="muted">Your incubator's own setup Wi-Fi (<strong>Incubator-XXXX</strong>) is <strong>open</strong> so it's easy to connect the first time. If you'd like, set a password to protect future setup sessions. Leave blank to keep it open.</p>
+    <label>Setup Wi-Fi password (optional)
+      <input id="ap-password" type="password" autocomplete="new-password" placeholder="8–63 characters, or blank for open">
+    </label>
+    <div class="button-row">
+      <button id="ap-password-save" class="btn btn-primary" type="button">Save</button>
+    </div>
+    <p id="ap-password-msg" class="hint"></p>
+  </article>
   <form id="settings-form" class="card form-panel">
     <h3 id="device">Device Controls</h3>
     <div class="form-grid">
@@ -46,4 +58,36 @@
 {% block scripts %}
 <script src="/static/js/settings.js"></script>
 <script src="/static/js/network.js"></script>
+<script>
+  // Setup-AP password (optional, post-setup). Self-contained to keep the
+  // onboarding-recovery flow independent of the larger settings/network logic.
+  (function () {
+    var btn = document.getElementById('ap-password-save');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      var input = document.getElementById('ap-password');
+      var msg = document.getElementById('ap-password-msg');
+      var pw = (input.value || '').trim();
+      msg.textContent = 'Saving…';
+      try {
+        var res = await fetch('/api/settings/ap-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pw }),
+        });
+        var data = await res.json();
+        if (!res.ok) {
+          msg.textContent = data.detail || 'Could not save.';
+          return;
+        }
+        msg.textContent = data.open
+          ? 'Setup network is now open (no password).'
+          : 'Saved. Future setup sessions will ask for this password.';
+        input.value = '';
+      } catch (e) {
+        msg.textContent = 'Could not reach the device.';
+      }
+    });
+  })();
+</script>
 {% endblock %}

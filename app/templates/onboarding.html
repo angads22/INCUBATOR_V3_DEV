@@ -12,11 +12,11 @@
   <!-- Step 0: Welcome -->
   <div class="wizard-step active" data-step="0">
     <article class="card">
-      <h3>Welcome to Your Incubator</h3>
-      <p>This wizard will guide you through connecting your incubator to Wi-Fi, naming your device, and optionally creating an operator account.</p>
-      <p class="muted">Your device must be in setup mode. If the <strong>Incubator-XXXX</strong> hotspot is active, connect to it{% if ap_password %} (password: <code>{{ ap_password }}</code>){% else %} (open network — no password){% endif %} and open <strong>http://{{ ap_ip }}:8000</strong>. Otherwise press and hold the <strong>setup button</strong> on your device for 4&nbsp;seconds to enter setup mode.</p>
+      <h3>Let's set up your incubator</h3>
+      <p>This takes about two minutes. We'll connect your incubator to your Wi-Fi and get it ready. No technical know-how needed — just follow along.</p>
+      <p class="muted">You're already connected to your incubator's own Wi-Fi (<strong>{{ ap_ssid_prefix }}-XXXX</strong>{% if ap_password %}, password <code>{{ ap_password }}</code>{% else %} — it's open, no password{% endif %}) and this page opened by itself. If you ever need to get back here, hold the <strong>setup button</strong> on the device for 4&nbsp;seconds and reconnect to that network.</p>
       <div class="button-row">
-        <button class="btn btn-primary" id="beginSetupBtn" type="button">Begin Setup</button>
+        <button class="btn btn-primary" id="beginSetupBtn" type="button">Start</button>
       </div>
       <p id="setupStartMsg" class="hint"></p>
     </article>
@@ -25,14 +25,14 @@
   <!-- Step 1: Wi-Fi Selection -->
   <div class="wizard-step" data-step="1">
     <article class="card">
-      <h3>Select Your Wi-Fi Network</h3>
-      <p class="muted">Choose the network your incubator should use for normal operation.</p>
-      <p id="wifiScanMsg" class="hint">Scanning for networks&hellip;</p>
+      <h3>Connect to your Wi-Fi</h3>
+      <p class="muted">Pick your home or barn Wi-Fi so the incubator can stay online.</p>
+      <p id="wifiScanMsg" class="hint">Looking for nearby Wi-Fi&hellip;</p>
       <div id="wifiList" class="wifi-list"></div>
-      <label class="manual-ssid">Can't see your network? Enter its name manually
-        <input id="manualSsid" type="text" placeholder="Wi-Fi network name (SSID)" autocomplete="off" />
+      <label class="manual-ssid">Don't see your Wi-Fi? Type its name here
+        <input id="manualSsid" type="text" placeholder="Your Wi-Fi name" autocomplete="off" />
       </label>
-      <p class="muted hint">While the setup hotspot is on, this device can't always scan for other networks — typing the name works just as well.</p>
+      <p class="muted hint">While in setup mode the incubator can't always see other networks — typing the name works just as well.</p>
       <div class="wizard-nav">
         <button class="btn btn-ghost" type="button" data-prev>Back</button>
         <button class="btn btn-primary" type="button" data-next id="wifiNextBtn" disabled>Next</button>
@@ -43,10 +43,10 @@
   <!-- Step 2: Wi-Fi Password -->
   <div class="wizard-step" data-step="2">
     <article class="card">
-      <h3>Enter Wi-Fi Password</h3>
-      <p class="muted">Leave blank for open networks.</p>
+      <h3>Wi-Fi password</h3>
+      <p class="muted">Type the password for your Wi-Fi. If your Wi-Fi has no password, leave this blank.</p>
       <label>Password for <strong id="selectedSsidLabel">&mdash;</strong>
-        <input id="wifiPassword" type="password" placeholder="Wi-Fi password" autocomplete="off" />
+        <input id="wifiPassword" type="password" placeholder="Your Wi-Fi password" autocomplete="off" />
       </label>
       <div class="wizard-nav">
         <button class="btn btn-ghost" type="button" data-prev>Back</button>
@@ -58,9 +58,9 @@
   <!-- Step 3: Account Creation (optional) -->
   <div class="wizard-step" data-step="3">
     <article class="card">
-      <h3>Create Operator Account <span class="badge-optional">Optional</span></h3>
-      <p class="muted">Create a local account to restrict access and unlock future features. You can skip and add one later from the profile menu.</p>
-      <label><input type="checkbox" id="createAccountCheck" /> Create an account now</label>
+      <h3>Create a login <span class="badge-optional">Optional</span></h3>
+      <p class="muted">A login keeps others from changing your incubator's settings. You can skip this now and add one later from the menu in the top-right.</p>
+      <label><input type="checkbox" id="createAccountCheck" /> Create a login now</label>
       <div id="accountFields" class="account-fields">
         <label>Username<input id="acctUsername" type="text" autocomplete="username" /></label>
         <label>Email<input id="acctEmail" type="email" autocomplete="email" /></label>

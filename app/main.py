@@ -103,6 +103,21 @@ vision_service = VisionService(
 setup_mode_service = SetupModeService()
 wifi_service = WiFiService()
 
+
+def _resolve_ap_password() -> str:
+    """Authoritative setup-AP password: the DB value (default open), never the
+    stale INCUBATOR_AP_PASSWORD baked into /etc/incubator.env at first boot."""
+    from .settings_store import effective_ap_password
+
+    db = next(get_db())
+    try:
+        return effective_ap_password(db)
+    except Exception:  # noqa: BLE001 — open network is the safe fallback
+        return ""
+    finally:
+        db.close()
+
+
 onboarding_service = OnboardingService(
     wifi_service=wifi_service,
     setup_mode_service=setup_mode_service,
@@ -110,6 +125,7 @@ onboarding_service = OnboardingService(
     ap_password=settings.ap_password,
     ap_ip=settings.ap_ip,
     auto_hotspot=settings.auto_hotspot_on_unclaimed,
+    ap_password_resolver=_resolve_ap_password,
 )
 
 button_service = SetupButtonService(
