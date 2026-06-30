@@ -115,6 +115,18 @@ def test_heater_disabled_forces_off(tmp_path):
     assert gpio.heater is False
 
 
+def test_build_daemon_wires_from_settings():
+    # Guards against config drift: build_daemon() reads every control_* setting,
+    # so a missing field (e.g. dropped in a merge) fails here instead of only at
+    # runtime on the device.
+    from app.control.loop import build_daemon
+
+    daemon = build_daemon()
+    assert daemon._interval > 0
+    assert daemon._hysteresis >= 0
+    assert daemon._state_path and daemon._command_path
+
+
 def test_command_file_is_drained_and_applied(tmp_path):
     gpio = FakeGPIO(temp=37.5)
     d = _daemon(gpio, tmp_path)

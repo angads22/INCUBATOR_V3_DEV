@@ -87,6 +87,21 @@ class Settings:
     mqtt_base_topic: str = field(default_factory=lambda: os.getenv("MQTT_BASE_TOPIC", "fleet").strip().strip("/"))
     mqtt_telemetry_interval_seconds: int = field(default_factory=lambda: int(os.getenv("MQTT_TELEMETRY_INTERVAL", "30")))
 
+    # --- Control daemon (Phase 3) ---
+    # The safety-critical control loop runs as its OWN always-on process
+    # (incubator-control.service) so an app/UI update — which restarts only
+    # incubator.service — never pauses heater/turn control. Disabled by default
+    # so the single-process app + tests behave exactly as before.
+    control_daemon_enabled: bool = field(default_factory=lambda: os.getenv("CONTROL_DAEMON_ENABLED", "false").lower() == "true")
+    control_interval_seconds: int = field(default_factory=lambda: int(os.getenv("CONTROL_INTERVAL", "10")))
+    control_hysteresis_c: float = field(default_factory=lambda: float(os.getenv("CONTROL_HYSTERESIS_C", "0.4")))
+    # Auto egg-turn cadence (hours); 0 disables scheduled turning.
+    turn_interval_hours: float = field(default_factory=lambda: float(os.getenv("TURN_INTERVAL_HOURS", "3")))
+    # Humidity actuation: off (monitor only) | fan (vent to lower RH).
+    humidity_control_mode: str = field(default_factory=lambda: os.getenv("HUMIDITY_CONTROL_MODE", "off").strip().lower())
+    control_state_path: str = field(default_factory=lambda: os.getenv("CONTROL_STATE_PATH", "/run/incubator/control-state.json"))
+    control_command_path: str = field(default_factory=lambda: os.getenv("CONTROL_COMMAND_PATH", "/run/incubator/control-commands.jsonl"))
+
     # --- Dev overrides ---
     gpio_mock: bool = field(default_factory=lambda: os.getenv("GPIO_MOCK", "false").lower() == "true")
     button_mock_file: str = field(default_factory=lambda: os.getenv("INCUBATOR_BUTTON_MOCK_FILE", ""))
