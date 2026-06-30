@@ -18,6 +18,7 @@ import secrets
 import threading
 import time
 import uuid
+from typing import Any
 from pathlib import Path
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response, status
@@ -138,6 +139,60 @@ def _on_button_held(reason: str) -> None:
         gpio_service.pulse_alarm(0.5)
 
 
+# Shared hardware command dispatch, used by both the HTTP endpoint and the
+# fleet MQTT bus so a unit responds identically to a local action and a
+# remote-over-bus command. Returns {"ok": False, "error": "unknown_action"}
+# for an unrecognised action rather than raising.
+def execute_hardware_action(action: str, value: Any = None) -> dict:
+    def _alarm_off() -> dict:
+        # A manual off also silences the alert engine so it does not
+        # immediately re-assert the buzzer on the next poll.
+        alert_service.silence()
+        return hardware_service.set_alarm(False)
+
+    handler = {
+        "open_lock": hardware_service.open_lock,
+        "close_lock": hardware_service.close_lock,
+        "open_door": hardware_service.open_door,
+        "close_door": hardware_service.close_door,
+        "heater_on": lambda: hardware_service.set_heater(True),
+        "heater_off": lambda: hardware_service.set_heater(False),
+        "fan_on": lambda: hardware_service.set_fan(True),
+        "fan_off": lambda: hardware_service.set_fan(False),
+        "move_motor": lambda: hardware_service.move_motor(value if value is not None else 200),
+        "read_temp": hardware_service.read_temp,
+        "read_humidity": hardware_service.read_humidity,
+        "read_environment": hardware_service.read_environment,
+        "set_candle": lambda: hardware_service.set_candle(str(value).lower() in {"1", "true", "on"}),
+        "capture_image": hardware_service.capture_image,
+        "alarm_on": lambda: hardware_service.set_alarm(True),
+        "alarm_off": _alarm_off,
+        "alarm_test": alert_service.test_alarm,
+    }.get(action)
+    if not handler:
+        return {"ok": False, "error": "unknown_action", "action": action}
+    return handler()
+
+
+def _fleet_command_dispatch(action: str, value: Any = None) -> dict:
+    """Run a bus command and log it; used as the FleetMqttService dispatcher."""
+    result = execute_hardware_action(action, value)
+    try:
+        db = next(get_db())
+        try:
+            db.add(ActionLog(action=f"mqtt.{action}", payload=str(value)))
+            db.commit()
+        finally:
+            db.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Fleet command logging failed: %s", exc)
+    return result
+
+
+# Constructed in startup() once the device_id is known.
+fleet_service = None
+
+
 # ------------------------------------------------------------------
 # Sensor poller background thread
 # ------------------------------------------------------------------
@@ -168,6 +223,9 @@ class _SensorPoller(threading.Thread):
                 db.add(ActionLog(action=f"system.{event['type']}", payload=event["message"]))
             if events:
                 db.commit()
+            # Push the freshest snapshot (online or offline) onto the fleet bus.
+            if fleet_service is not None:
+                fleet_service.publish_telemetry()
             if not reading.get("ok"):
                 return
             if not settings.sensor_log_to_db:
@@ -217,6 +275,7 @@ def startup() -> None:
             logger.info("First boot — device_id=%s claim_code=%s", device_id, claim_code)
 
         device_id = config.device_id
+        device_name = config.device_name or ""
         ensure_defaults(db)
 
         # Boot sequence — starts AP if device is unconfigured
@@ -237,6 +296,25 @@ def startup() -> None:
     _sensor_poller._poll()
     _sensor_poller.start()
 
+    # Fleet MQTT bus — each unit publishes telemetry + accepts commands keyed on
+    # its device_id. Disabled unless MQTT_ENABLED; never blocks local operation.
+    global fleet_service
+    if settings.mqtt_enabled:
+        from .services.fleet_service import FleetMqttService
+
+        fleet_service = FleetMqttService(
+            device_id,
+            base_topic=settings.mqtt_base_topic,
+            host=settings.mqtt_host,
+            port=settings.mqtt_port,
+            username=settings.mqtt_username,
+            password=settings.mqtt_password,
+            command_dispatch=_fleet_command_dispatch,
+            telemetry_source=lambda: alert_service.sensor_snapshot(),
+            device_name=device_name,
+        )
+        fleet_service.start()
+
     logger.info(
         "Incubator v3 started — version=%s gpio_mock=%s vision_backend=%s camera=%s",
         settings.app_version,
@@ -249,6 +327,8 @@ def startup() -> None:
 @app.on_event("shutdown")
 def shutdown() -> None:
     _sensor_poller.stop()
+    if fleet_service is not None:
+        fleet_service.stop()
     button_service.stop()
     camera_service.cleanup()
     gpio_service.cleanup()
@@ -345,36 +425,10 @@ def send_hardware_command(
     if (settings.require_login or has_any_user(db)) and not get_user_id_from_session(db, session_token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
-    def _alarm_off() -> dict:
-        # A manual off also silences the alert engine so it does not
-        # immediately re-assert the buzzer on the next poll.
-        alert_service.silence()
-        return hardware_service.set_alarm(False)
-
-    handler = {
-        "open_lock": hardware_service.open_lock,
-        "close_lock": hardware_service.close_lock,
-        "open_door": hardware_service.open_door,
-        "close_door": hardware_service.close_door,
-        "heater_on": lambda: hardware_service.set_heater(True),
-        "heater_off": lambda: hardware_service.set_heater(False),
-        "fan_on": lambda: hardware_service.set_fan(True),
-        "fan_off": lambda: hardware_service.set_fan(False),
-        "move_motor": lambda: hardware_service.move_motor(payload.value if payload.value is not None else 200),
-        "read_temp": hardware_service.read_temp,
-        "read_humidity": hardware_service.read_humidity,
-        "read_environment": hardware_service.read_environment,
-        "set_candle": lambda: hardware_service.set_candle(str(payload.value).lower() in {"1", "true", "on"}),
-        "capture_image": hardware_service.capture_image,
-        "alarm_on": lambda: hardware_service.set_alarm(True),
-        "alarm_off": _alarm_off,
-        "alarm_test": alert_service.test_alarm,
-    }.get(payload.action)
-
-    if not handler:
+    response = execute_hardware_action(payload.action, payload.value)
+    if response.get("error") == "unknown_action":
         raise HTTPException(status_code=400, detail=f"Unknown action: {payload.action}")
 
-    response = handler()
     db.add(ActionLog(action=payload.action, payload=str(payload.value)))
     db.commit()
     return response

@@ -22,6 +22,8 @@ dependencies = [
   "pillow>=10.0.0",
   # HTTP client for cloud sync and OTA checks
   "httpx>=0.27.0",
+  # MQTT client for the fleet telemetry/command bus
+  "paho-mqtt>=2.0.0",
 ]
 
 [project.optional-dependencies]

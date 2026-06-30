@@ -75,6 +75,18 @@ class Settings:
     # How often (seconds) the OTA timer fires; 0 = disabled (managed by systemd timer)
     ota_poll_interval_seconds: int = field(default_factory=lambda: int(os.getenv("OTA_POLL_INTERVAL_SECONDS", "0")))
 
+    # --- Fleet MQTT bus (Phase 1) ---
+    # Each unit publishes telemetry under <base>/<device_id>/... and subscribes
+    # to <base>/<device_id>/cmd. Disabled by default so a standalone unit and
+    # the test suite never touch a broker.
+    mqtt_enabled: bool = field(default_factory=lambda: os.getenv("MQTT_ENABLED", "false").lower() == "true")
+    mqtt_host: str = field(default_factory=lambda: os.getenv("MQTT_HOST", "").strip())
+    mqtt_port: int = field(default_factory=lambda: int(os.getenv("MQTT_PORT", "1883")))
+    mqtt_username: str = field(default_factory=lambda: os.getenv("MQTT_USERNAME", "").strip())
+    mqtt_password: str = field(default_factory=lambda: os.getenv("MQTT_PASSWORD", "").strip())
+    mqtt_base_topic: str = field(default_factory=lambda: os.getenv("MQTT_BASE_TOPIC", "fleet").strip().strip("/"))
+    mqtt_telemetry_interval_seconds: int = field(default_factory=lambda: int(os.getenv("MQTT_TELEMETRY_INTERVAL", "30")))
+
     # --- Dev overrides ---
     gpio_mock: bool = field(default_factory=lambda: os.getenv("GPIO_MOCK", "false").lower() == "true")
     button_mock_file: str = field(default_factory=lambda: os.getenv("INCUBATOR_BUTTON_MOCK_FILE", ""))
