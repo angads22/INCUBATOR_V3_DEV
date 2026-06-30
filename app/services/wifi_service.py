@@ -140,8 +140,13 @@ class WiFiService:
             # Bookworm soft-blocks the radio until a country is set — unblock it
             # and apply the regulatory domain before asking nmcli for an AP.
             self._prepare_radio()
-            # Delete any stale hotspot connection first
-            _nmcli("connection", "delete", _HOTSPOT_CON_NAME, check=False)
+            # Purge EVERY stale AP profile first — not just our fixed con-name.
+            # Earlier images, NetworkManager's own "Hotspot" profile, and old
+            # device-id-suffixed SSIDs leave saved AP connections in
+            # /etc/NetworkManager/system-connections that auto-activate, so the
+            # phone sees several "Incubator-XXXX" networks (often locked with an
+            # old key). Collapse them to the single open AP we're about to start.
+            self._purge_ap_connections(ssid)
             args = [
                 "device", "wifi", "hotspot",
                 "con-name", _HOTSPOT_CON_NAME,
@@ -166,6 +171,37 @@ class WiFiService:
         except Exception as exc:
             logger.warning("Unexpected error starting hotspot: %s", exc)
         return False
+
+    def _purge_ap_connections(self, ssid: str) -> None:
+        """Delete all saved Wi-Fi AP/hotspot profiles to avoid duplicate SSIDs.
+
+        Matches our fixed con-name, NetworkManager's default "Hotspot", anything
+        with "incubator"/"hotspot" in the name, and any profile named after the
+        SSID prefix (e.g. a stale "Incubator-1A2B"). Best-effort and never fatal.
+        """
+        prefix = ssid.split("-", 1)[0].lower() if ssid else "incubator"
+        try:
+            res = _nmcli("-t", "-f", "NAME,TYPE", "connection", "show", check=False)
+        except FileNotFoundError:
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Could not list connections for purge: %s", exc)
+            return
+        for line in res.stdout.splitlines():
+            # NAME may contain ':'; TYPE is the last field.
+            name, _, ctype = line.rpartition(":")
+            if not name or "wireless" not in ctype and "wifi" not in ctype:
+                continue
+            low = name.lower()
+            if (
+                low == _HOTSPOT_CON_NAME
+                or "hotspot" in low
+                or "incubator" in low
+                or (prefix and low.startswith(prefix))
+            ):
+                _nmcli("connection", "down", name, check=False)
+                _nmcli("connection", "delete", name, check=False)
+                logger.info("Purged stale AP connection '%s'", name)
 
     def stop_hotspot(self) -> None:
         try:

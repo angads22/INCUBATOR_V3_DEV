@@ -463,14 +463,18 @@ def login_page(
 
 
 @router.get("/onboarding", response_class=HTMLResponse)
-def onboarding_page(request: Request):
+def onboarding_page(request: Request, db: Session = Depends(get_db)):
+    from ..settings_store import effective_ap_password
+
     return _render(
         request=request,
         name="onboarding.html",
         context={
             "version": settings.app_version,
             "ap_ip": settings.ap_ip,
-            "ap_password": settings.ap_password,
+            # DB-authoritative: blank means the setup network is open.
+            "ap_password": effective_ap_password(db),
+            "ap_ssid_prefix": settings.ap_ssid_prefix,
         },
     )
 
@@ -618,6 +622,33 @@ def api_settings_update(
     if updates:
         update_settings(db, updates)
     return {"ok": True}
+
+
+class APPasswordPayload(BaseModel):
+    # 8–63 printable chars (WPA2 rule), or empty to make the setup network open.
+    password: str = ""
+
+
+@router.post("/api/settings/ap-password")
+def api_set_ap_password(
+    payload: APPasswordPayload,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict:
+    """Set (or clear) the setup-AP Wi-Fi password — optional, after setup.
+
+    The setup network ships OPEN so any farmer can connect with one tap. Once
+    things work, the operator can secure future setup sessions with a password
+    here; clearing it returns the AP to open.
+    """
+    from ..settings_store import set_ap_password
+
+    _require_api_user(db, session_token)
+    pw = (payload.password or "").strip()
+    if pw and not (8 <= len(pw) <= 63):
+        raise HTTPException(status_code=400, detail="Wi-Fi password must be 8–63 characters (or blank for an open network).")
+    set_ap_password(db, pw)
+    return {"ok": True, "open": not bool(pw)}
 
 
 class LoginPayload(BaseModel):

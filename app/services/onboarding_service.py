@@ -19,7 +19,7 @@ Flow:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -42,15 +42,30 @@ class OnboardingService:
         ap_password: str,
         ap_ip: str,
         auto_hotspot: bool = True,
+        ap_password_resolver: Callable[[], str] | None = None,
     ) -> None:
         self._wifi = wifi_service
         self._setup = setup_mode_service
         self._ap_ssid_prefix = ap_ssid_prefix
         self._ap_password = ap_password
+        # When provided, this is the authoritative source of the setup-AP
+        # password (read from the DB, default open). It overrides the static
+        # ap_password so an OTA-updated unit never stays locked behind a stale
+        # value baked into /etc/incubator.env.
+        self._ap_password_resolver = ap_password_resolver
         self._ap_ip = ap_ip
         self._auto_hotspot = auto_hotspot
         self._hotspot_active = False
         self._captive = None  # CaptivePortalResponder, lazily created with the hotspot
+
+    def _password(self) -> str:
+        if self._ap_password_resolver is not None:
+            try:
+                return self._ap_password_resolver() or ""
+            except Exception as exc:  # noqa: BLE001 — never block onboarding on this
+                logger.warning("AP password resolver failed (%s) — using open network", exc)
+                return ""
+        return self._ap_password
 
     # ------------------------------------------------------------------
     # Public API
@@ -70,7 +85,7 @@ class OnboardingService:
                 self._ap_ip,
             )
             self._setup.enter_setup_mode("auto_boot")
-            ok = self._wifi.start_hotspot(ssid, self._ap_password)
+            ok = self._wifi.start_hotspot(ssid, self._password())
             self._hotspot_active = ok
             if ok:
                 self._start_captive_responder()
@@ -87,15 +102,17 @@ class OnboardingService:
     def start_manual_hotspot(self, device_id: str) -> dict:
         """Triggered by the setup button hold or /onboarding/start endpoint."""
         ssid = self._make_ssid(device_id)
+        password = self._password()
         self._setup.enter_setup_mode("manual_trigger")
-        ok = self._wifi.start_hotspot(ssid, self._ap_password)
+        ok = self._wifi.start_hotspot(ssid, password)
         self._hotspot_active = ok
         if ok:
             self._start_captive_responder()
         return {
             "ok": ok,
             "ssid": ssid,
-            "password": self._ap_password,
+            "password": password,
+            "open": not bool(password),
             "ap_url": f"http://{self._ap_ip}:8000",
         }
 
