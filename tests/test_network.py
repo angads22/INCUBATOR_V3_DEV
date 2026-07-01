@@ -16,13 +16,14 @@ def _onboard(client):
     )
 
 
-def test_onboarding_complete_returns_app_url_for_redirect(client):
-    # After setup the phone leaves the AP, so the wizard must hand back a
-    # home-network address (mDNS <hostname>.local) to open + bookmark.
+def test_onboarding_complete_returns_open_and_app_urls(client):
+    # open_url = reachable NOW on the hotspot (fixed IP, no mDNS);
+    # app_url  = durable mDNS <hostname>.local address to bookmark.
     body = _onboard(client).json()
     assert body["ok"] is True
-    assert body["app_url"].startswith("http://") and body["app_url"].endswith(":8000")
-    assert ".local:" in body["app_url"]
+    assert body["open_url"].startswith("http://") and body["open_url"].endswith(":8000")
+    assert ".local:" not in body["open_url"]           # IP, resolves without mDNS
+    assert ".local:" in body["app_url"]                 # durable Bonjour name
     assert body["wifi_ssid"] == "HomeNet"
 
 

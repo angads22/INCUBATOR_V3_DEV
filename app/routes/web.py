@@ -599,12 +599,17 @@ def onboarding_complete(
     import socket
 
     hostname = socket.gethostname() or "incubator"
-    app_url = f"http://{hostname}.local:8000"
     return {
         "ok": True,
         "device_name": payload.device_name,
         "claimed": bool(config.claimed),
-        "app_url": app_url,
+        # Reliable target for the immediate auto-open: the phone is still on the
+        # setup hotspot right now, so the fixed AP IP always resolves (no mDNS,
+        # which Android browsers often can't do).
+        "open_url": f"http://{settings.ap_ip}:8000",
+        # Durable address for daily use once the device is on the home network
+        # (Bonjour/Avahi name). This is the one to bookmark.
+        "app_url": f"http://{hostname}.local:8000",
         "hostname": hostname,
         "wifi_ssid": payload.ssid or "",
     }
