@@ -1,0 +1,17 @@
+[Unit]
+Description=Incubator first-boot provisioning (stable device ID, hostname, rootfs expand)
+# Must finish BEFORE the app so INCUBATOR_DEVICE_ID is written to
+# /etc/incubator.env first — otherwise the app mints a random ID and every
+# reflash of the same Pi gets a new setup-network name.
+After=local-fs.target
+Before=incubator.service
+# Runs exactly once: firstboot.sh writes the done-marker on success.
+ConditionPathExists=!/etc/incubator-firstboot.done
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash __INSTALL_DIR__/scripts/firstboot.sh
+
+[Install]
+WantedBy=multi-user.target

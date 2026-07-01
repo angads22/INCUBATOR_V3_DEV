@@ -69,9 +69,15 @@ apt-get install -y --no-install-recommends \
     git curl ca-certificates \
     network-manager \
     rfkill iw \
+    avahi-daemon \
     "$GPIO_RUNTIME_PKG" \
     libjpeg-dev zlib1g-dev \
     || error "Failed to install essential system packages."
+
+# mDNS so the incubator is reachable at <hostname>.local (the address the setup
+# wizard hands the operator after onboarding). Enable it explicitly — RPi OS
+# Lite does not always ship it running.
+systemctl enable avahi-daemon 2>/dev/null || true
 
 # Regulatory database — lets `iw reg set <country>` actually take effect.
 # Best-effort: a Bookworm Lite image normally already ships it.
@@ -229,6 +235,22 @@ sed \
 # back to a manual wants-symlink if systemd is unavailable.
 systemctl enable "${SERVICE_NAME}" 2>/dev/null \
     || ln -sf "${SERVICE_FILE}" "/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service"
+
+# ── First-boot provisioning unit ─────────────────────────────
+# Runs scripts/firstboot.sh ONCE, before the app, to assign a stable
+# serial-derived device ID + hostname and expand the root filesystem. Without
+# this the app mints a random ID each flash → a new setup-network name every
+# time (and a generic hostname). Guarded by /etc/incubator-firstboot.done.
+if [ -f "${INSTALL_DIR}/deploy/incubator-firstboot.service" ]; then
+    info "Installing first-boot provisioning service..."
+    sed -e "s|__INSTALL_DIR__|${INSTALL_DIR}|g" \
+        "${INSTALL_DIR}/deploy/incubator-firstboot.service" \
+        > /etc/systemd/system/incubator-firstboot.service
+    chmod +x "${INSTALL_DIR}/scripts/firstboot.sh" 2>/dev/null || true
+    systemctl enable incubator-firstboot.service 2>/dev/null \
+        || ln -sf /etc/systemd/system/incubator-firstboot.service \
+            "/etc/systemd/system/multi-user.target.wants/incubator-firstboot.service"
+fi
 
 # ── Control daemon unit (Phase 3) ─────────────────────────────
 # Always-on control loop that survives app updates. Safe to enable on every
