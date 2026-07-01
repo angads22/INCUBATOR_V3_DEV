@@ -497,6 +497,24 @@ def onboarding_start(db: Session = Depends(get_db)) -> dict:
     return {"ok": True, "ap_url": f"http://{settings.ap_ip}:8000", "ssid": f"{settings.ap_ssid_prefix}-{device_id[-4:]}"}
 
 
+@router.get("/api/debug/network")
+def api_debug_network(
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict:
+    """NetworkManager snapshot for diagnosing duplicate/locked APs.
+
+    Reachable during setup mode (no account exists yet) or when authenticated,
+    so a field tech can see exactly how many APs exist and which are locked.
+    """
+    in_setup = _setup_mode_service.is_setup_mode() if _setup_mode_service else False
+    if not in_setup:
+        _require_api_user(db, session_token)
+    info = _wifi_service.network_debug() if _wifi_service else {"nmcli": False}
+    hotspot = _onboarding_service.is_hotspot_active() if _onboarding_service else False
+    return {"ok": True, "setup_mode": in_setup, "hotspot_active": hotspot, **info}
+
+
 @router.get("/onboarding/wifi-scan")
 def onboarding_wifi_scan() -> dict:
     if _wifi_service:

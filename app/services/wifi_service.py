@@ -20,6 +20,7 @@ import logging
 import re
 import subprocess
 from dataclasses import dataclass
+from typing import Any
 
 from ..config import settings
 
@@ -132,11 +133,43 @@ class WiFiService:
     # Hotspot (AP mode for onboarding)
     # ------------------------------------------------------------------
 
+    def is_hotspot_up(self, ssid: str, secured: bool) -> bool:
+        """True if our hotspot is already active with the SAME ssid + security.
+
+        Lets start_hotspot be idempotent: if the AP the caller wants is already
+        serving the phone, we must NOT tear it down (that disconnects the client
+        mid-onboarding — the "kicked out the moment I hit setup" symptom).
+        """
+        try:
+            active = _nmcli("-t", "-f", "NAME,STATE", "connection", "show", "--active", check=False)
+        except FileNotFoundError:
+            return False
+        except Exception:  # noqa: BLE001
+            return False
+        is_active = False
+        for line in active.stdout.splitlines():
+            name, _, state = line.rpartition(":")
+            if name == _HOTSPOT_CON_NAME and "activ" in state.lower():
+                is_active = True
+                break
+        if not is_active:
+            return False
+        # Confirm the live SSID + security match what we would create.
+        cur_ssid = _nmcli("-g", "802-11-wireless.ssid", "connection", "show", _HOTSPOT_CON_NAME, check=False).stdout.strip()
+        cur_keymgmt = _nmcli("-g", "802-11-wireless-security.key-mgmt", "connection", "show", _HOTSPOT_CON_NAME, check=False).stdout.strip()
+        cur_secured = bool(cur_keymgmt)
+        return cur_ssid == ssid and cur_secured == secured
+
     def start_hotspot(self, ssid: str, password: str) -> bool:
-        """Create an NM hotspot connection and activate it."""
+        """Create an NM hotspot connection and activate it (idempotent)."""
         try:
             ssid = _safe_ssid(ssid)
             password = _safe_pass(password)
+            # Idempotent: if the exact AP we want is already up, leave it running
+            # so a still-connected phone is never dropped.
+            if self.is_hotspot_up(ssid, bool(password)):
+                logger.info("Hotspot '%s' already up (%s) — leaving it running", ssid, "secured" if password else "open")
+                return True
             # Bookworm soft-blocks the radio until a country is set — unblock it
             # and apply the regulatory domain before asking nmcli for an AP.
             self._prepare_radio()
@@ -191,11 +224,14 @@ class WiFiService:
         return False
 
     def _purge_ap_connections(self, ssid: str) -> None:
-        """Delete all saved Wi-Fi AP/hotspot profiles to avoid duplicate SSIDs.
+        """Delete every saved Wi-Fi AP profile so exactly one SSID can exist.
 
-        Matches our fixed con-name, NetworkManager's default "Hotspot", anything
-        with "incubator"/"hotspot" in the name, and any profile named after the
-        SSID prefix (e.g. a stale "Incubator-1A2B"). Best-effort and never fatal.
+        Matches two ways, because a stale locked twin can survive either check:
+          * by NAME — our con-name, NetworkManager's default "Hotspot", anything
+            containing "incubator"/"hotspot", or the SSID prefix; and
+          * by MODE — any wifi connection whose 802-11-wireless.mode is "ap",
+            regardless of what it is named.
+        Best-effort and never fatal.
         """
         prefix = ssid.split("-", 1)[0].lower() if ssid else "incubator"
         try:
@@ -208,18 +244,52 @@ class WiFiService:
         for line in res.stdout.splitlines():
             # NAME may contain ':'; TYPE is the last field.
             name, _, ctype = line.rpartition(":")
-            if not name or "wireless" not in ctype and "wifi" not in ctype:
+            if not name or ("wireless" not in ctype and "wifi" not in ctype):
                 continue
             low = name.lower()
-            if (
+            name_match = (
                 low == _HOTSPOT_CON_NAME
                 or "hotspot" in low
                 or "incubator" in low
                 or (prefix and low.startswith(prefix))
-            ):
-                _nmcli("connection", "down", name, check=False)
-                _nmcli("connection", "delete", name, check=False)
-                logger.info("Purged stale AP connection '%s'", name)
+            )
+            if not name_match and not self._is_ap_mode(name):
+                continue
+            _nmcli("connection", "down", name, check=False)
+            _nmcli("connection", "delete", name, check=False)
+            logger.info("Purged stale AP connection '%s'", name)
+
+    def _is_ap_mode(self, name: str) -> bool:
+        """True if the named wifi connection is an access-point profile."""
+        try:
+            mode = _nmcli("-g", "802-11-wireless.mode", "connection", "show", name, check=False).stdout.strip()
+        except Exception:  # noqa: BLE001
+            return False
+        return mode.lower() == "ap"
+
+    def network_debug(self) -> dict:
+        """Snapshot of NM connections + active Wi-Fi APs for diagnostics."""
+        info: dict[str, Any] = {"connections": [], "active_aps": [], "nmcli": True}
+        try:
+            conns = _nmcli("-t", "-f", "NAME,UUID,TYPE,ACTIVE", "connection", "show", check=False)
+            for line in conns.stdout.splitlines():
+                parts = line.split(":")
+                if len(parts) >= 4:
+                    info["connections"].append(
+                        {"name": parts[0], "uuid": parts[1], "type": parts[2], "active": parts[3] == "yes"}
+                    )
+            aps = _nmcli("-t", "-f", "ACTIVE,SSID,MODE,SECURITY", "device", "wifi", "list", check=False)
+            for line in aps.stdout.splitlines():
+                parts = line.split(":")
+                if len(parts) >= 4 and parts[0] == "yes":
+                    info["active_aps"].append(
+                        {"ssid": parts[1], "mode": parts[2], "security": parts[3] or "open"}
+                    )
+        except FileNotFoundError:
+            info["nmcli"] = False
+        except Exception as exc:  # noqa: BLE001
+            info["error"] = str(exc)
+        return info
 
     def stop_hotspot(self) -> None:
         try:
