@@ -91,6 +91,17 @@
     </article>
 
     <article class="card">
+      <h3>Development tracking</h3>
+      <p class="muted">Each candling records how far along every egg is. The incubator tracks growth over time and acts on it — locking down (stop turning + raise humidity) near hatch and flagging eggs that aren't developing.</p>
+      <div id="growthList" class="stack-list"></div>
+      <p id="growthEmpty" class="muted">No eggs tracked yet — run a candling from the AI tab.</p>
+      <div class="button-row" style="margin-top:14px">
+        <button type="button" id="growthRefresh" class="btn btn-ghost">Refresh</button>
+      </div>
+      <p id="growthMsg" class="hint"></p>
+    </article>
+
+    <article class="card">
       <h3>Photo storage</h3>
       <p class="muted">Labeled egg photos are kept on the SD card. When space runs low the oldest photos are removed automatically (pinned ones are always kept), so the device never fills up.</p>
       <div class="metrics-grid">
@@ -109,6 +120,66 @@
 {% endblock %}
 {% block scripts %}
 <script src="/static/js/testing.js"></script>
+<script>
+  // Development / growth tracking. Self-contained.
+  (function () {
+    var refresh = document.getElementById('growthRefresh');
+    if (!refresh) return;
+    var list = document.getElementById('growthList');
+    var empty = document.getElementById('growthEmpty');
+    var msg = document.getElementById('growthMsg');
+
+    function statusLabel(s) {
+      return {
+        developing: 'Developing', stalled: 'Stalled — check', nonviable: 'Non-viable',
+        ready_to_hatch: 'Ready to hatch', hatching: 'Hatching!', no_data: 'No readings',
+      }[s] || s;
+    }
+
+    async function apply(eggId) {
+      msg.textContent = 'Applying…';
+      try {
+        var res = await fetch('/api/vision/growth/' + eggId + '/apply', { method: 'POST',
+          headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        var data = await res.json();
+        var acts = (data.applied || []).map(function (a) { return a.detail; }).join('; ');
+        msg.textContent = acts ? ('Done: ' + acts) : 'No actions to apply.';
+        load();
+      } catch (e) { msg.textContent = 'Could not reach the device.'; }
+    }
+
+    async function load() {
+      try {
+        var res = await fetch('/api/vision/growth');
+        if (!res.ok) return;
+        var data = await res.json();
+        var eggs = data.eggs || [];
+        list.innerHTML = '';
+        empty.style.display = eggs.length ? 'none' : '';
+        eggs.forEach(function (e) {
+          var recs = (e.recommended_actions || []).map(function (a) { return a.action; });
+          var day = e.latest_day != null ? ('day ~' + e.latest_day) : 'no readings';
+          var row = document.createElement('div');
+          row.innerHTML =
+            '<strong>' + e.label + '</strong> — ' + statusLabel(e.status) +
+            ' <span class="muted">(' + day + ', ' + e.observation_count + ' readings)</span>';
+          if (recs.length) {
+            var btn = document.createElement('button');
+            btn.className = 'btn btn-secondary';
+            btn.style.marginLeft = '10px';
+            btn.textContent = 'Apply: ' + recs.join(', ');
+            btn.addEventListener('click', function () { apply(e.egg_id); });
+            row.appendChild(btn);
+          }
+          list.appendChild(row);
+        });
+      } catch (e) { /* ignore */ }
+    }
+
+    refresh.addEventListener('click', load);
+    load();
+  })();
+</script>
 <script>
   // Photo-storage status + manual prune. Self-contained so it stays independent
   // of testing.js.

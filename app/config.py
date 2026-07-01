@@ -85,6 +85,16 @@ class Settings:
     # Total incubation length for the configured species (chicken = 21 days).
     incubation_days: int = field(default_factory=lambda: int(os.getenv("INCUBATION_DAYS", "21")))
 
+    # --- Vision-driven growth tracking + actions ---
+    # When true, candling records each egg's development on a timeline and the
+    # growth engine acts on it automatically (lockdown near hatch, flag
+    # non-viable). Set false to only *recommend* actions in the API/UI.
+    vision_auto_actions: bool = field(default_factory=lambda: os.getenv("VISION_AUTO_ACTIONS", "true").lower() == "true")
+    # Humidity target (%) applied at lockdown (higher RH for hatch).
+    vision_lockdown_humidity_pct: float = field(default_factory=lambda: float(os.getenv("VISION_LOCKDOWN_HUMIDITY_PCT", "65")))
+    # How many days before the end of incubation to trigger lockdown.
+    vision_lockdown_days_before_hatch: int = field(default_factory=lambda: int(os.getenv("VISION_LOCKDOWN_DAYS_BEFORE_HATCH", "3")))
+
     # --- Egg-photo storage + auto-prune (protects the SD card) ---
     # Labeled egg photos are saved under <captures_dir>/eggs and tracked in the
     # egg_photos table. A janitor deletes the OLDEST non-pinned photos when the

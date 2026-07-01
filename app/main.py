@@ -30,9 +30,15 @@ from .auth import create_session, get_user_id_from_session, has_any_user, hash_p
 from .config import settings
 from .database import Base, engine, get_db
 from .models import ActionLog, DeviceConfig, SensorLog, User
-from .routes.ai import router as ai_router, set_vision_hardware, set_storage_service as set_ai_storage
+from .routes.ai import (
+    router as ai_router,
+    set_vision_hardware,
+    set_storage_service as set_ai_storage,
+    set_growth_service as set_ai_growth,
+)
 from .routes.camera import router as camera_router, set_camera_service
 from .routes.captures import router as captures_router, set_capture_services
+from .routes.growth import router as growth_router, set_growth_services
 from .routes.testing import router as testing_router, set_testing_services
 from .routes.web import router as web_router, set_runtime_services
 from .schemas import HardwareCommand, OnboardingPayload, SetupStatus
@@ -43,6 +49,7 @@ from .services.cloud_service import CloudService
 from .services.gpio_service import GPIOService
 from .services.hardware_service import HardwareService
 from .services.onboarding_service import OnboardingService
+from .services.growth_service import GrowthService
 from .services.setup_mode_service import SetupModeService
 from .services.storage_service import StorageService
 from .services.vision_service import VisionService
@@ -58,6 +65,7 @@ app.include_router(web_router)
 app.include_router(ai_router)
 app.include_router(camera_router)
 app.include_router(captures_router)
+app.include_router(growth_router)
 app.include_router(testing_router)
 
 # ------------------------------------------------------------------
@@ -101,6 +109,13 @@ storage_service = StorageService(
 )
 
 alert_service = AlertService(gpio=gpio_service)
+
+growth_service = GrowthService(
+    incubation_days=settings.incubation_days,
+    auto_actions=settings.vision_auto_actions,
+    lockdown_humidity_pct=settings.vision_lockdown_humidity_pct,
+    lockdown_days_before_hatch=settings.vision_lockdown_days_before_hatch,
+)
 
 vision_service = VisionService(
     backend=settings.vision_backend,
@@ -160,8 +175,10 @@ set_runtime_services(
 )
 set_vision_hardware(vision=vision_service, hardware=hardware_service)
 set_ai_storage(storage_service)
+set_ai_growth(growth_service)
 set_camera_service(camera_service)
 set_capture_services(storage_service, camera_service)
+set_growth_services(growth_service, hardware_service)
 set_testing_services(vision_service)
 
 
