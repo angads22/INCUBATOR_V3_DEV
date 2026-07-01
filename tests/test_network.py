@@ -16,6 +16,16 @@ def _onboard(client):
     )
 
 
+def test_onboarding_complete_returns_app_url_for_redirect(client):
+    # After setup the phone leaves the AP, so the wizard must hand back a
+    # home-network address (mDNS <hostname>.local) to open + bookmark.
+    body = _onboard(client).json()
+    assert body["ok"] is True
+    assert body["app_url"].startswith("http://") and body["app_url"].endswith(":8000")
+    assert ".local:" in body["app_url"]
+    assert body["wifi_ssid"] == "HomeNet"
+
+
 def test_network_endpoints_require_auth_once_account_exists(client):
     _onboard(client)
     client.cookies.clear()

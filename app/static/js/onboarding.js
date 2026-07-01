@@ -174,12 +174,26 @@ async function submitSetup() {
     });
     const data = await res.json();
     if (data.ok) {
-      title.textContent = 'Setup Complete!';
+      title.textContent = 'Setup complete! \ud83c\udf89';
       msg.textContent =
-        `Your incubator \u201c${data.device_name}\u201d has been configured. ` +
-        'It will reconnect using your selected Wi-Fi network.';
+        `Your incubator \u201c${data.device_name}\u201d is now joining your Wi-Fi. ` +
+        'The setup network will switch off in a few seconds.';
       result.textContent = '';
-      link.removeAttribute('hidden');
+
+      // Point the operator at the incubator's real address on their home
+      // network (mDNS <hostname>.local), off the soon-to-vanish setup hotspot.
+      const appUrl = data.app_url || '/';
+      const next = document.getElementById('finishNext');
+      const urlEl = document.getElementById('finishUrl');
+      const homeSsid = document.getElementById('finishHomeSsid');
+      if (link) {
+        link.href = appUrl;
+        link.setAttribute('target', '_blank');
+        link.setAttribute('rel', 'noopener');
+      }
+      if (urlEl) urlEl.textContent = appUrl;
+      if (homeSsid) homeSsid.textContent = data.wifi_ssid ? `\u201c${data.wifi_ssid}\u201d` : '';
+      if (next) next.removeAttribute('hidden');
     } else {
       title.textContent = 'Setup Error';
       result.textContent = data.detail || 'Unknown error. Please retry.';
