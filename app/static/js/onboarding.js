@@ -194,6 +194,22 @@ async function submitSetup() {
       if (urlEl) urlEl.textContent = appUrl;
       if (homeSsid) homeSsid.textContent = data.wifi_ssid ? `\u201c${data.wifi_ssid}\u201d` : '';
       if (next) next.removeAttribute('hidden');
+
+      // Auto-open the incubator. While the phone is still on the setup hotspot,
+      // <hostname>.local resolves to the device at 10.42.0.1, so this opens the
+      // dashboard right away; after the phone moves to home Wi-Fi the same link
+      // reaches it there too. The button + address below are the manual fallback.
+      let countdown = 4;
+      const openNow = document.getElementById('finishOpenNote');
+      const tick = setInterval(() => {
+        countdown -= 1;
+        if (openNow) openNow.textContent = `Opening your incubator in ${countdown}\u2026`;
+        if (countdown <= 0) {
+          clearInterval(tick);
+          if (openNow) openNow.textContent = 'Opening your incubator\u2026';
+          window.location.href = appUrl;
+        }
+      }, 1000);
     } else {
       title.textContent = 'Setup Error';
       result.textContent = data.detail || 'Unknown error. Please retry.';

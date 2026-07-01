@@ -57,6 +57,9 @@ class OnboardingService:
         self._auto_hotspot = auto_hotspot
         self._hotspot_active = False
         self._captive = None  # CaptivePortalResponder, lazily created with the hotspot
+        # Seconds to keep the AP up after "finish" so the wizard's auto-open can
+        # load the dashboard over the hotspot before the radio switches networks.
+        self._complete_grace_seconds = 6.0
 
     def _password(self) -> str:
         if self._ap_password_resolver is not None:
@@ -145,6 +148,12 @@ class OnboardingService:
         self._setup.exit_setup_mode()
         self._stop_captive_responder()
         if self._hotspot_active:
+            # Hold the AP up briefly so the wizard's auto-open can reach the
+            # dashboard over the hotspot (<hostname>.local → 10.42.0.1) before we
+            # switch the single radio over to the home network.
+            import time
+
+            time.sleep(self._complete_grace_seconds)
             self._wifi.stop_hotspot()
             self._hotspot_active = False
         connected = False
