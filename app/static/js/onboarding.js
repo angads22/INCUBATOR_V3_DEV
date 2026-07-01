@@ -180,25 +180,24 @@ async function submitSetup() {
         'The setup network will switch off in a few seconds.';
       result.textContent = '';
 
-      // Point the operator at the incubator's real address on their home
-      // network (mDNS <hostname>.local), off the soon-to-vanish setup hotspot.
+      // openUrl = the fixed hotspot IP (10.42.0.1) \u2014 reachable RIGHT NOW because
+      // the phone is still on the setup network, and needs no mDNS (which Android
+      // browsers often can't resolve). appUrl = the durable <hostname>.local
+      // address to bookmark for daily use once the device is on home Wi-Fi.
+      const openUrl = data.open_url || `http://10.42.0.1:8000`;
       const appUrl = data.app_url || '/';
       const next = document.getElementById('finishNext');
       const urlEl = document.getElementById('finishUrl');
       const homeSsid = document.getElementById('finishHomeSsid');
       if (link) {
-        link.href = appUrl;
-        link.setAttribute('target', '_blank');
+        link.href = openUrl;                 // "Open now" uses the reachable IP
         link.setAttribute('rel', 'noopener');
       }
-      if (urlEl) urlEl.textContent = appUrl;
+      if (urlEl) urlEl.textContent = appUrl; // bookmark this durable address
       if (homeSsid) homeSsid.textContent = data.wifi_ssid ? `\u201c${data.wifi_ssid}\u201d` : '';
       if (next) next.removeAttribute('hidden');
 
-      // Auto-open the incubator. While the phone is still on the setup hotspot,
-      // <hostname>.local resolves to the device at 10.42.0.1, so this opens the
-      // dashboard right away; after the phone moves to home Wi-Fi the same link
-      // reaches it there too. The button + address below are the manual fallback.
+      // Auto-open the dashboard on the hotspot IP so it works immediately.
       let countdown = 4;
       const openNow = document.getElementById('finishOpenNote');
       const tick = setInterval(() => {
@@ -207,7 +206,7 @@ async function submitSetup() {
         if (countdown <= 0) {
           clearInterval(tick);
           if (openNow) openNow.textContent = 'Opening your incubator\u2026';
-          window.location.href = appUrl;
+          window.location.href = openUrl;
         }
       }, 1000);
     } else {
