@@ -1,7 +1,14 @@
 [Unit]
 Description=Incubator v3 (Pi Zero 2W)
-After=network-online.target NetworkManager.service
-Wants=network-online.target
+# Start the app even if the network isn't fully up yet — it manages its own
+# Wi-Fi hotspot for onboarding, so it must not wait on network-online at first
+# boot (there is no network then). NetworkManager just needs to be present.
+After=NetworkManager.service incubator-firstboot.service
+Wants=NetworkManager.service
+# Appliance behaviour: never give up restarting. Without this, systemd's default
+# start-rate limit (5 starts / 10 s) would stop the service after a brief boot
+# crash-loop and leave the incubator dead until a manual power cycle.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
