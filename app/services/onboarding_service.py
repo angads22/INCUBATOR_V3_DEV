@@ -100,10 +100,25 @@ class OnboardingService:
             logger.info("Device already configured (ssid=%s) — skipping hotspot", config.wifi_ssid)
 
     def start_manual_hotspot(self, device_id: str) -> dict:
-        """Triggered by the setup button hold or /onboarding/start endpoint."""
+        """Triggered by the setup button hold or /onboarding/start endpoint.
+
+        Idempotent: if the setup AP is already broadcasting, we return its info
+        WITHOUT restarting it. Restarting while a phone is connected drops the
+        connection ("kicked out the moment I hit setup"), so a wizard/captive
+        call to this must never tear the network down.
+        """
         ssid = self._make_ssid(device_id)
         password = self._password()
         self._setup.enter_setup_mode("manual_trigger")
+        already_up = self._hotspot_active or self._wifi.is_hotspot_up(ssid, bool(password))
+        if already_up:
+            self._hotspot_active = True
+            self._start_captive_responder()
+            return {
+                "ok": True, "ssid": ssid, "password": password,
+                "open": not bool(password), "already_active": True,
+                "ap_url": f"http://{self._ap_ip}:8000",
+            }
         ok = self._wifi.start_hotspot(ssid, password)
         self._hotspot_active = ok
         if ok:
@@ -113,6 +128,7 @@ class OnboardingService:
             "ssid": ssid,
             "password": password,
             "open": not bool(password),
+            "already_active": False,
             "ap_url": f"http://{self._ap_ip}:8000",
         }
 

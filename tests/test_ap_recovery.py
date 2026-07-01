@@ -60,10 +60,16 @@ def test_stale_ap_profiles_are_purged_then_open_ap_started(monkeypatch):
 # ── OnboardingService: DB resolver wins over any stale static password ────────
 
 class _RecordingWiFi:
-    def __init__(self):
+    def __init__(self, already_up=False):
         self.started_with = None
+        self.start_calls = 0
+        self._already_up = already_up
+
+    def is_hotspot_up(self, ssid, secured):
+        return self._already_up
 
     def start_hotspot(self, ssid, password):
+        self.start_calls += 1
         self.started_with = (ssid, password)
         return True
 
@@ -76,9 +82,9 @@ class _NoopSetup:
         pass
 
 
-def _service(resolver):
+def _service(resolver, wifi=None):
     return OnboardingService(
-        wifi_service=_RecordingWiFi(),
+        wifi_service=wifi or _RecordingWiFi(),
         setup_mode_service=_NoopSetup(),
         ap_ssid_prefix="Incubator",
         ap_password="stale-baked-key",   # what an old env would have provided
@@ -99,6 +105,77 @@ def test_resolver_user_password_is_used():
     out = svc.start_manual_hotspot("PI-ABCD1234")
     assert out["open"] is False
     assert svc._wifi.started_with[1] == "barnpass1"
+
+
+def test_manual_hotspot_does_not_restart_when_already_up():
+    # The AP is already broadcasting → hitting "start" must NOT tear it down
+    # (that's the "kicked out the moment I hit setup" bug).
+    wifi = _RecordingWiFi(already_up=True)
+    svc = _service(lambda: "", wifi=wifi)
+    out = svc.start_manual_hotspot("PI-ABCD1234")
+    assert out["ok"] is True and out["already_active"] is True
+    assert wifi.start_calls == 0                     # never restarted
+
+
+def test_manual_hotspot_starts_when_not_up():
+    wifi = _RecordingWiFi(already_up=False)
+    svc = _service(lambda: "", wifi=wifi)
+    out = svc.start_manual_hotspot("PI-ABCD1234")
+    assert out["already_active"] is False
+    assert wifi.start_calls == 1
+
+
+# ── start_hotspot idempotency + AP-mode purge (real WiFiService, mock nmcli) ──
+
+def test_start_hotspot_early_returns_when_already_up(monkeypatch):
+    """If our AP is already active with matching ssid+security, do not purge."""
+    calls = []
+
+    def fake_run(cmd, *a, **k):
+        if cmd and cmd[0] == "nmcli":
+            calls.append(list(cmd))
+            joined = " ".join(cmd)
+            if "--active" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, stdout="incubator-hotspot:activated\n", stderr="")
+            if "-g" in cmd and "802-11-wireless.ssid" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, stdout="Incubator-A3F2\n", stderr="")
+            if "-g" in cmd and "802-11-wireless-security.key-mgmt" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, stdout="\n", stderr="")   # open
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(wifi_mod.subprocess, "run", fake_run)
+    assert WiFiService(country="US").start_hotspot("Incubator-A3F2", "") is True
+    # Idempotent path: no delete / add / up issued.
+    verbs = {tok for c in calls for tok in c}
+    assert "delete" not in verbs and "add" not in verbs
+
+
+def test_purge_deletes_ap_mode_profile_by_mode(monkeypatch):
+    """A stale AP-mode profile with an unrelated name is still purged."""
+    calls = []
+
+    def fake_run(cmd, *a, **k):
+        if cmd and cmd[0] == "nmcli":
+            calls.append(list(cmd))
+            if "--active" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")   # not up
+            if cmd[1:4] == ["-t", "-f", "NAME,TYPE"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout="RandomAP:802-11-wireless\n", stderr="")
+            if "-g" in cmd and "802-11-wireless.mode" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, stdout="ap\n", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(wifi_mod.subprocess, "run", fake_run)
+    assert WiFiService(country="US").start_hotspot("Incubator-NEW", "") is True
+    deleted = {c[c.index("delete") + 1] for c in calls if "delete" in c}
+    assert "RandomAP" in deleted                     # purged by mode, not name
+
+
+def test_debug_network_endpoint(client):
+    r = client.get("/api/debug/network")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True and "connections" in body
 
 
 # ── Post-setup AP password endpoint + DB-authoritative resolution ─────────────
