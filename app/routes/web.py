@@ -317,6 +317,8 @@ def dashboard(
                 "hotspot_active": hotspot_active,
                 "ap_ssid": ap_ssid,
                 "ap_ip": settings.ap_ip,
+                # Durable address to reach this incubator on the home network.
+                "access_url": f"http://{__import__('socket').gethostname() or 'incubator'}.local:8000",
                 "network_state": network_state,
                 "network_detail": network_detail,
                 "current_state_summary": current_state_summary,

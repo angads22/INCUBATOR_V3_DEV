@@ -118,11 +118,16 @@
       <div id="finishNext" hidden>
         <p id="finishOpenNote" class="hint" style="text-align:center;font-weight:600"></p>
         <a id="finishLink" href="/" class="btn btn-primary" style="display:block;text-align:center;margin:10px 0">Open my incubator now</a>
-        <div class="card" style="margin-top:14px">
-          <strong>For everyday use</strong>
-          <p class="muted" style="margin:6px 0 0">In a moment your incubator hops onto your home Wi-Fi <strong id="finishHomeSsid"></strong>. After that, switch your phone back to your home Wi-Fi and open it at:</p>
-          <p style="text-align:center;margin:8px 0"><code id="finishUrl"></code></p>
-          <p class="muted" style="margin:6px 0 0"><strong>Bookmark</strong> that page or use your browser menu to <strong>Add to Home Screen</strong> — then it's a single tap, just like an app.</p>
+
+        <div class="card" style="margin-top:14px;border:2px solid var(--brand,#3a7)">
+          <strong>📌 This is where your incubator lives</strong>
+          <p class="muted" style="margin:6px 0">Open this address in your normal browser (Safari or Chrome) and save it — it's how you'll reach your incubator from now on:</p>
+          <p style="text-align:center;margin:8px 0"><code id="finishUrl" style="font-size:1.05rem"></code></p>
+          <div class="button-row" style="justify-content:center">
+            <button type="button" id="finishCopyBtn" class="btn btn-secondary">Copy address</button>
+          </div>
+          <p id="finishCopyMsg" class="hint" style="text-align:center"></p>
+          <p class="muted" style="margin:8px 0 0"><strong>Bookmark</strong> it or use your browser menu to <strong>Add to Home Screen</strong> — then it's a single tap, just like an app. In a moment the incubator hops onto your home Wi-Fi <strong id="finishHomeSsid"></strong>; reconnect your phone to that Wi-Fi and use the address above.</p>
         </div>
       </div>
     </article>
