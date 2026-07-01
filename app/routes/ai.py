@@ -47,6 +47,7 @@ from ..services.vision_service import VisionService
 if TYPE_CHECKING:
     from ..services.hardware_service import HardwareService
     from ..services.storage_service import StorageService
+    from ..services.growth_service import GrowthService
 
 router = APIRouter()
 
@@ -60,7 +61,14 @@ def _require_user(db: Session, session_token: str | None) -> None:
 _vision_service: VisionService = VisionService()  # default mock — replaced at startup
 _hardware_service: "HardwareService | None" = None
 _storage_service: "StorageService | None" = None
+_growth_service: "GrowthService | None" = None
 llm_service = LLMService()
+
+
+def set_growth_service(growth: "GrowthService | None") -> None:
+    """Wire the growth engine so candling records development + drives actions."""
+    global _growth_service
+    _growth_service = growth
 
 
 def set_vision_hardware(vision: VisionService, hardware: "HardwareService | None") -> None:
@@ -149,7 +157,7 @@ def candle_and_analyze(payload: CandleRequest, db: Session = Depends(get_db)) ->
         # 4. Always turn off candle LED regardless of outcome
         _hardware_service.set_candle(False)
 
-    # 5. Persist
+    # 5. Persist the classifier result.
     if payload.persist and vision_result.get("ok") and payload.egg_id:
         _persist_result(db, payload.egg_id, image_path, vision_result)
 
@@ -170,9 +178,35 @@ def candle_and_analyze(payload: CandleRequest, db: Session = Depends(get_db)) ->
 
             logging.getLogger(__name__).warning("Could not store candling photo: %s", exc)
 
+    # 7. Estimate how far along the egg is and record it on the growth timeline,
+    #    then assess development and (optionally) drive incubator actions.
+    stage_result = _vision_service.predict_stage(image_path)
+    growth: dict[str, Any] | None = None
+    if _growth_service is not None and payload.egg_id and stage_result.get("ok"):
+        try:
+            _growth_service.record(
+                db,
+                payload.egg_id,
+                day_estimate=float(stage_result.get("day_estimate", 0.0) or 0.0),
+                stage=str(stage_result.get("stage", "unclear")),
+                confidence=float(stage_result.get("confidence", 0.0) or 0.0),
+                label=vision_result.get("label"),
+                backend=str(stage_result.get("backend", "unknown")),
+            )
+            if _growth_service.auto_actions:
+                growth = _growth_service.apply_actions(db, payload.egg_id, _hardware_service)
+            else:
+                growth = _growth_service.assess(db, payload.egg_id)
+        except Exception as exc:  # noqa: BLE001 — growth must never break candling
+            import logging
+
+            logging.getLogger(__name__).warning("Growth tracking failed: %s", exc)
+
     return {
         "endpoint": "vision.candle",
         "image_path": image_path,
+        "stage": stage_result,
+        "growth": growth,
         **vision_result,
     }
 

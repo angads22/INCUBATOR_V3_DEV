@@ -132,6 +132,28 @@ class EggPhoto(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
 
+class GrowthObservation(Base):
+    """One vision reading of an egg over time, so development can be tracked.
+
+    A timeline of these per egg lets the growth engine measure whether an embryo
+    is advancing (day estimate climbing across candlings), stalled, non-viable,
+    or ready to hatch — and drive incubator actions (lockdown, flagging) off it.
+    """
+
+    __tablename__ = "growth_observations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    egg_id: Mapped[int] = mapped_column(ForeignKey("eggs.id"), nullable=False)
+    day_estimate: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    stage: Mapped[str] = mapped_column(String(32), default="unclear", nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    # Classifier label (fertile / infertile / dead_embryo / ...), when available.
+    label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    backend: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)
+    source: Mapped[str] = mapped_column(String(32), default="candle", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
 
