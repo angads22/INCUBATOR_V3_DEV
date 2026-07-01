@@ -466,6 +466,14 @@ def login_page(
 def onboarding_page(request: Request, db: Session = Depends(get_db)):
     from ..settings_store import effective_ap_password
 
+    # Show the REAL setup-network name so the operator can tell it apart from any
+    # stale "Incubator-…" networks their phone remembers from earlier flashes.
+    ap_ssid = settings.ap_ssid_prefix
+    if _onboarding_service:
+        config = db.scalar(select(DeviceConfig).limit(1))
+        if config and config.device_id:
+            ap_ssid = _onboarding_service.ap_ssid(config.device_id)
+
     return _render(
         request=request,
         name="onboarding.html",
@@ -475,6 +483,7 @@ def onboarding_page(request: Request, db: Session = Depends(get_db)):
             # DB-authoritative: blank means the setup network is open.
             "ap_password": effective_ap_password(db),
             "ap_ssid_prefix": settings.ap_ssid_prefix,
+            "ap_ssid": ap_ssid,
         },
     )
 
@@ -584,7 +593,21 @@ def onboarding_complete(
                 _wifi_service.connect_client, payload.ssid, payload.wifi_password or ""
             )
 
-    return {"ok": True, "device_name": payload.device_name, "claimed": bool(config.claimed)}
+    # Where to reach the incubator once it's on the home network. The Pi has a
+    # working mDNS/Avahi name (<hostname>.local), so this URL stays valid after
+    # the setup hotspot goes away and the operator rejoins their home Wi-Fi.
+    import socket
+
+    hostname = socket.gethostname() or "incubator"
+    app_url = f"http://{hostname}.local:8000"
+    return {
+        "ok": True,
+        "device_name": payload.device_name,
+        "claimed": bool(config.claimed),
+        "app_url": app_url,
+        "hostname": hostname,
+        "wifi_ssid": payload.ssid or "",
+    }
 
 
 # ------------------------------------------------------------------

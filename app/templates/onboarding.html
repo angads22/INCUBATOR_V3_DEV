@@ -14,7 +14,8 @@
     <article class="card">
       <h3>Let's set up your incubator</h3>
       <p>This takes about two minutes. We'll connect your incubator to your Wi-Fi and get it ready. No technical know-how needed — just follow along.</p>
-      <p class="muted">You're already connected to your incubator's own Wi-Fi (<strong>{{ ap_ssid_prefix }}-XXXX</strong>{% if ap_password %}, password <code>{{ ap_password }}</code>{% else %} — it's open, no password{% endif %}) and this page opened by itself. If you ever need to get back here, hold the <strong>setup button</strong> on the device for 4&nbsp;seconds and reconnect to that network.</p>
+      <p class="muted">You're already connected to your incubator's own Wi-Fi (<strong>{{ ap_ssid }}</strong>{% if ap_password %}, password <code>{{ ap_password }}</code>{% else %} — it's open, no password{% endif %}) and this page opened by itself. If you ever need to get back here, hold the <strong>setup button</strong> on the device for 4&nbsp;seconds and reconnect to that network.</p>
+      <p class="muted" style="font-size:0.9em">See other <strong>Incubator&hellip;</strong> networks that ask for a password? Those are leftovers your phone remembers from earlier — you can safely <em>Forget</em> them in your Wi-Fi settings. This incubator's network is the open one named <strong>{{ ap_ssid }}</strong>.</p>
       <div class="button-row">
         <button class="btn btn-primary" id="beginSetupBtn" type="button">Start</button>
       </div>
@@ -111,7 +112,21 @@
       <h3 id="finishTitle">Saving setup&hellip;</h3>
       <p id="finishMsg" class="muted">Please wait while your device saves configuration and reconnects.</p>
       <p id="finishResult" class="hint"></p>
-      <a id="finishLink" href="/" class="btn btn-primary" hidden>Go to Dashboard</a>
+
+      <!-- Shown once setup succeeds: get the user off the setup hotspot and
+           onto their incubator's real address, with bookmark guidance. -->
+      <div id="finishNext" hidden>
+        <ol class="stack-list" style="text-align:left">
+          <li>On your phone, switch Wi-Fi back to your home network <strong id="finishHomeSsid"></strong>.</li>
+          <li>Then open your incubator:</li>
+        </ol>
+        <a id="finishLink" href="/" class="btn btn-primary" style="display:block;text-align:center;margin:10px 0">Open my incubator</a>
+        <p class="muted" style="text-align:center">Address: <code id="finishUrl"></code></p>
+        <div class="card" style="margin-top:14px">
+          <strong>Keep it one tap away</strong>
+          <p class="muted" style="margin:6px 0 0">When your incubator opens, <strong>bookmark</strong> the page, or use your browser menu to <strong>Add to Home Screen</strong> — then it's a single tap from your phone, just like an app.</p>
+        </div>
+      </div>
     </article>
   </div>
 
