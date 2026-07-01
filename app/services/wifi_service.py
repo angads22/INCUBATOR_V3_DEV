@@ -71,6 +71,11 @@ class WiFiService:
             logger.warning("Invalid Wi-Fi country %r — defaulting to 'US'", c)
             c = "US"
         self._country = c
+        # Nearby networks captured just before the AP came up. The single-radio
+        # Pi can't scan while hosting its own hotspot, so the onboarding list is
+        # served from this cache instead of an (empty) live scan.
+        self._cached_networks: list[WiFiNetwork] = []
+        self._ap_prefix = (settings.ap_ssid_prefix or "Incubator").strip()
 
     # ------------------------------------------------------------------
     # Radio readiness
@@ -98,31 +103,62 @@ class WiFiService:
     # Scanning
     # ------------------------------------------------------------------
 
-    def scan_networks(self) -> list[WiFiNetwork]:
+    def _scan_raw(self) -> list[WiFiNetwork]:
+        """Live nmcli scan of nearby networks (may be empty while the AP is up).
+
+        Our own setup hotspot is filtered out so the operator is never offered
+        their own device as a network to join.
+        """
         try:
             result = _nmcli("-t", "-f", "SSID,SIGNAL,SECURITY", "dev", "wifi", "list", "--rescan", "yes", check=False)
-            networks: list[WiFiNetwork] = []
-            seen: set[str] = set()
-            for line in result.stdout.splitlines():
-                parts = line.split(":", maxsplit=2)
-                if len(parts) < 2:
-                    continue
-                ssid = parts[0].strip()
-                if not ssid or ssid in seen:
-                    continue
-                seen.add(ssid)
-                try:
-                    strength = int(parts[1].strip())
-                except ValueError:
-                    strength = 0
-                secure = bool(len(parts) > 2 and parts[2].strip())
-                networks.append(WiFiNetwork(ssid=ssid, strength=strength, secure=secure))
-            networks.sort(key=lambda n: n.strength, reverse=True)
-            return networks[:20]
         except FileNotFoundError:
-            logger.debug("nmcli not found — returning mock WiFi networks")
-        except Exception as exc:
+            return []
+        except Exception as exc:  # noqa: BLE001
             logger.warning("WiFi scan failed: %s", exc)
+            return []
+        networks: list[WiFiNetwork] = []
+        seen: set[str] = set()
+        own = self._ap_prefix.lower()
+        for line in result.stdout.splitlines():
+            parts = line.split(":", maxsplit=2)
+            if len(parts) < 2:
+                continue
+            ssid = parts[0].strip()
+            if not ssid or ssid in seen:
+                continue
+            if own and ssid.lower().startswith(own):   # skip our own hotspot
+                continue
+            seen.add(ssid)
+            try:
+                strength = int(parts[1].strip())
+            except ValueError:
+                strength = 0
+            secure = bool(len(parts) > 2 and parts[2].strip())
+            networks.append(WiFiNetwork(ssid=ssid, strength=strength, secure=secure))
+        networks.sort(key=lambda n: n.strength, reverse=True)
+        return networks[:20]
+
+    def prescan(self) -> None:
+        """Capture nearby networks WHILE the radio is free (before the AP).
+
+        Called right before the hotspot is created, so the onboarding wizard can
+        show the operator their real home/barn networks even though a live scan
+        would return nothing once the single radio is busy hosting the AP.
+        """
+        nets = self._scan_raw()
+        if nets:
+            self._cached_networks = nets
+            logger.info("Pre-scan cached %d nearby network(s) for onboarding", len(nets))
+
+    def scan_networks(self) -> list[WiFiNetwork]:
+        # Prefer a live scan; if the radio is busy hosting the AP (empty result),
+        # fall back to the pre-scan captured before the hotspot came up.
+        live = self._scan_raw()
+        if live:
+            return live
+        if self._cached_networks:
+            logger.info("Serving %d pre-scanned network(s) (radio busy hosting AP)", len(self._cached_networks))
+            return list(self._cached_networks)
         return [
             WiFiNetwork(ssid="FarmNet-2.4G", strength=82, secure=True),
             WiFiNetwork(ssid="BarnOffice", strength=67, secure=True),
@@ -173,6 +209,10 @@ class WiFiService:
             # Bookworm soft-blocks the radio until a country is set — unblock it
             # and apply the regulatory domain before asking nmcli for an AP.
             self._prepare_radio()
+            # Grab the list of nearby networks NOW, while wlan0 is still free.
+            # Once the AP is up the single radio can't scan, so this is the only
+            # chance to give the onboarding wizard a real network list.
+            self.prescan()
             # Purge EVERY stale AP profile first — not just our fixed con-name.
             # Earlier images, NetworkManager's own "Hotspot" profile, and old
             # device-id-suffixed SSIDs leave saved AP connections in
