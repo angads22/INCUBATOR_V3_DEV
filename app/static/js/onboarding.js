@@ -189,15 +189,41 @@ async function submitSetup() {
       const next = document.getElementById('finishNext');
       const urlEl = document.getElementById('finishUrl');
       const homeSsid = document.getElementById('finishHomeSsid');
-      if (link) {
-        link.href = openUrl;                 // "Open now" uses the reachable IP
-        link.setAttribute('rel', 'noopener');
-      }
-      if (urlEl) urlEl.textContent = appUrl; // bookmark this durable address
+      if (urlEl) urlEl.textContent = appUrl; // the durable address to save
       if (homeSsid) homeSsid.textContent = data.wifi_ssid ? `\u201c${data.wifi_ssid}\u201d` : '';
       if (next) next.removeAttribute('hidden');
 
-      // Auto-open the dashboard on the hotspot IP so it works immediately.
+      // "Open now" is a real tap (user gesture), so try to hand off to the
+      // system default browser via window.open \u2014 that's the only way to escape
+      // the captive-portal popup on most phones. Fall back to a same-context
+      // navigation if the browser blocks the new window.
+      if (link) {
+        link.href = openUrl;
+        link.setAttribute('rel', 'noopener');
+        link.addEventListener('click', (e) => {
+          const w = window.open(openUrl, '_blank');
+          if (w) { e.preventDefault(); }   // opened in the real browser
+          // else: let the href navigate in place
+        });
+      }
+
+      // Copy the durable address so the user can paste it into their browser.
+      const copyBtn = document.getElementById('finishCopyBtn');
+      const copyMsg = document.getElementById('finishCopyMsg');
+      if (copyBtn) {
+        copyBtn.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(appUrl);
+            if (copyMsg) copyMsg.textContent = 'Copied! Paste it into Safari or Chrome.';
+          } catch {
+            if (copyMsg) copyMsg.textContent = `Copy this: ${appUrl}`;
+          }
+        });
+      }
+
+      // Best-effort auto-open on the reachable hotspot IP so something appears
+      // without a tap. (A timer isn't a user gesture, so it must navigate in
+      // place rather than open a new browser window.)
       let countdown = 4;
       const openNow = document.getElementById('finishOpenNote');
       const tick = setInterval(() => {

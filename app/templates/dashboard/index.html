@@ -10,6 +10,37 @@
   <button id="alertSilenceBtn" class="btn btn-secondary" type="button"{% if not alerts.alarm_on %} hidden{% endif %}>Silence alarm</button>
 </div>
 
+{% if home_summary.access_url %}
+<div id="accessNotice" class="alert-banner" style="background:rgba(58,119,119,.12);border:1px solid var(--brand,#3a7)" hidden>
+  <div>
+    <strong>📌 Reach your incubator here</strong>
+    <p class="alert-banner-text">Bookmark <code id="accessUrl">{{ home_summary.access_url }}</code> — it's how to open this incubator from any device on your Wi-Fi.</p>
+  </div>
+  <div class="button-row">
+    <button id="accessCopyBtn" class="btn btn-secondary" type="button">Copy</button>
+    <button id="accessDismissBtn" class="btn btn-ghost" type="button">Got it</button>
+  </div>
+</div>
+<script>
+  (function () {
+    var n = document.getElementById('accessNotice');
+    if (!n) return;
+    if (localStorage.getItem('incubatorAccessNoticeDismissed') !== '1') n.removeAttribute('hidden');
+    var url = (document.getElementById('accessUrl') || {}).textContent || '';
+    var copy = document.getElementById('accessCopyBtn');
+    if (copy) copy.addEventListener('click', async function () {
+      try { await navigator.clipboard.writeText(url); copy.textContent = 'Copied!'; }
+      catch (e) { copy.textContent = url; }
+    });
+    var dismiss = document.getElementById('accessDismissBtn');
+    if (dismiss) dismiss.addEventListener('click', function () {
+      localStorage.setItem('incubatorAccessNoticeDismissed', '1');
+      n.setAttribute('hidden', '');
+    });
+  })();
+</script>
+{% endif %}
+
 <section class="dashboard-grid home-dashboard appliance-home">
   <div class="panel-group">
     {% set inc_day = settings.get('incubation_day', '0') | int %}
