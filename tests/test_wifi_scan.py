@@ -37,8 +37,9 @@ def test_prescan_cache_serves_networks_when_radio_busy(monkeypatch):
     assert not any(s.startswith("Incubator") for s in names)
 
 
-def test_live_scan_wins_when_available(monkeypatch):
-    # If a live scan DOES return results, use them (don't get stuck on cache).
+def test_cached_read_used_when_no_prescan(monkeypatch):
+    # With no prescan cache, scan_networks reads NM's cache (still no forced
+    # rescan) rather than the mock fallback.
     def fake_run(cmd, *a, **k):
         if cmd and cmd[0] == "nmcli" and "list" in cmd:
             return subprocess.CompletedProcess(cmd, 0, stdout="LiveNet:70:WPA2\n", stderr="")
@@ -48,3 +49,36 @@ def test_live_scan_wins_when_available(monkeypatch):
     svc = WiFiService(country="US")
     names = [n.ssid for n in svc.scan_networks()]
     assert names == ["LiveNet"]
+
+
+def _capture(monkeypatch, output=""):
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, *a, **k):
+        if cmd and cmd[0] == "nmcli":
+            calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, stdout=output, stderr="")
+
+    monkeypatch.setattr(wifi_mod.subprocess, "run", fake_run)
+    return calls
+
+
+def _rescan_arg(cmd):
+    return cmd[cmd.index("--rescan") + 1] if "--rescan" in cmd else None
+
+
+def test_scan_networks_never_forces_rescan(monkeypatch):
+    # A forced rescan while the AP is up drops the hotspot — must never happen
+    # during the wizard.
+    calls = _capture(monkeypatch)
+    WiFiService(country="US").scan_networks()
+    for c in (c for c in calls if "list" in c):
+        assert _rescan_arg(c) != "yes"
+
+
+def test_prescan_forces_fresh_rescan(monkeypatch):
+    # The pre-AP scan (radio free) is the ONE place a fresh rescan is allowed.
+    calls = _capture(monkeypatch, output="X:50:WPA2\n")
+    WiFiService(country="US").prescan()
+    list_calls = [c for c in calls if "list" in c]
+    assert list_calls and any(_rescan_arg(c) == "yes" for c in list_calls)

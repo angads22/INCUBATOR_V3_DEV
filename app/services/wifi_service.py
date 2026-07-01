@@ -103,14 +103,18 @@ class WiFiService:
     # Scanning
     # ------------------------------------------------------------------
 
-    def _scan_raw(self) -> list[WiFiNetwork]:
-        """Live nmcli scan of nearby networks (may be empty while the AP is up).
+    def _scan_raw(self, rescan: str = "no") -> list[WiFiNetwork]:
+        """nmcli list of nearby networks (may be empty while the AP is up).
 
         Our own setup hotspot is filtered out so the operator is never offered
         their own device as a network to join.
         """
         try:
-            result = _nmcli("-t", "-f", "SSID,SIGNAL,SECURITY", "dev", "wifi", "list", "--rescan", "yes", check=False)
+            # rescan="no" reads NetworkManager's CACHED list — crucial while the
+            # AP is up: forcing a rescan takes the single radio off AP duty and
+            # drops the hotspot (kicks the phone off mid-setup). Only the pre-AP
+            # prescan (radio free) passes rescan="yes".
+            result = _nmcli("-t", "-f", "SSID,SIGNAL,SECURITY", "dev", "wifi", "list", "--rescan", rescan, check=False)
         except FileNotFoundError:
             return []
         except Exception as exc:  # noqa: BLE001
@@ -145,20 +149,20 @@ class WiFiService:
         show the operator their real home/barn networks even though a live scan
         would return nothing once the single radio is busy hosting the AP.
         """
-        nets = self._scan_raw()
+        nets = self._scan_raw(rescan="yes")   # radio is free here — safe to rescan
         if nets:
             self._cached_networks = nets
             logger.info("Pre-scan cached %d nearby network(s) for onboarding", len(nets))
 
     def scan_networks(self) -> list[WiFiNetwork]:
-        # Prefer a live scan; if the radio is busy hosting the AP (empty result),
-        # fall back to the pre-scan captured before the hotspot came up.
-        live = self._scan_raw()
-        if live:
-            return live
+        # NEVER force a rescan here — this runs during the wizard while the AP is
+        # up, and a rescan would drop the hotspot. Prefer the pre-scan cache
+        # (captured before the AP), then NetworkManager's cached list.
         if self._cached_networks:
-            logger.info("Serving %d pre-scanned network(s) (radio busy hosting AP)", len(self._cached_networks))
             return list(self._cached_networks)
+        cached = self._scan_raw(rescan="no")
+        if cached:
+            return cached
         return [
             WiFiNetwork(ssid="FarmNet-2.4G", strength=82, secure=True),
             WiFiNetwork(ssid="BarnOffice", strength=67, secure=True),
