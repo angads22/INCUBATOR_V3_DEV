@@ -28,7 +28,9 @@
 #
 #  Options:
 #    --base <path|url>   Base image (.img/.img.xz/.zip) or download URL.
-#                        Default: latest Raspberry Pi OS Lite arm64.
+#                        Default: a PINNED, known-good Raspberry Pi OS Lite
+#                        (Bookworm, arm64) release — not "latest", which shifted
+#                        to a base that no longer boots the Pi Zero 2 W.
 #    --out <dir>         Output directory (default: ./dist).
 #    --hostname <name>   Pi hostname (default: incubator).
 #    --wifi-country <CC> Wi-Fi regulatory country, ISO 3166-1 alpha-2 (default:
@@ -51,7 +53,23 @@ set -Eeuo pipefail   # -E so the ERR trap is inherited by functions/subshells
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
-BASE_IMAGE_URL_DEFAULT="https://downloads.raspberrypi.com/raspios_lite_arm64_latest"
+# PINNED base image. We deliberately do NOT use `raspios_lite_arm64_latest`:
+# Raspberry Pi moves "latest" forward, and a newer base (different boot/partition
+# layout) stopped booting on the Pi Zero 2 W after our resize + PARTUUID steps
+# — the symptom is a dark ACT LED (firmware never loads the kernel) even though
+# older builds of this exact pipeline booted fine. Pinning to a known-good
+# Bookworm arm64 Lite release makes the produced image boot reproducibly.
+# Override with --base <url|path> if you want a different base.
+BASE_IMAGE_URL_DEFAULT="https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2024-11-19/2024-11-19-raspios-bookworm-arm64-lite.img.xz"
+# Ordered fallbacks tried when the primary can't be fetched (the .org mirror and
+# a couple of other known-good dated Bookworm releases), so a single moved file
+# never breaks the build.
+BASE_IMAGE_FALLBACKS=(
+    "https://downloads.raspberrypi.org/raspios_lite_arm64/images/raspios_lite_arm64-2024-11-19/2024-11-19-raspios-bookworm-arm64-lite.img.xz"
+    "https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2024-10-22/2024-10-22-raspios-bookworm-arm64-lite.img.xz"
+    "https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2024-07-04/2024-07-04-raspios-bookworm-arm64-lite.img.xz"
+    "https://downloads.raspberrypi.org/raspios_lite_arm64/images/raspios_lite_arm64-2024-07-04/2024-07-04-raspios-bookworm-arm64-lite.img.xz"
+)
 BASE_INPUT=""
 OUT_DIR="${REPO_DIR}/dist"
 CACHE_DIR="${REPO_DIR}/.image-cache"
@@ -246,15 +264,18 @@ acquire_base() {
         archive="$src"
         info "Using local base image: ${archive}"
     else
-        archive="${CACHE_DIR}/raspios_lite_arm64.img.xz"
+        # Cache key tied to the pinned release so bumping the pin never reuses a
+        # stale (e.g. previously-"latest") base image.
+        archive="${CACHE_DIR}/raspios_lite_arm64_2024-11-19.img.xz"
         if [[ -f "$archive" ]]; then
             info "Using cached download: ${archive}"
         else
-            step "Downloading Raspberry Pi OS Lite (arm64)..."
-            # Try the requested URL, then the other official CDN as a fallback.
+            step "Downloading Raspberry Pi OS Lite (arm64, pinned Bookworm)..."
+            # Try the requested URL, then the pinned fallbacks (other CDN / dates)
+            # so a single moved file never breaks the build.
             local urls=("$src")
             [[ "$src" == "$BASE_IMAGE_URL_DEFAULT" ]] && \
-                urls+=("https://downloads.raspberrypi.org/raspios_lite_arm64_latest")
+                urls+=("${BASE_IMAGE_FALLBACKS[@]}")
             local got=0 u
             for u in "${urls[@]}"; do
                 info "Fetching ${u}"
