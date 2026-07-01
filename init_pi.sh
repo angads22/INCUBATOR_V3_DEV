@@ -76,8 +76,17 @@ apt-get install -y --no-install-recommends \
 
 # mDNS so the incubator is reachable at <hostname>.local (the address the setup
 # wizard hands the operator after onboarding). Enable it explicitly — RPi OS
-# Lite does not always ship it running.
+# Lite does not always ship it running — and fall back to a manual wants-symlink
+# so enablement is deterministic even when systemctl no-ops in the chroot (the
+# image verification gate asserts this symlink exists).
 systemctl enable avahi-daemon 2>/dev/null || true
+if [[ ! -e /etc/systemd/system/multi-user.target.wants/avahi-daemon.service ]]; then
+    AVAHI_UNIT="$(ls /lib/systemd/system/avahi-daemon.service /usr/lib/systemd/system/avahi-daemon.service 2>/dev/null | head -1 || true)"
+    if [[ -n "$AVAHI_UNIT" ]]; then
+        mkdir -p /etc/systemd/system/multi-user.target.wants
+        ln -sf "$AVAHI_UNIT" /etc/systemd/system/multi-user.target.wants/avahi-daemon.service
+    fi
+fi
 
 # Regulatory database — lets `iw reg set <country>` actually take effect.
 # Best-effort: a Bookworm Lite image normally already ships it.

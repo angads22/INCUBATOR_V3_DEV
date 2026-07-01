@@ -422,41 +422,102 @@ configure_boot() {
 }
 
 # Verify the FINAL ARTIFACT (the real bytes on disk), not the page-cache view we
-# already released. Re-attach the written .img read-only and assert the boot
-# edits actually persisted — build #12 passed the in-build guards yet shipped
-# root=ROOTDEV because the writes never flushed to the backing image.
+# already released. Re-attach the written .img read-only and assert EVERY
+# property the appliance depends on — boot config, services wired, app staged,
+# open setup AP, per-device identity NOT pre-burned. Zero-tolerance gate: any
+# failure aborts the build, so a broken image can never publish. (Born from
+# build #12, which passed in-build guards yet shipped root=ROOTDEV because the
+# writes never flushed to the backing image.)
 verify_artifact() {
     local img="$1" loop b r ok=1
-    step "Verifying boot config persisted in the final image..."
+    step "Verifying the final image (zero-tolerance gate)..."
+    fail() { echo "::error title=build_image.sh::verify: $*"; echo -e "${RED}[VERIFY]${NC} $*" >&2; ok=0; }
+    pass() { echo "  [ok] $*"; }
+
     loop="$(losetup -fP --show "$img")" || error "verify: losetup failed on ${img}"
     [[ -e "${loop}p2" ]] || { sleep 1; partprobe "$loop" 2>/dev/null || true; }
     b="$(mktemp -d)"; r="$(mktemp -d)"
+
+    # ── Boot partition ──────────────────────────────────────────────────
     if mount -o ro "${loop}p1" "$b" 2>/dev/null; then
-        grep -q "root=PARTUUID=" "$b/cmdline.txt"     || { echo "::error title=build_image.sh::artifact cmdline has no PARTUUID"; ok=0; }
-        ! grep -qE "ROOTDEV|BOOTDEV" "$b/cmdline.txt"  || { echo "::error title=build_image.sh::artifact cmdline still has placeholder"; ok=0; }
+        grep -q "root=PARTUUID=" "$b/cmdline.txt"      && pass "cmdline root=PARTUUID" || fail "cmdline has no PARTUUID root="
+        ! grep -qE "ROOTDEV|BOOTDEV" "$b/cmdline.txt"  && pass "cmdline has no placeholders" || fail "cmdline still has ROOTDEV/BOOTDEV placeholder"
+        [[ "$(awk 'END{print NR}' "$b/cmdline.txt")" -le 1 ]] && pass "cmdline is a single line" || fail "cmdline.txt is not a single line"
+        if [[ "$ENABLE_SSH" == "1" ]]; then
+            [[ -e "$b/ssh" || -e "$b/ssh.txt" ]] && pass "ssh enable flag present" || fail "ssh flag file missing from boot partition"
+        fi
         umount "$b" 2>/dev/null || umount -lf "$b" 2>/dev/null
     else
-        echo "::error title=build_image.sh::verify: cannot mount ${loop}p1"; ok=0
+        fail "cannot mount boot partition ${loop}p1"
     fi
+
+    # ── Root partition ──────────────────────────────────────────────────
     if mount -o ro "${loop}p2" "$r" 2>/dev/null; then
-        grep -q "PARTUUID=" "$r/etc/fstab"            || { echo "::error title=build_image.sh::artifact fstab not using PARTUUID"; ok=0; }
-        ! grep -qiE "ROOTDEV|BOOTDEV" "$r/etc/fstab"   || { echo "::error title=build_image.sh::artifact fstab still has placeholder"; ok=0; }
-        # Wi-Fi country must be baked in, else the radio stays rfkill-blocked and
-        # the onboarding hotspot never appears.
-        if [[ -f "$r/etc/systemd/system/incubator-wifi-country.service" ]]; then
-            grep -q "iw reg set [A-Z][A-Z]" "$r/etc/systemd/system/incubator-wifi-country.service" \
-                || { echo "::error title=build_image.sh::wifi-country unit has no 'iw reg set <CC>'"; ok=0; }
+        # Boot-by-PARTUUID persisted.
+        grep -q "PARTUUID=" "$r/etc/fstab"             && pass "fstab uses PARTUUID" || fail "fstab not using PARTUUID"
+        ! grep -qiE "ROOTDEV|BOOTDEV" "$r/etc/fstab"   && pass "fstab has no placeholders" || fail "fstab still has placeholder"
+
+        # Wi-Fi country baked (radio stays rfkill-blocked without it → no hotspot).
+        if [[ -f "$r/etc/systemd/system/incubator-wifi-country.service" ]] \
+           && grep -q "iw reg set [A-Z][A-Z]" "$r/etc/systemd/system/incubator-wifi-country.service"; then
+            pass "wifi-country unit baked"
         else
-            echo "::error title=build_image.sh::Wi-Fi regulatory country not configured in image"; ok=0
+            fail "Wi-Fi regulatory country unit missing/incomplete (hotspot would stay rfkill-blocked)"
         fi
+
+        # App staged at the version this build claims.
+        grep -q "VERSION = \"${VERSION}\"" "$r/opt/incubator/app/version.py" 2>/dev/null \
+            && pass "app staged at version ${VERSION}" || fail "staged app version != ${VERSION} (app/version.py mismatch or app missing)"
+        [[ -x "$r/opt/incubator/.venv/bin/uvicorn" ]]  && pass "venv + uvicorn baked" || fail "venv/uvicorn missing — service cannot start"
+        [[ -d "$r/opt/incubator/.git" ]]               && pass "git checkout present (OTA can update)" || fail "/opt/incubator/.git missing — OTA cannot update"
+
+        # Env file: exists and the setup AP is OPEN (no baked Wi-Fi password).
+        if [[ -f "$r/etc/incubator.env" ]]; then
+            grep -q "^INCUBATOR_AP_PASSWORD=$" "$r/etc/incubator.env" \
+                && pass "setup AP is open (no baked password)" || fail "INCUBATOR_AP_PASSWORD is non-empty — setup network would be locked"
+        else
+            fail "/etc/incubator.env missing"
+        fi
+
+        # Installed units: present, fully templated, and enabled.
+        local u
+        for u in incubator.service incubator-firstboot.service incubator-control.service incubator-ota.service; do
+            [[ -f "$r/etc/systemd/system/$u" ]] || { fail "unit $u not installed"; continue; }
+            grep -q "__INSTALL_DIR__" "$r/etc/systemd/system/$u" \
+                && fail "unit $u still contains __INSTALL_DIR__ placeholder" || pass "unit $u installed + templated"
+        done
+        for u in incubator.service incubator-firstboot.service incubator-control.service; do
+            [[ -e "$r/etc/systemd/system/multi-user.target.wants/$u" ]] \
+                && pass "$u enabled" || fail "$u not enabled (no multi-user.target.wants symlink)"
+        done
+        [[ -e "$r/etc/systemd/system/timers.target.wants/incubator-ota.timer" ]] \
+            && pass "OTA timer enabled" || fail "incubator-ota.timer not enabled — image would never auto-update"
+
+        # Per-device identity must be generated ON DEVICE, never pre-burned into
+        # the image — else every flashed unit shares one ID/hostname/SSID.
+        [[ ! -e "$r/etc/incubator-firstboot.done" ]] \
+            && pass "firstboot not pre-burned" || fail "firstboot done-marker baked into image (identity would never provision)"
+        [[ ! -e "$r/etc/incubator-device-id" ]] \
+            && pass "device id not pre-burned" || fail "device id baked into image (every unit would share one identity)"
+
+        # Networking stack the appliance depends on.
+        [[ -x "$r/usr/sbin/NetworkManager" ]] && pass "NetworkManager present" || fail "NetworkManager missing — no hotspot/Wi-Fi"
+        [[ -e "$r/usr/sbin/avahi-daemon" ]]   && pass "avahi present (.local works)" || fail "avahi-daemon missing — <hostname>.local would not resolve"
+        [[ -e "$r/etc/systemd/system/multi-user.target.wants/avahi-daemon.service" || \
+           -e "$r/etc/systemd/system/sockets.target.wants/avahi-daemon.socket" ]] \
+            && pass "avahi enabled" || fail "avahi-daemon not enabled"
+        [[ -f "$r/etc/NetworkManager/dnsmasq-shared.d/090-incubator-captive.conf" ]] \
+            && pass "captive DNS hijack conf present" || fail "captive-portal DNS conf missing — setup page would not auto-open"
+
         umount "$r" 2>/dev/null || umount -lf "$r" 2>/dev/null
     else
-        echo "::error title=build_image.sh::verify: cannot mount ${loop}p2"; ok=0
+        fail "cannot mount root partition ${loop}p2"
     fi
+
     rmdir "$b" "$r" 2>/dev/null || true
     losetup -d "$loop" 2>/dev/null || true
-    [[ "$ok" == "1" ]] || error "Final artifact failed boot-config verification (see ::error annotations above)."
-    info "Verified: final image boots by PARTUUID (no placeholders)."
+    [[ "$ok" == "1" ]] || error "Final artifact FAILED verification (see [VERIFY] lines / ::error annotations above)."
+    info "Verified: final image passed all ${VERSION} appliance checks."
 }
 
 # Zero the ext4 free space so xz can compress it away. zerofree operates on the
