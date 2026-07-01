@@ -6,6 +6,45 @@ const WIZARD_LABELS = [
   'Operator account', 'Device name', 'Quick tour', 'Finishing up',
 ];
 
+// Persist wizard fields so a brief Wi-Fi blip (or a captive-sheet reload) doesn't
+// wipe what the user already typed — on reconnect the wizard resumes. Passwords
+// are intentionally NOT persisted.
+const WIZ_KEY = 'incubatorWizardState';
+function saveWizard() {
+  try {
+    const g = (id) => document.getElementById(id);
+    localStorage.setItem(WIZ_KEY, JSON.stringify({
+      ssid: selectedSsid,
+      manual: g('manualSsid')?.value || '',
+      deviceName: g('deviceName')?.value || '',
+      createAccount: g('createAccountCheck')?.checked || false,
+      username: g('acctUsername')?.value || '',
+      email: g('acctEmail')?.value || '',
+    }));
+  } catch { /* storage disabled — non-fatal */ }
+}
+function restoreWizard() {
+  try {
+    const s = JSON.parse(localStorage.getItem(WIZ_KEY) || 'null');
+    if (!s) return;
+    const g = (id) => document.getElementById(id);
+    if (s.manual && g('manualSsid')) { g('manualSsid').value = s.manual; selectedSsid = s.manual; }
+    else if (s.ssid) { selectedSsid = s.ssid; }
+    if (s.deviceName && g('deviceName')) g('deviceName').value = s.deviceName;
+    if (s.createAccount && g('createAccountCheck')) {
+      g('createAccountCheck').checked = true;
+      const f = g('accountFields'); if (f) f.style.display = 'grid';
+    }
+    if (s.username && g('acctUsername')) g('acctUsername').value = s.username;
+    if (s.email && g('acctEmail')) g('acctEmail').value = s.email;
+  } catch { /* ignore */ }
+}
+function clearWizard() { try { localStorage.removeItem(WIZ_KEY); } catch { /* ignore */ } }
+// Save on any field change, and restore whatever was typed before a reload.
+document.addEventListener('input', saveWizard);
+document.addEventListener('change', saveWizard);
+restoreWizard();
+
 function showStep(n) {
   document.querySelectorAll('.wizard-step').forEach((el) => el.classList.remove('active'));
   const target = document.querySelector(`.wizard-step[data-step="${n}"]`);
@@ -174,6 +213,7 @@ async function submitSetup() {
     });
     const data = await res.json();
     if (data.ok) {
+      clearWizard();   // setup succeeded \u2014 drop the saved draft
       title.textContent = 'Setup complete! \ud83c\udf89';
       msg.textContent =
         `Your incubator \u201c${data.device_name}\u201d is now joining your Wi-Fi. ` +
