@@ -487,10 +487,11 @@ verify_artifact() {
                 && fail "unit $u still contains __INSTALL_DIR__ placeholder" || pass "unit $u installed + templated"
         done
         for u in incubator.service incubator-firstboot.service incubator-control.service; do
-            [[ -e "$r/etc/systemd/system/multi-user.target.wants/$u" ]] \
+            [[ -L "$r/etc/systemd/system/multi-user.target.wants/$u" || -e "$r/etc/systemd/system/multi-user.target.wants/$u" ]] \
                 && pass "$u enabled" || fail "$u not enabled (no multi-user.target.wants symlink)"
         done
-        [[ -e "$r/etc/systemd/system/timers.target.wants/incubator-ota.timer" ]] \
+        [[ -L "$r/etc/systemd/system/timers.target.wants/incubator-ota.timer" || \
+           -e "$r/etc/systemd/system/timers.target.wants/incubator-ota.timer" ]] \
             && pass "OTA timer enabled" || fail "incubator-ota.timer not enabled — image would never auto-update"
 
         # Per-device identity must be generated ON DEVICE, never pre-burned into
@@ -503,8 +504,9 @@ verify_artifact() {
         # Networking stack the appliance depends on.
         [[ -x "$r/usr/sbin/NetworkManager" ]] && pass "NetworkManager present" || fail "NetworkManager missing — no hotspot/Wi-Fi"
         [[ -e "$r/usr/sbin/avahi-daemon" ]]   && pass "avahi present (.local works)" || fail "avahi-daemon missing — <hostname>.local would not resolve"
-        [[ -e "$r/etc/systemd/system/multi-user.target.wants/avahi-daemon.service" || \
-           -e "$r/etc/systemd/system/sockets.target.wants/avahi-daemon.socket" ]] \
+        [[ -L "$r/etc/systemd/system/multi-user.target.wants/avahi-daemon.service" || \
+           -L "$r/etc/systemd/system/sockets.target.wants/avahi-daemon.socket" || \
+           -L "$r/etc/systemd/system/dbus-org.freedesktop.Avahi.service" ]] \
             && pass "avahi enabled" || fail "avahi-daemon not enabled"
         [[ -f "$r/etc/NetworkManager/dnsmasq-shared.d/090-incubator-captive.conf" ]] \
             && pass "captive DNS hijack conf present" || fail "captive-portal DNS conf missing — setup page would not auto-open"
