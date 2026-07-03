@@ -61,6 +61,16 @@ class OnboardingService:
         # the hotspot IP) can load and be seen before the single radio switches
         # over to the home network.
         self._complete_grace_seconds = 12.0
+        # ── Connectivity watchdog state (never-unreachable invariant) ──
+        # The device must ALWAYS be on a network: its own AP or the home Wi-Fi.
+        self._last_device_id = ""       # remembered for fallback AP naming
+        self._fallback_active = False   # AP raised by the watchdog, not the user
+        self._offline_polls = 0         # consecutive polls with no network at all
+        self._polls_in_fallback = 0     # polls spent in fallback (drives rejoin retry)
+        # ~4 polls * 30 s poll interval ≈ 2 min of zero-network before fallback.
+        self._offline_polls_threshold = 4
+        # Retry the saved Wi-Fi every ~20 polls (≈10 min) while in fallback.
+        self._fallback_retry_polls = 20
 
     def _password(self) -> str:
         if self._ap_password_resolver is not None:
@@ -77,6 +87,7 @@ class OnboardingService:
 
     def boot(self, db: Session, device_id: str) -> None:
         """Called once at app startup.  Starts hotspot if device needs setup."""
+        self._last_device_id = device_id or self._last_device_id
         if not self._auto_hotspot:
             return
         config = db.scalar(select(DeviceConfig).limit(1))
@@ -113,6 +124,7 @@ class OnboardingService:
         """
         ssid = self._make_ssid(device_id)
         password = self._password()
+        self._last_device_id = device_id or self._last_device_id
         self._setup.enter_setup_mode("manual_trigger")
         already_up = self._hotspot_active or self._wifi.is_hotspot_up(ssid, bool(password))
         if already_up:
@@ -160,7 +172,79 @@ class OnboardingService:
         connected = False
         if ssid:
             connected = self._wifi.connect_client(ssid, password)
+        if not connected:
+            # NEVER leave the device on zero networks. A wrong password, an
+            # out-of-range router, or a skipped Wi-Fi step used to strand the
+            # unit here (hotspot gone, no client connection, "configured" in
+            # the DB) — unreachable until a reflash. Re-raise the setup AP so
+            # the operator can simply reconnect and try again.
+            logger.warning("Wi-Fi join failed/skipped after setup — re-raising the setup AP")
+            self._fallback_active = True
+            self.start_manual_hotspot(self._last_device_id or "PI-XXXX")
         return connected
+
+    # ------------------------------------------------------------------
+    # Connectivity watchdog — the never-unreachable invariant
+    # ------------------------------------------------------------------
+
+    def ensure_reachable(self, db: Session) -> None:
+        """Called from the sensor-poll loop (~every 30 s). Guarantees the device
+        is never on zero networks:
+
+          * If there's no Wi-Fi connection AND no hotspot for ~2 minutes,
+            raise the setup AP (fallback mode) so the operator can always
+            reach the device — bad password, moved router, whatever.
+          * While in fallback mode with a saved Wi-Fi, periodically retry the
+            saved network (~every 10 min); on success drop the AP and return
+            to normal operation, else re-raise the AP.
+
+        An operator-initiated setup session (button hold / wizard) is left
+        alone. Best-effort: any error here must never break sensor polling.
+        """
+        # Operator-driven setup in progress — don't fight it.
+        if self._setup.is_setup_mode() and not self._fallback_active:
+            return
+
+        if self._hotspot_active:
+            if not self._fallback_active:
+                return
+            config = db.scalar(select(DeviceConfig).limit(1))
+            if not config or not config.wifi_ssid:
+                return  # nothing saved to retry — stay reachable on the AP
+            self._polls_in_fallback += 1
+            if self._polls_in_fallback < self._fallback_retry_polls:
+                return
+            self._polls_in_fallback = 0
+            logger.info("Fallback AP: retrying saved Wi-Fi '%s'", config.wifi_ssid)
+            self._stop_captive_responder()
+            self._wifi.stop_hotspot()
+            self._hotspot_active = False
+            if self._wifi.try_saved_connection(config.wifi_ssid):
+                logger.info("Rejoined '%s' — leaving fallback AP mode", config.wifi_ssid)
+                self._fallback_active = False
+                self._offline_polls = 0
+                self._setup.exit_setup_mode()
+                return
+            self._raise_fallback_ap(db)
+            return
+
+        if self._wifi.get_connected_ssid():
+            self._offline_polls = 0
+            self._fallback_active = False
+            return
+
+        self._offline_polls += 1
+        if self._offline_polls >= self._offline_polls_threshold:
+            self._offline_polls = 0
+            logger.warning("No Wi-Fi and no hotspot for ~2 min — raising fallback setup AP")
+            self._raise_fallback_ap(db)
+
+    def _raise_fallback_ap(self, db: Session) -> None:
+        config = db.scalar(select(DeviceConfig).limit(1))
+        device_id = (config.device_id if config and config.device_id else "") or self._last_device_id or "PI-XXXX"
+        self._fallback_active = True
+        self._polls_in_fallback = 0
+        self.start_manual_hotspot(device_id)
 
     # ------------------------------------------------------------------
     # Captive portal responder (best-effort; only while the hotspot is up)

@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -381,6 +382,27 @@ class WiFiService:
             return True
         except Exception as exc:
             logger.warning("Unexpected error connecting to WiFi: %s", exc)
+        return False
+
+    def try_saved_connection(self, ssid: str, timeout: float = 25.0) -> bool:
+        """Bring up the SAVED NetworkManager profile for ``ssid`` and wait.
+
+        Used by the connectivity watchdog to retry the operator's Wi-Fi after a
+        fallback to the setup AP (NM stores the credentials from the original
+        join, so no password is needed here). Returns True once associated.
+        """
+        try:
+            ssid = _safe_ssid(ssid)
+            _nmcli("connection", "up", "id", ssid, check=False)
+        except FileNotFoundError:
+            return True  # dev box — pretend success so flows continue
+        except ValueError:
+            return False
+        deadline = time.time() + max(5.0, timeout)
+        while time.time() < deadline:
+            if self.get_connected_ssid() == ssid:
+                return True
+            time.sleep(2)
         return False
 
     def get_connected_ssid(self) -> str | None:

@@ -511,6 +511,14 @@ verify_artifact() {
         [[ -f "$r/etc/NetworkManager/dnsmasq-shared.d/090-incubator-captive.conf" ]] \
             && pass "captive DNS hijack conf present" || fail "captive-portal DNS conf missing — setup page would not auto-open"
 
+        # Hardware watchdog: reboots a hard-hung kernel (Restart= can't).
+        if [[ -f "$r/etc/systemd/system.conf.d/10-incubator-watchdog.conf" ]] \
+           && grep -q "RuntimeWatchdogSec" "$r/etc/systemd/system.conf.d/10-incubator-watchdog.conf"; then
+            pass "hardware watchdog armed"
+        else
+            fail "hardware watchdog config missing — a hung system would never reboot"
+        fi
+
         umount "$r" 2>/dev/null || umount -lf "$r" 2>/dev/null
     else
         fail "cannot mount root partition ${loop}p2"

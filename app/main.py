@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from .auth import create_session, get_user_id_from_session, has_any_user, hash_password
 from .config import settings
-from .database import Base, engine, get_db
+from .database import Base, engine, ensure_sqlite_healthy, get_db
 from .models import ActionLog, DeviceConfig, SensorLog, User
 from .routes.ai import (
     router as ai_router,
@@ -291,6 +291,13 @@ class _SensorPoller(threading.Thread):
                 storage_service.enforce(db)
             except Exception as exc:  # noqa: BLE001 — never let the janitor break polling
                 logger.debug("storage enforce skipped: %s", exc)
+            # Never-unreachable invariant: if the device has no Wi-Fi AND no
+            # hotspot, raise the fallback setup AP (and retry the saved Wi-Fi
+            # periodically while in fallback). See OnboardingService.ensure_reachable.
+            try:
+                onboarding_service.ensure_reachable(db)
+            except Exception as exc:  # noqa: BLE001 — watchdog must never break polling
+                logger.debug("reachability watchdog skipped: %s", exc)
             if settings.control_daemon_enabled:
                 # The control daemon owns the DHT — read its published state
                 # instead of touching the sensor (avoids single-radio/pin races).
@@ -365,6 +372,10 @@ def _ensure_egg_roi_columns() -> None:
 def startup() -> None:
     # Ensure database directory exists
     Path("./database").mkdir(exist_ok=True)
+
+    # A power cut mid-write can corrupt the SQLite file; quarantine it instead
+    # of crash-looping forever (the incubator must always come up).
+    ensure_sqlite_healthy()
 
     Base.metadata.create_all(bind=engine)
     _ensure_egg_roi_columns()
