@@ -233,6 +233,19 @@ else
     chmod 600 "${ENV_FILE}" 2>/dev/null || true
 fi
 
+# ── Hardware watchdog ────────────────────────────────────────
+# Restart=always only covers process EXITS. A wedged kernel or a deadlocked
+# userspace needs the BCM SoC hardware watchdog: systemd pets /dev/watchdog
+# and the chip reboots the Pi if the whole system stops responding. The
+# BCM2835 watchdog's maximum timeout is ~15s, so stay under it.
+info "Enabling hardware watchdog (BCM SoC via systemd)..."
+mkdir -p /etc/systemd/system.conf.d
+cat > /etc/systemd/system.conf.d/10-incubator-watchdog.conf <<'EOF'
+[Manager]
+RuntimeWatchdogSec=14
+RebootWatchdogSec=2min
+EOF
+
 # ── systemd service ──────────────────────────────────────────
 info "Installing systemd service..."
 sed \

@@ -537,6 +537,31 @@ def onboarding_wifi_scan() -> dict:
     return {"ok": False, "networks": []}
 
 
+def _complete_with_recovery(ssid: str, password: str) -> None:
+    """Run the AP→client switch and undo the config if the join fails.
+
+    The wizard saves wifi_ssid BEFORE the join attempt (the response must go
+    out before the radio flips). If the join then fails, a device that kept
+    that ssid would boot forever thinking it is configured and never raise its
+    setup AP — a stranded box. Clearing the ssid keeps boot()'s "needs setup"
+    logic truthful; OnboardingService.complete() additionally re-raises the AP
+    immediately so recovery doesn't even need a power cycle.
+    """
+    connected = _onboarding_service.complete(ssid, password) if _onboarding_service else False
+    if ssid and not connected:
+        db = next(get_db())
+        try:
+            config = db.scalar(select(DeviceConfig).limit(1))
+            if config is not None and config.wifi_ssid == ssid:
+                config.wifi_ssid = None
+                db.add(ActionLog(action="system.wifi_join_failed", payload=ssid))
+                db.commit()
+        except Exception:  # noqa: BLE001 — recovery bookkeeping must never raise
+            pass
+        finally:
+            db.close()
+
+
 @router.post("/onboarding/complete")
 def onboarding_complete(
     payload: HotspotSetupPayload,
@@ -586,7 +611,7 @@ def onboarding_complete(
     # A background task runs once the response is on the wire.
     if _onboarding_service:
         background_tasks.add_task(
-            _onboarding_service.complete, payload.ssid or "", payload.wifi_password or ""
+            _complete_with_recovery, payload.ssid or "", payload.wifi_password or ""
         )
     elif _setup_mode_service:
         _setup_mode_service.exit_setup_mode()
