@@ -106,6 +106,23 @@ def test_cold_reading_turns_heater_on_and_writes_state(tmp_path):
     assert written["temperature_c"] == 36.5 and written["online"] is True
 
 
+def test_shipped_defaults_enable_auto_temperature_control():
+    """Safety default: a flashed unit must regulate temperature out of the box.
+
+    Both gates have to be on — the control daemon (env) AND heater_enabled
+    (seeded setting) — or the appliance would monitor and alarm but never
+    actually hold target temperature.
+    """
+    import pathlib
+
+    from app.settings_store import DEFAULT_SETTINGS
+
+    assert DEFAULT_SETTINGS["heater_enabled"] == "true"
+
+    env = pathlib.Path(__file__).resolve().parent.parent / "deploy" / "incubator.env.example"
+    assert "CONTROL_DAEMON_ENABLED=true" in env.read_text()
+
+
 def test_sensor_failure_fails_safe_heater_off(tmp_path):
     gpio = FakeGPIO(ok=False)
     d = _daemon(gpio, tmp_path)
