@@ -44,6 +44,18 @@ DEFAULT_LOCKDOWN_HUMIDITY_PCT = 65.0
 # Below this development-per-real-day, a mid-incubation embryo looks stalled.
 MIN_GROWTH_PER_DAY = 0.2
 
+# Trajectory-based non-viability thresholds. These let assess_growth catch the
+# two commonest duds even when only the heuristic backend is running (i.e. no
+# classifier ever emits a "dead"/"infertile" *label*): an embryo that developed
+# then died (the estimate reverses), and a clear egg that never starts (the
+# estimate stays at zero across several candlings). Each needs corroboration so
+# one blurry frame can never cull a good egg.
+REGRESSION_MIN_PEAK_DAYS = 3.0    # must have developed at least this far to "reverse"
+REGRESSION_DROP_DAYS = 2.5        # fall from the corroborated peak that signals death
+INFERTILE_MAX_DAY = 1.5           # "never developed" ceiling
+INFERTILE_MIN_SPAN_DAYS = 2.5     # sustained over at least this much real time
+INFERTILE_MIN_OBS = 3             # across at least this many candlings
+
 
 def _ts(dt: datetime) -> float:
     return dt.replace(tzinfo=timezone.utc).timestamp() if dt else 0.0
@@ -79,34 +91,65 @@ def assess_growth(
     latest_day = float(latest.get("day_estimate") or 0.0)
     latest_stage = latest.get("stage") or "unclear"
 
-    # Viability from the most recent readings (need corroboration — a single
-    # blurry frame shouldn't condemn an egg).
+    # Development-per-real-day between the first and last reading (endpoint slope).
+    day_values = [float(o.get("day_estimate") or 0.0) for o in obs]
+    span_days = (obs[-1].get("created_ts", 0.0) - obs[0].get("created_ts", 0.0)) / 86400.0
+    growth_per_day = None
+    if len(obs) >= 2 and span_days >= 0.5:
+        growth_per_day = round((day_values[-1] - day_values[0]) / span_days, 2)
+
+    # ── Viability: three independent signals, any one condemns the egg ────────
+    # All require corroboration so a single blurry frame never culls a good egg.
+
+    # 1) Classifier labels — 2+ of the last 3 readings look infertile / dead.
     recent = obs[-3:]
     nonviable_hits = sum(
         1 for o in recent
         if (o.get("label") in NONVIABLE_LABELS) or o.get("stage") == "infertile"
     )
-    nonviable = nonviable_hits >= 2
-    viable = not nonviable
+    label_nonviable = nonviable_hits >= 2
 
-    # Development-per-real-day between the first and last reading.
-    growth_per_day = None
-    if len(obs) >= 2:
-        span_days = (obs[-1].get("created_ts", 0.0) - obs[0].get("created_ts", 0.0)) / 86400.0
-        if span_days >= 0.5:
-            first_day = float(obs[0].get("day_estimate") or 0.0)
-            growth_per_day = round((latest_day - first_day) / span_days, 2)
+    # 2) Regression — development climbed to a corroborated peak, then fell well
+    #    back. The classic "died in the shell, contents clearing" trajectory.
+    #    The peak must be seen 2+ times so one spurious high frame can't fake it.
+    peak_day = max(day_values)
+    near_peak = sum(1 for d in day_values if d >= peak_day - 1.0)
+    recent_high = max(day_values[-2:]) if len(day_values) >= 2 else peak_day
+    regressed = (
+        near_peak >= 2
+        and peak_day >= REGRESSION_MIN_PEAK_DAYS
+        and (peak_day - recent_high) >= REGRESSION_DROP_DAYS
+    )
+
+    # 3) Never developed — several candlings over a meaningful real span with the
+    #    estimate stuck near zero: a clear (infertile) egg that never started.
+    stagnant_infertile = (
+        len(obs) >= INFERTILE_MIN_OBS
+        and span_days >= INFERTILE_MIN_SPAN_DAYS
+        and peak_day <= INFERTILE_MAX_DAY
+    )
+
+    nonviable = label_nonviable or regressed or stagnant_infertile
+    viable = not nonviable
 
     actions: list[dict[str, str]] = []
 
     if nonviable:
-        status = "nonviable"
-        actions.append({
-            "action": "flag_nonviable",
-            "reason": f"{nonviable_hits} recent readings look infertile / non-viable",
-        })
+        if label_nonviable:
+            reason = f"{nonviable_hits} recent readings look infertile / non-viable"
+        elif regressed:
+            reason = (
+                f"development reversed (peaked ~day {round(peak_day)}, now ~day "
+                f"{round(latest_day)}) — likely dead in shell"
+            )
+        else:
+            reason = (
+                f"no development across {round(span_days)} days of candling "
+                f"— likely infertile / clear"
+            )
+        actions.append({"action": "flag_nonviable", "reason": reason})
         return {
-            "status": status, "latest_day": round(latest_day, 1), "latest_stage": latest_stage,
+            "status": "nonviable", "latest_day": round(latest_day, 1), "latest_stage": latest_stage,
             "growth_per_day": growth_per_day, "observation_count": len(obs),
             "viable": viable, "recommended_actions": actions,
         }
