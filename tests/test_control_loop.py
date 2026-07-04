@@ -70,6 +70,14 @@ def test_turn_due():
     assert turn_due(10_000, 0, 0) is False                   # disabled
 
 
+def test_turn_due_clamps_backward_clock_jump():
+    # Clock-sanity: a power cut on an RTC-less unit can boot the clock BEHIND
+    # last_turn_ts. Without the clamp the negative delta would defer the turn
+    # for hours; we treat it as due instead so eggs never miss a turn.
+    assert turn_due(5_000, 9_000, 3) is True                 # now < last_turn → due
+    assert turn_due(9_000 - 1, 9_000, 3) is True             # just behind → due
+
+
 def test_failsafe_is_heater_off():
     assert failsafe_outputs()["heater"] is False
 

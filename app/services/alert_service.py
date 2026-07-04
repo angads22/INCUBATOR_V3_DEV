@@ -25,12 +25,19 @@ if TYPE_CHECKING:
 # hovering at the boundary does not make the buzzer flap.
 RANGE_DEBOUNCE_POLLS = 2
 
+# Consecutive mismatched polls before a heater-circuit fault is raised. Higher
+# than the range debounce because relays switch between polls and inrush settles
+# — we only want to alarm on a persistent commanded-vs-measured disagreement.
+HEATER_DEBOUNCE_POLLS = 3
+
 ALERT_MESSAGES = {
     "temp_low": "Temperature is below the target range",
     "temp_high": "Temperature is above the target range",
     "humidity_low": "Humidity is below the target range",
     "humidity_high": "Humidity is above the target range",
     "sensor_offline": "Sensor is not responding — live readings are unavailable",
+    "heater_cutoff": "Heater is ON but no current is flowing — the thermal cutoff may have tripped or the heater is disconnected",
+    "heater_stuck": "Current is flowing to the heater while it is commanded OFF — the relay may be stuck closed",
 }
 
 
@@ -55,6 +62,7 @@ class AlertService:
         self._online = False
         self._fail_count = 0
         self._range_counts: dict[str, int] = {}
+        self._heater_counts: dict[str, int] = {}
         self._active: dict[str, str] = {}  # alert type -> ISO timestamp raised
         self._silenced = False
         self._alarm_on = False
@@ -66,6 +74,7 @@ class AlertService:
             self._online = False
             self._fail_count = 0
             self._range_counts = {}
+            self._heater_counts = {}
             self._active = {}
             self._silenced = False
             self._alarm_on = False
@@ -103,6 +112,49 @@ class AlertService:
                     events += self._raise("sensor_offline")
             self._apply_alarm(app_settings)
         return events
+
+    def evaluate_heater(
+        self,
+        commanded_on: bool,
+        present: bool,
+        amps: float | None,
+        app_settings: dict[str, str],
+    ) -> list[dict[str, str]]:
+        """Cross-check commanded heater state against measured current.
+
+        Requires an INA219 current sensor on the heater leg (present=True). Two
+        persistent faults, each latched into the alarm after HEATER_DEBOUNCE_POLLS:
+          * ``heater_cutoff`` — commanded ON but ~0 A: the independent thermal
+            cutoff tripped, or the element/relay opened. Heating has stopped.
+          * ``heater_stuck``  — current flowing while commanded OFF: the relay
+            welded closed / SSR shorted. Heating cannot be turned off in software.
+        Both drive the buzzer via the existing alarm path. When no sensor is
+        fitted the check is a no-op (and any prior heater fault is cleared).
+        """
+        events: list[dict[str, str]] = []
+        with self._lock:
+            if not present or amps is None:
+                events += self._clear("heater_cutoff")
+                events += self._clear("heater_stuck")
+                self._heater_counts.clear()
+                self._apply_alarm(app_settings)
+                return events
+            threshold = _get_float(app_settings, "alert_heater_current_min_a", 0.05)
+            events += self._debounced_heater("heater_cutoff", commanded_on and amps < threshold)
+            events += self._debounced_heater("heater_stuck", (not commanded_on) and amps >= threshold)
+            self._apply_alarm(app_settings)
+        return events
+
+    def _debounced_heater(self, alert_type: str, faulted: bool) -> list[dict[str, str]]:
+        """Raise after HEATER_DEBOUNCE_POLLS consecutive faults; clear otherwise.
+        Call with self._lock held."""
+        if faulted:
+            self._heater_counts[alert_type] = self._heater_counts.get(alert_type, 0) + 1
+            if self._heater_counts[alert_type] >= HEATER_DEBOUNCE_POLLS:
+                return self._raise(alert_type)
+            return []
+        self._heater_counts[alert_type] = 0
+        return self._clear(alert_type)
 
     # ------------------------------------------------------------------
     # State for the UI

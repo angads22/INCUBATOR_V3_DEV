@@ -443,6 +443,18 @@ verify_artifact() {
         grep -q "root=PARTUUID=" "$b/cmdline.txt"      && pass "cmdline root=PARTUUID" || fail "cmdline has no PARTUUID root="
         ! grep -qE "ROOTDEV|BOOTDEV" "$b/cmdline.txt"  && pass "cmdline has no placeholders" || fail "cmdline still has ROOTDEV/BOOTDEV placeholder"
         [[ "$(awk 'END{print NR}' "$b/cmdline.txt")" -le 1 ]] && pass "cmdline is a single line" || fail "cmdline.txt is not a single line"
+        # I2C bus + DS3231 RTC overlay baked (optional hardware; overlay no-ops if
+        # no chip is fitted, but the lines must be present so a fitted RTC binds).
+        if [[ -f "$b/config.txt" ]] && grep -qE '^[[:space:]]*dtparam=i2c_arm=on' "$b/config.txt"; then
+            pass "I2C bus enabled in config.txt"
+        else
+            fail "dtparam=i2c_arm=on missing from config.txt — RTC/INA219 bus would be off"
+        fi
+        if [[ -f "$b/config.txt" ]] && grep -qE '^[[:space:]]*dtoverlay=i2c-rtc,ds3231' "$b/config.txt"; then
+            pass "DS3231 RTC overlay baked"
+        else
+            fail "dtoverlay=i2c-rtc,ds3231 missing from config.txt — a fitted RTC would not bind"
+        fi
         if [[ "$ENABLE_SSH" == "1" ]]; then
             [[ -e "$b/ssh" || -e "$b/ssh.txt" ]] && pass "ssh enable flag present" || fail "ssh flag file missing from boot partition"
         fi

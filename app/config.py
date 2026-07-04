@@ -117,6 +117,21 @@ class Settings:
     sensor_poll_interval_seconds: int = field(default_factory=lambda: int(os.getenv("SENSOR_POLL_INTERVAL", "30")))
     sensor_log_to_db: bool = field(default_factory=lambda: os.getenv("SENSOR_LOG_TO_DB", "true").lower() == "true")
 
+    # --- Heater-circuit integrity (optional INA219 current sensor) ---
+    # When a current sensor is fitted on the heater leg, the poller cross-checks
+    # the commanded heater state against measured current every poll:
+    #   * commanded ON but ~0 A  → the independent thermal cutoff tripped, or the
+    #                              element / relay opened (see HARDWARE_SAFETY_ADDENDUM);
+    #   * commanded OFF but current flowing → the relay welded closed / SSR shorted.
+    # Either raises a latched alarm. OFF by default — the I2C bus is never touched
+    # unless a unit actually has the sensor, so default behaviour is unchanged.
+    heater_current_sense_enabled: bool = field(default_factory=lambda: os.getenv("HEATER_CURRENT_SENSE_ENABLED", "false").lower() == "true")
+    heater_current_i2c_bus: int = field(default_factory=lambda: int(os.getenv("HEATER_CURRENT_I2C_BUS", "1")))
+    # I2C address of the INA219 (0x40 default; hex or decimal accepted).
+    heater_current_i2c_addr: int = field(default_factory=lambda: int(os.getenv("HEATER_CURRENT_I2C_ADDR", "0x40"), 0))
+    # Shunt resistor on the INA219 breakout (ohms). ZS-042/most modules ship 0.1Ω.
+    heater_current_shunt_ohms: float = field(default_factory=lambda: float(os.getenv("HEATER_CURRENT_SHUNT_OHMS", "0.1")))
+
     # --- Cloud / OTA (optional) ---
     enable_cloud_sync: bool = field(default_factory=lambda: os.getenv("ENABLE_CLOUD_SYNC", "false").lower() == "true")
     domain_api_base: str = field(default_factory=lambda: os.getenv("DOMAIN_API_BASE", "").strip())

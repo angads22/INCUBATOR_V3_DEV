@@ -64,10 +64,19 @@ def humidity_decision(hum_pct: float | None, target_pct: float, tolerance_pct: f
 
 
 def turn_due(now_ts: float, last_turn_ts: float | None, interval_hours: float) -> bool:
-    """Whether the egg turner is due to run."""
+    """Whether the egg turner is due to run.
+
+    Clock-sanity: a backward wall-clock jump (power cut on an RTC-less unit,
+    or a bad NTP step) makes ``now_ts - last_turn_ts`` negative, which would
+    otherwise defer the next turn for hours. If the clock has rolled back
+    behind the last turn, treat a turn as due rather than waiting out a bogus
+    interval — a slightly early turn is harmless, a skipped one is not.
+    """
     if interval_hours <= 0:
         return False
     if last_turn_ts is None:
+        return True
+    if now_ts < last_turn_ts:
         return True
     return (now_ts - last_turn_ts) >= interval_hours * 3600.0
 
