@@ -64,6 +64,10 @@ class GPIOService:
         setup_button_pin: int,
         relay_active_low: bool = True,
         mock: bool = False,
+        heater_current_enabled: bool = False,
+        heater_current_bus: int = 1,
+        heater_current_addr: int = 0x40,
+        heater_current_shunt_ohms: float = 0.1,
     ) -> None:
         self.dht_pin = dht_pin
         self.heater_pin = heater_pin
@@ -77,6 +81,13 @@ class GPIOService:
         self.setup_button_pin = setup_button_pin
         self.relay_active_low = relay_active_low
         self._mock = mock or not _HAS_GPIO
+        # Optional INA219 heater-current sensor (see read_heater_current).
+        self._heater_current_enabled = heater_current_enabled
+        self._heater_current_bus_num = heater_current_bus
+        self._heater_current_addr = heater_current_addr
+        self._heater_current_shunt_ohms = heater_current_shunt_ohms
+        self._ina_bus: Any = None
+        self._ina_attempted = False
         self._lock = threading.Lock()
         self._mock_state: dict[str, Any] = {
             "heater": False,
@@ -198,6 +209,67 @@ class GPIOService:
         if self._mock:
             return False
         return not self._digital_read(self.setup_button_pin)
+
+    # ------------------------------------------------------------------
+    # Heater-current sensing (optional INA219 on the free I2C bus)
+    # ------------------------------------------------------------------
+
+    def _ensure_ina219(self) -> Any:
+        """Lazily open the I2C bus for the INA219 (idempotent, best-effort).
+
+        Uses smbus2 / smbus if present; if neither the library nor the bus is
+        available the sensor is simply reported absent — the feature is optional
+        and must never crash the poller. Nothing is imported or opened unless the
+        operator enabled the sensor, so units without it pay nothing.
+        """
+        if self._ina_bus is not None:
+            return self._ina_bus
+        if self._ina_attempted:
+            return None
+        self._ina_attempted = True
+        try:
+            try:
+                from smbus2 import SMBus  # type: ignore
+            except ImportError:
+                from smbus import SMBus  # type: ignore
+            self._ina_bus = SMBus(self._heater_current_bus_num)
+            logger.info(
+                "INA219 heater-current sensor opened on i2c-%d addr 0x%02x",
+                self._heater_current_bus_num, self._heater_current_addr,
+            )
+        except Exception as exc:  # noqa: BLE001 — optional sensor, degrade gracefully
+            logger.warning("INA219 unavailable (heater-current sensing off): %s", exc)
+            self._ina_bus = None
+        return self._ina_bus
+
+    def read_heater_current(self) -> dict[str, Any]:
+        """Read heater-leg current from the INA219, if fitted.
+
+        Returns {"ok", "present", "amps"}. ``present`` is False (and ``amps``
+        None) when the sensor is disabled, mocked, or unreadable, so callers can
+        cleanly skip the integrity check. Reads the shunt-voltage register (0x01,
+        signed, 10 µV/LSB) directly and divides by the shunt resistance — no
+        calibration write needed, and the INA219's power-on default config
+        already samples the shunt continuously.
+        """
+        if self._mock or not self._heater_current_enabled:
+            return {"ok": True, "present": False, "amps": None}
+        bus = self._ensure_ina219()
+        if bus is None:
+            return {"ok": True, "present": False, "amps": None}
+        try:
+            raw = bus.read_word_data(self._heater_current_addr, 0x01)
+            # SMBus returns the word little-endian; the INA219 is big-endian.
+            raw = ((raw & 0xFF) << 8) | (raw >> 8)
+            if raw > 0x7FFF:
+                raw -= 0x10000
+            shunt_v = raw * 1e-5  # 10 µV per LSB
+            shunt = self._heater_current_shunt_ohms or 0.1
+            amps = abs(shunt_v / shunt)
+            return {"ok": True, "present": True, "amps": round(amps, 3)}
+        except Exception as exc:  # noqa: BLE001 — a bad read must not break polling
+            logger.debug("INA219 read failed: %s", exc)
+            return {"ok": False, "present": True, "amps": None}
 
     # ------------------------------------------------------------------
     # Output control

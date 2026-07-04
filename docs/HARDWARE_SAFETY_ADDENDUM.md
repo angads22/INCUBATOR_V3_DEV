@@ -124,7 +124,12 @@ add current sensing on the heater leg:
   relay has faulted.
 - No UI redesign: reuse the existing alert banner + buzzer paths.
 
-I can implement this diagnostics hook in a follow-up image if you add the INA219.
+**Implemented.** `GPIOService.read_heater_current()` reads the INA219 shunt
+register directly (no extra pip deps — `smbus2`/`smbus`, lazy-opened, fully
+optional), and `AlertService.evaluate_heater()` raises a debounced, latched
+`hardware.heater_cutoff` / `hardware.heater_stuck` alarm through the existing
+buzzer path. Gated by `HEATER_CURRENT_SENSE_ENABLED` (default off), so a unit
+without the sensor never touches the I²C bus. Add the INA219 and flip the flag.
 
 ### BOM — Part 1
 
@@ -209,38 +214,39 @@ Changes to `init_pi.sh` / boot config — no app redesign:
    The kernel then binds the DS3231 as `/dev/rtc0` at boot and `hwclock` reads it
    before the app starts.
 
-2. **Disable `fake-hwclock`** so it doesn't fight the real RTC:
-   ```
-   systemctl disable --now fake-hwclock
-   apt-get -y remove fake-hwclock        # or leave installed but masked
-   update-rc.d -f fake-hwclock remove
-   ```
-   Then remove the `/lib/udev/hwclock-set` `--systz` lines per the standard
-   Raspberry Pi RTC procedure so systemd doesn't re-stamp the clock.
+2. **Keep `fake-hwclock` ENABLED (deliberate).** The standard single-board
+   guidance disables it, but this is a mixed fleet: a farmer may or may not fit
+   the DS3231. `fake-hwclock` is the clock fallback for units **without** an RTC,
+   so disabling it would regress them (worse clock, not better). A fitted DS3231
+   takes precedence at boot via the kernel `rtc` class regardless, so the two
+   coexist safely. **Implemented this way** in `init_pi.sh`.
 
 3. **Write-back on NTP sync:** with `systemd-timesyncd` active and the overlay
    loaded, the kernel syncs system→RTC automatically once NTP lands. No cron
    needed on modern Bookworm; a `hwclock -w` in the timesync `ExecStartPost` is
    belt-and-suspenders if desired.
 
-4. **Image gate:** extend `verify_artifact()` in `build_image.sh` to assert the
-   two config.txt lines and that `fake-hwclock` is disabled — same zero-tolerance
-   pattern as the existing checks.
+4. **Image gate:** `verify_artifact()` in `build_image.sh` asserts the two
+   config.txt lines (`dtparam=i2c_arm=on`, `dtoverlay=i2c-rtc,ds3231`) — same
+   zero-tolerance pattern as the existing checks. **Implemented.**
 
 ### Software robustness (defense in depth — worth doing regardless)
 
 Even with the RTC fitted, make the incubation math clock-jump-tolerant so a dead
-coin-cell or a bad NTP step can't corrupt a hatch:
+coin-cell or a bad NTP step can't corrupt a hatch (**all three implemented**):
 
-- **Anchor incubation to an absolute `started_at`** stored in the DB and compute
-  day-of-incubation as `now - started_at`. Already largely the case — audit that
-  no schedule logic uses uptime/monotonic-only.
-- **Boot-time clock sanity:** persist a `last_known_good_ts` each control
-  iteration; on startup, if `now < last_known_good_ts`, mark `clock_suspect` and
-  prefer the RTC/NTP value, logging `system.clock_rolled_back`.
-- **Turner scheduler:** `turn_due()` uses `time.time()` deltas; a large backward
-  jump defers the next turn. Clamp: if `now_ts < last_turn_ts`, treat as due
-  rather than waiting out a bogus interval.
+- **Incubation day comes from the vision model, not the wall clock.** The
+  development day-estimate is produced per-candling by `predict_stage()` and the
+  growth timeline uses observation *deltas*, so day-of-incubation is already
+  robust to an absolute-clock jump. Audited — no schedule logic depends on
+  uptime/monotonic-only, so no artificial `started_at` anchor was needed.
+- **Boot-time clock sanity:** `_detect_clock_rollback()` in `app/main.py`
+  compares the system clock at boot against the newest persisted log timestamp;
+  if it booted >60 s behind, it logs `system.clock_rolled_back` (RTC/NTP then
+  corrects the clock). Reuses existing log rows — no extra SD writes.
+- **Turner scheduler:** `turn_due()` now clamps a backward jump — if
+  `now_ts < last_turn_ts` it treats a turn as due rather than waiting out a
+  bogus interval, so eggs never miss a turn after a clock reset.
 
 ### BOM — Part 2
 

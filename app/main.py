@@ -85,6 +85,10 @@ gpio_service = GPIOService(
     setup_button_pin=settings.gpio_setup_button_pin,
     relay_active_low=settings.gpio_relay_active_low,
     mock=settings.gpio_mock,
+    heater_current_enabled=settings.heater_current_sense_enabled,
+    heater_current_bus=settings.heater_current_i2c_bus,
+    heater_current_addr=settings.heater_current_i2c_addr,
+    heater_current_shunt_ohms=settings.heater_current_shunt_ohms,
 )
 
 camera_service = CameraService(
@@ -313,6 +317,29 @@ class _SensorPoller(threading.Thread):
                 db.add(ActionLog(action=f"system.{event['type']}", payload=event["message"]))
             if events:
                 db.commit()
+            # Heater-circuit integrity (optional INA219 current sense): a tripped
+            # thermal cutoff (commanded ON, ~0 A) or a welded relay (current while
+            # OFF) latches an alarm. Runs independently of the DHT read so it still
+            # fires when the temp sensor is offline. No-op unless a sensor is fitted.
+            if settings.heater_current_sense_enabled:
+                try:
+                    commanded_heat = (
+                        bool(reading.get("heater_on"))
+                        if settings.control_daemon_enabled
+                        else bool(gpio_service.get_state().get("heater"))
+                    )
+                    current = gpio_service.read_heater_current()
+                    hevents = alert_service.evaluate_heater(
+                        commanded_heat, current.get("present", False),
+                        current.get("amps"), get_settings(db),
+                    )
+                    for event in hevents:
+                        logger.warning("Heater alert: %s", event["type"])
+                        db.add(ActionLog(action=f"hardware.{event['type']}", payload=event["message"]))
+                    if hevents:
+                        db.commit()
+                except Exception as exc:  # noqa: BLE001 — never let it break polling
+                    logger.debug("heater current check skipped: %s", exc)
             # Push the freshest snapshot (online or offline) onto the fleet bus.
             if fleet_service is not None:
                 fleet_service.publish_telemetry()
@@ -368,6 +395,64 @@ def _ensure_egg_roi_columns() -> None:
         logger.warning("ROI column check skipped: %s", exc)
 
 
+def _detect_clock_rollback(db: Session) -> None:
+    """Record if the system clock booted earlier than our newest log entry.
+
+    An RTC-less Pi Zero freezes its clock across a power cut, so on boot it can
+    read *earlier* than events we already persisted. This does not fix the clock
+    (the optional DS3231 RTC / NTP does that) — it just leaves a breadcrumb so a
+    backwards jump in the timeline is explainable and an operator knows an RTC is
+    worth fitting. Reuses existing log timestamps: one cheap query, no new writes
+    on the SD card unless a rollback is actually detected.
+    """
+    from datetime import datetime as _dt
+
+    from sqlalchemy import text
+
+    try:
+        row = db.execute(
+            text(
+                "SELECT MAX(ts) FROM ("
+                "  SELECT MAX(created_at) AS ts FROM action_logs"
+                "  UNION ALL SELECT MAX(captured_at) AS ts FROM sensor_logs"
+                ")"
+            )
+        ).fetchone()
+    except Exception as exc:  # noqa: BLE001 — never block startup on this check
+        logger.debug("clock-rollback check skipped: %s", exc)
+        return
+
+    newest_raw = row[0] if row else None
+    if not newest_raw:
+        return
+    try:
+        newest = _dt.fromisoformat(str(newest_raw))
+    except ValueError:
+        return
+
+    now = _utcnow_naive()
+    # Only flag a meaningful rollback (>60s) so ordinary sub-second write/read
+    # skew never trips it.
+    drift = (newest - now).total_seconds()
+    if drift > 60:
+        mins = round(drift / 60.0, 1)
+        logger.warning(
+            "System clock is %.1f min behind the newest log entry — likely a "
+            "power-cut clock reset on a unit without an RTC.", mins,
+        )
+        db.add(ActionLog(
+            action="system.clock_rolled_back",
+            payload=f"system clock ~{mins} min behind last record; RTC/NTP will correct it",
+        ))
+        db.commit()
+
+
+def _utcnow_naive() -> "Any":
+    from datetime import datetime as _dt, timezone as _tz
+
+    return _dt.now(_tz.utc).replace(tzinfo=None)
+
+
 @app.on_event("startup")
 def startup() -> None:
     # Ensure database directory exists
@@ -407,6 +492,9 @@ def startup() -> None:
         device_id = config.device_id
         device_name = config.device_name or ""
         ensure_defaults(db)
+
+        # Note (don't fix) a power-cut clock reset on an RTC-less unit.
+        _detect_clock_rollback(db)
 
         # Boot sequence — starts AP if device is unconfigured
         onboarding_service.boot(db, device_id)

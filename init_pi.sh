@@ -246,6 +246,32 @@ RuntimeWatchdogSec=14
 RebootWatchdogSec=2min
 EOF
 
+# ── I2C bus + optional DS3231 RTC ────────────────────────────
+# Enable the I2C bus and register the DS3231 real-time-clock overlay. Both the
+# battery-backed RTC (holds wall-clock across a power cut so incubation day-count
+# and the turn schedule don't drift on a unit with no internet) and the optional
+# INA219 heater-current sensor live on this bus. Everything here is a no-op when
+# the hardware isn't fitted: an idle I2C bus costs nothing, and the overlay
+# simply fails to bind if no chip ACKs at 0x68. See docs/HARDWARE_SAFETY_ADDENDUM.md.
+#
+# fake-hwclock is deliberately LEFT ENABLED: it is the clock fallback for units
+# WITHOUT an RTC, and disabling it would regress them. A fitted DS3231 takes
+# precedence at boot via the kernel rtc class regardless.
+info "Enabling I2C + DS3231 RTC overlay (optional hardware; no-op if absent)..."
+BOOT_CONFIG=""
+for _cfg in /boot/firmware/config.txt /boot/config.txt; do
+    [ -f "$_cfg" ] && { BOOT_CONFIG="$_cfg"; break; }
+done
+if [ -n "$BOOT_CONFIG" ]; then
+    grep -qE '^[[:space:]]*dtparam=i2c_arm=on' "$BOOT_CONFIG" \
+        || echo 'dtparam=i2c_arm=on' >> "$BOOT_CONFIG"
+    grep -qE '^[[:space:]]*dtoverlay=i2c-rtc,ds3231' "$BOOT_CONFIG" \
+        || echo 'dtoverlay=i2c-rtc,ds3231' >> "$BOOT_CONFIG"
+    info "  I2C + RTC overlay written to ${BOOT_CONFIG}"
+else
+    warn "No boot config.txt found — skipping I2C/RTC overlay (add it manually if needed)."
+fi
+
 # ── systemd service ──────────────────────────────────────────
 info "Installing systemd service..."
 sed \

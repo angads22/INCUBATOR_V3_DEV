@@ -16,6 +16,9 @@ DEFAULT_SETTINGS = {
     "alert_temp_tolerance_c": "1.0",
     "alert_humidity_tolerance_pct": "10",
     "alert_sensor_fail_count": "3",
+    # Min heater-leg current (A) that counts as "flowing" for the optional
+    # INA219 heater-integrity check (see HEATER_CURRENT_SENSE_ENABLED).
+    "alert_heater_current_min_a": "0.05",
     "private_access_hint": "vpn_or_reverse_proxy",
 }
 
