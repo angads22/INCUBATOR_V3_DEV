@@ -487,6 +487,10 @@ verify_artifact() {
         if [[ -f "$r/etc/incubator.env" ]]; then
             grep -q "^INCUBATOR_AP_PASSWORD=$" "$r/etc/incubator.env" \
                 && pass "setup AP is open (no baked password)" || fail "INCUBATOR_AP_PASSWORD is non-empty — setup network would be locked"
+            # Closed-loop temperature control must be ON out of the box, else a
+            # flashed unit would monitor + alarm but never actually hold temp.
+            grep -q "^CONTROL_DAEMON_ENABLED=true" "$r/etc/incubator.env" \
+                && pass "auto thermostat enabled (control daemon on)" || fail "CONTROL_DAEMON_ENABLED != true — unit would not regulate temperature automatically"
         else
             fail "/etc/incubator.env missing"
         fi

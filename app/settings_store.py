@@ -7,7 +7,10 @@ from .models import AppSetting
 DEFAULT_SETTINGS = {
     "target_temp_c": "37.5",
     "target_humidity_pct": "55",
-    "heater_enabled": "false",
+    # Heater ON by default so a freshly-flashed unit regulates temperature out of
+    # the box (the control daemon holds target_temp_c and fails safe — heater OFF
+    # — on any sensor loss). Operators can still disable it from the UI.
+    "heater_enabled": "true",
     "fan_enabled": "true",
     "turner_enabled": "true",
     "alarm_enabled": "true",
