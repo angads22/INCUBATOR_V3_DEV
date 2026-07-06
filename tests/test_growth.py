@@ -40,6 +40,45 @@ def test_nonviable_from_labels():
     assert any(x["action"] == "flag_nonviable" for x in a["recommended_actions"])
 
 
+def test_regression_flags_dead_in_shell():
+    # Developed to a corroborated peak (~day 9, seen twice) then reversed hard —
+    # embryo died and the contents are clearing. Caught with no classifier label.
+    obs = [_o(6, age_days=4), _o(9, age_days=3), _o(8, age_days=2),
+           _o(3, age_days=1), _o(2, age_days=0)]
+    a = assess_growth(obs, 21, now_ts=NOW)
+    assert a["status"] == "nonviable" and a["viable"] is False
+    act = next(x for x in a["recommended_actions"] if x["action"] == "flag_nonviable")
+    assert "reversed" in act["reason"]
+
+
+def test_stagnant_near_zero_flags_infertile():
+    # Three candlings across 3 days, estimate never leaves ~0 → clear/infertile,
+    # even though nothing was ever *labelled* infertile.
+    obs = [_o(0.2, stage="unclear", age_days=3),
+           _o(0.3, stage="unclear", age_days=1.5),
+           _o(0.1, stage="unclear", age_days=0)]
+    a = assess_growth(obs, 21, now_ts=NOW)
+    assert a["status"] == "nonviable" and a["viable"] is False
+    act = next(x for x in a["recommended_actions"] if x["action"] == "flag_nonviable")
+    assert "no development" in act["reason"]
+
+
+def test_early_low_readings_not_condemned():
+    # A genuinely early egg (only 2 candlings, one day apart, estimate rising)
+    # must NOT be culled — corroboration guards against premature flagging.
+    obs = [_o(0.5, stage="early", age_days=1), _o(1.2, stage="early", age_days=0)]
+    a = assess_growth(obs, 21, now_ts=NOW)
+    assert a["status"] == "developing" and a["viable"] is True
+
+
+def test_single_spurious_peak_is_not_regression():
+    # One blurry frame reads absurdly high; a real, rising trajectory otherwise.
+    # An uncorroborated peak must not be mistaken for death-in-shell.
+    obs = [_o(2, age_days=3), _o(15, age_days=2), _o(5, age_days=1), _o(6, age_days=0)]
+    a = assess_growth(obs, 21, now_ts=NOW)
+    assert a["status"] != "nonviable" and a["viable"] is True
+
+
 def test_ready_to_hatch_triggers_lockdown():
     a = assess_growth([_o(19, stage="late")], 21, now_ts=NOW)
     assert a["status"] == "ready_to_hatch"
