@@ -235,13 +235,16 @@ async function submitSetup() {
 
       // "Open now" is a real tap (user gesture), so try to hand off to the
       // system default browser via window.open \u2014 that's the only way to escape
-      // the captive-portal popup on most phones. Fall back to a same-context
-      // navigation if the browser blocks the new window.
+      // the captive-portal popup on most phones. It targets the DURABLE
+      // address (not the hotspot IP): while the AP is still up, the captive
+      // DNS hijack + avahi resolve it here too, and after the operator
+      // reconnects to their home Wi-Fi the very same link keeps working \u2014
+      // the hotspot IP would die seconds after the radio flips.
       if (link) {
-        link.href = openUrl;
+        link.href = appUrl;
         link.setAttribute('rel', 'noopener');
         link.addEventListener('click', (e) => {
-          const w = window.open(openUrl, '_blank');
+          const w = window.open(appUrl, '_blank');
           if (w) { e.preventDefault(); }   // opened in the real browser
           // else: let the href navigate in place
         });
@@ -295,20 +298,17 @@ async function submitSetup() {
         });
       }
 
-      // Best-effort auto-open on the reachable hotspot IP so something appears
-      // without a tap. (A timer isn't a user gesture, so it must navigate in
-      // place rather than open a new browser window.)
-      let countdown = 4;
+      // Deliberately NO auto-redirect. This page needs no further contact with
+      // the device, so it survives in the browser even after the setup network
+      // drops \u2014 the copy button and instructions keep working while the
+      // incubator switches to home Wi-Fi. The old 4-second auto-navigation
+      // yanked the user to a dashboard that died seconds later when the AP
+      // went down, erasing these instructions before anyone could read them.
+      void openUrl; // kept in the response payload for API compatibility
       const openNow = document.getElementById('finishOpenNote');
-      const tick = setInterval(() => {
-        countdown -= 1;
-        if (openNow) openNow.textContent = `Opening your incubator in ${countdown}\u2026`;
-        if (countdown <= 0) {
-          clearInterval(tick);
-          if (openNow) openNow.textContent = 'Opening your incubator\u2026';
-          window.location.href = openUrl;
-        }
-      }, 1000);
+      if (openNow) {
+        openNow.textContent = 'Keep this page open \u2014 follow the steps below.';
+      }
     } else {
       title.textContent = 'Setup Error';
       result.textContent = data.detail || 'Unknown error. Please retry.';
