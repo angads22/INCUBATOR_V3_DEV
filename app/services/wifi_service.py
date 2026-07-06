@@ -363,25 +363,103 @@ class WiFiService:
     # ------------------------------------------------------------------
 
     def connect_client(self, ssid: str, password: str) -> bool:
-        """Connect wlan0 to a WiFi network as a client."""
+        """Connect wlan0 to a WiFi network as a client.
+
+        This runs seconds after the setup AP was torn down, and the single
+        radio has not scanned since before the AP came up — NetworkManager's
+        scan cache is stale/empty. ``nmcli device wifi connect`` refuses to
+        join an SSID it cannot see ("No network with SSID ..."), which used to
+        make the first join after onboarding fail almost every time. So:
+
+          1. rescan now that the radio is free, and wait for the SSID to show;
+          2. try the normal ``device wifi connect`` (creates a saved profile);
+          3. if that still fails, build an explicit connection profile and
+             activate it — profile activation probes for the network directly
+             and does not depend on the scan cache at all.
+        """
         try:
             ssid = _safe_ssid(ssid)
-            cmd = ["device", "wifi", "connect", ssid, "ifname", "wlan0"]
             if password:
                 password = _safe_pass(password)
+        except ValueError as exc:
+            logger.warning("WiFi connect rejected — invalid credentials: %s", exc)
+            return False
+        try:
+            self._prepare_radio()
+            self._wait_for_ssid_visible(ssid, timeout=20.0)
+            cmd = ["device", "wifi", "connect", ssid, "ifname", "wlan0"]
+            if password:
                 cmd += ["password", password]
             result = _nmcli(*cmd, check=False)
             if result.returncode == 0:
                 logger.info("Connected to WiFi '%s'", ssid)
                 return True
-            logger.warning("WiFi connect failed (rc=%d): %s", result.returncode, result.stderr.strip())
-        except ValueError as exc:
-            logger.warning("WiFi connect rejected — invalid credentials: %s", exc)
+            logger.warning(
+                "WiFi connect failed (rc=%d): %s — retrying via explicit profile",
+                result.returncode, result.stderr.strip(),
+            )
+            return self._connect_via_profile(ssid, password)
         except FileNotFoundError:
             logger.debug("nmcli not found — WiFi connect simulated")
             return True
         except Exception as exc:
             logger.warning("Unexpected error connecting to WiFi: %s", exc)
+        return False
+
+    def _wait_for_ssid_visible(self, ssid: str, timeout: float = 20.0) -> bool:
+        """Trigger a rescan (radio is free now) and wait for ``ssid`` to appear.
+
+        Best-effort: returns False on timeout, but callers proceed anyway — the
+        profile fallback can associate without the SSID ever entering the list.
+        """
+        _nmcli("device", "wifi", "rescan", check=False)
+        deadline = time.time() + max(2.0, timeout)
+        while time.time() < deadline:
+            if any(n.ssid == ssid for n in self._scan_raw(rescan="no")):
+                return True
+            time.sleep(2)
+        logger.info("SSID '%s' not visible after rescan — will probe directly", ssid)
+        return False
+
+    def _connect_via_profile(self, ssid: str, password: str) -> bool:
+        """Join by building an explicit NM profile and activating it.
+
+        Activation probes for the network itself (``hidden yes`` forces active
+        scanning), so it works even when the scan cache never caught up. On
+        success the profile persists with autoconnect for future boots; on
+        failure it is deleted so a dead profile never fights the fallback AP.
+        """
+        _nmcli("connection", "delete", ssid, check=False)   # clear any stale twin
+        add = _nmcli(
+            "connection", "add", "type", "wifi",
+            "ifname", "wlan0", "con-name", ssid,
+            "autoconnect", "yes", "ssid", ssid,
+            check=False,
+        )
+        if add.returncode != 0:
+            logger.error("nmcli add profile for '%s' failed: %s", ssid, add.stderr.strip())
+            return False
+        mods = ["802-11-wireless.hidden", "yes"]
+        if password:
+            mods += [
+                "802-11-wireless-security.key-mgmt", "wpa-psk",
+                "802-11-wireless-security.psk", password,
+            ]
+        _nmcli("connection", "modify", ssid, *mods, check=False)
+        up = _nmcli("connection", "up", ssid, check=False)
+        if up.returncode == 0 and self._confirm_connected(ssid, timeout=20.0):
+            logger.info("Connected to WiFi '%s' via explicit profile", ssid)
+            return True
+        logger.warning("Profile activation for '%s' failed: %s", ssid, up.stderr.strip())
+        _nmcli("connection", "delete", ssid, check=False)
+        return False
+
+    def _confirm_connected(self, ssid: str, timeout: float = 20.0) -> bool:
+        deadline = time.time() + max(2.0, timeout)
+        while time.time() < deadline:
+            if self.get_connected_ssid() == ssid:
+                return True
+            time.sleep(2)
         return False
 
     def try_saved_connection(self, ssid: str, timeout: float = 25.0) -> bool:

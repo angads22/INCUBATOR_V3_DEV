@@ -38,7 +38,7 @@ def test_android_probe_serves_launcher_not_redirect(responder):
     resp = httpx.get(_base(responder) + "/generate_204", follow_redirects=False)
     assert resp.status_code == 200
     assert PORTAL in resp.text
-    assert "Open setup in your browser" in resp.text
+    assert "Open setup in my browser" in resp.text
 
 
 def test_catch_all_serves_launcher(responder):
