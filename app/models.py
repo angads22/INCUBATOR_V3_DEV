@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -19,6 +19,27 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(32), default="owner", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+
+
+class LinkedIdentity(Base):
+    """An external sign-in identity (Google / Apple) linked to a local user.
+
+    ``subject`` is the provider's stable user id (OIDC ``sub``) — never the
+    email, which can change or be re-assigned. A provider identity can be
+    linked to exactly one local account (unique per provider+subject), and one
+    account may link several providers.
+    """
+
+    __tablename__ = "linked_identities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)  # google | apple
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+
+    __table_args__ = (UniqueConstraint("provider", "subject", name="uq_identity_provider_subject"),)
 
 
 class DeviceConfig(Base):

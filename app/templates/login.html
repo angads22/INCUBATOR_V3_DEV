@@ -18,6 +18,32 @@
     <label>Password<input name="password" type="password" required /></label>
     <button class="btn btn-primary" type="submit">Login</button>
     <p id="login-msg" class="hint"></p>
+
+    <!-- Provider sign-in: hidden until /api/identity/config says a provider is
+         set up for this fleet. Google uses the device-code (TV) flow; Apple
+         goes through the fleet's HTTPS account portal. -->
+    <div id="identityProviders" hidden>
+      <p class="muted" style="text-align:center;margin:14px 0 8px">— or —</p>
+      <div class="button-row" style="flex-direction:column;gap:8px">
+        <button type="button" id="googleSignInBtn" class="btn btn-secondary" hidden>Continue with Google</button>
+        <button type="button" id="appleSignInBtn" class="btn btn-secondary" hidden>Continue with Apple</button>
+      </div>
+      <div id="googleDevicePanel" class="card" style="margin-top:10px" hidden>
+        <p class="muted" style="margin:0 0 6px">On your phone or computer, go to</p>
+        <p style="text-align:center;margin:4px 0"><code id="googleVerifyUrl" style="font-size:1.05rem"></code></p>
+        <p class="muted" style="margin:6px 0">and enter this code:</p>
+        <p style="text-align:center;margin:6px 0"><code id="googleUserCode" style="font-size:1.5rem;letter-spacing:0.15em;padding:6px 14px;-webkit-user-select:all;user-select:all"></code></p>
+        <p id="googleFlowMsg" class="hint" style="text-align:center">Waiting for you to approve…</p>
+      </div>
+      <div id="applePanel" class="card" style="margin-top:10px" hidden>
+        <p class="muted" style="margin:0 0 6px">Sign in with Apple on the account portal, then paste the code it gives you:</p>
+        <label>Portal code
+          <input id="brokerAssertion" type="text" autocomplete="off" placeholder="Paste the code here" />
+        </label>
+        <div class="button-row"><button type="button" id="brokerSubmitBtn" class="btn btn-primary">Verify</button></div>
+        <p id="appleFlowMsg" class="hint"></p>
+      </div>
+    </div>
     {% if has_account %}
     <p class="muted"><a href="/reset-password">Forgot password?</a></p>
     {% else %}
@@ -28,4 +54,5 @@
 {% endblock %}
 {% block scripts %}
 <script src="/static/js/login.js"></script>
+<script src="/static/js/identity.js"></script>
 {% endblock %}

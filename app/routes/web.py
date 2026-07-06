@@ -730,8 +730,18 @@ class LoginPayload(BaseModel):
 
 
 @router.post("/api/login")
-def api_login(payload: LoginPayload, response: Response, db: Session = Depends(get_db)) -> dict:
+def api_login(payload: LoginPayload, request: Request, response: Response, db: Session = Depends(get_db)) -> dict:
+    from ..auth import login_throttled, record_login_result
+
+    client_ip = request.client.host if request.client else "unknown"
+    wait = login_throttled(client_ip, payload.username)
+    if wait > 0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many failed attempts — try again in {int(wait) + 1} seconds",
+        )
     user = authenticate(db, payload.username, payload.password)
+    record_login_result(client_ip, payload.username, success=user is not None)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
     _set_session_cookie(response, create_session(db, user.id, settings.session_ttl_seconds))
