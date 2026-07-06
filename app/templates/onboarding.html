@@ -119,15 +119,19 @@
         <p id="finishOpenNote" class="hint" style="text-align:center;font-weight:600"></p>
         <a id="finishLink" href="/" class="btn btn-primary" style="display:block;text-align:center;margin:10px 0">Open my incubator now</a>
 
-        <div class="card" style="margin-top:14px;border:2px solid var(--brand,#3a7)">
-          <strong>📌 This is where your incubator lives</strong>
-          <p class="muted" style="margin:6px 0">Open this address in your normal browser (Safari or Chrome) and save it — it's how you'll reach your incubator from now on:</p>
-          <p style="text-align:center;margin:8px 0"><code id="finishUrl" style="font-size:1.05rem"></code></p>
+        <div class="card" style="margin-top:14px;border:2px solid var(--accent)">
+          <strong>📌 How to reach your incubator from now on</strong>
+          <ol class="stack-list" style="margin:10px 0;padding-left:22px">
+            <li><strong>Reconnect your phone to your home Wi-Fi</strong> <strong id="finishHomeSsid"></strong> — the <em>{{ ap_ssid }}</em> setup network is about to disappear.</li>
+            <li><strong>Open your browser</strong> (Safari or Chrome).</li>
+            <li><strong>Type this address into the address bar</strong> — tap it below to select it:</li>
+          </ol>
+          <p style="text-align:center;margin:10px 0"><code id="finishUrl" style="font-size:1.15rem;padding:8px 12px;display:inline-block;-webkit-user-select:all;user-select:all"></code></p>
           <div class="button-row" style="justify-content:center">
             <button type="button" id="finishCopyBtn" class="btn btn-secondary">Copy address</button>
           </div>
           <p id="finishCopyMsg" class="hint" style="text-align:center"></p>
-          <p class="muted" style="margin:8px 0 0"><strong>Bookmark</strong> it or use your browser menu to <strong>Add to Home Screen</strong> — then it's a single tap, just like an app. In a moment the incubator hops onto your home Wi-Fi <strong id="finishHomeSsid"></strong>; reconnect your phone to that Wi-Fi and use the address above.</p>
+          <p class="muted" style="margin:8px 0 0">Once it loads, <strong>bookmark it</strong> or use your browser menu to <strong>Add to Home Screen</strong> — then your incubator is one tap away, just like an app.</p>
         </div>
       </div>
     </article>

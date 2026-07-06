@@ -248,15 +248,49 @@ async function submitSetup() {
       }
 
       // Copy the durable address so the user can paste it into their browser.
+      // navigator.clipboard does NOT exist on plain-http pages (this setup page
+      // is http://10.42.0.1) — fall back to the legacy execCommand('copy')
+      // path, and if even that fails, select the address and say exactly how
+      // to copy it by hand.
       const copyBtn = document.getElementById('finishCopyBtn');
       const copyMsg = document.getElementById('finishCopyMsg');
+      const copyText = (text) => {
+        if (navigator.clipboard && window.isSecureContext) {
+          return navigator.clipboard.writeText(text);
+        }
+        return new Promise((resolve, reject) => {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          ta.setSelectionRange(0, text.length);  // iOS Safari needs the range
+          let ok = false;
+          try { ok = document.execCommand('copy'); } catch { ok = false; }
+          ta.remove();
+          ok ? resolve() : reject(new Error('execCommand copy failed'));
+        });
+      };
+      const selectUrl = () => {
+        if (!urlEl) return;
+        const range = document.createRange();
+        range.selectNodeContents(urlEl);
+        const sel = window.getSelection();
+        if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+      };
+      if (urlEl) urlEl.addEventListener('click', selectUrl);  // tap = select all
       if (copyBtn) {
         copyBtn.addEventListener('click', async () => {
           try {
-            await navigator.clipboard.writeText(appUrl);
-            if (copyMsg) copyMsg.textContent = 'Copied! Paste it into Safari or Chrome.';
+            await copyText(appUrl);
+            copyBtn.textContent = '✓ Copied';
+            if (copyMsg) copyMsg.textContent = 'Copied! Paste it into Safari or Chrome once you’re back on your home Wi-Fi.';
           } catch {
-            if (copyMsg) copyMsg.textContent = `Copy this: ${appUrl}`;
+            selectUrl();
+            if (copyMsg) copyMsg.textContent = 'The address above is selected — press and hold it, then choose Copy.';
           }
         });
       }

@@ -32,31 +32,48 @@ logger = logging.getLogger(__name__)
 
 
 def _landing_page(portal_url: str) -> bytes:
-    """A minimal captive-sheet launcher: one button into the real browser."""
+    """A minimal captive-sheet launcher: one button into the real browser.
+
+    Styled inline to match the app's Life Loop theme (warm cream paper, clay
+    accent, serif headings) so the very first screen an operator sees belongs
+    to the same product as the wizard that follows. Inline because the captive
+    sheet may not fetch our static CSS, and system serif/sans stacks stand in
+    for the self-hosted fonts.
+    """
     return (
         "<!DOCTYPE html><html lang=\"en\"><head>"
         "<meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
         "<title>Set up your incubator</title>"
         "<style>"
-        "body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#0f1512;"
-        "color:#eef;margin:0;padding:28px;line-height:1.5}"
-        ".card{max-width:440px;margin:0 auto;background:#16201b;border:1px solid #2b8;"
-        "border-radius:16px;padding:24px}"
-        "h1{font-size:1.35rem;margin:0 0 6px}"
-        "a.btn{display:block;text-align:center;background:#2b8;color:#031;font-weight:700;"
-        "text-decoration:none;padding:14px;border-radius:10px;margin:18px 0;font-size:1.05rem}"
-        ".muted{color:#9cb;font-size:.95rem}"
-        "code{background:#0c120f;padding:2px 6px;border-radius:6px}"
+        "body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;background:#efe7d6;"
+        "color:#2c2620;margin:0;padding:24px 16px;line-height:1.55}"
+        ".card{max-width:460px;margin:0 auto;background:#fbf7ef;border:1px solid #e6dcc6;"
+        "border-radius:18px;padding:26px 22px;box-shadow:0 10px 26px rgba(60,45,20,.10)}"
+        ".eyebrow{font-size:.78rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;"
+        "color:#c2702a;margin:0 0 4px}"
+        "h1{font-family:Georgia,'Times New Roman',serif;font-size:1.5rem;font-weight:700;"
+        "letter-spacing:-.02em;margin:0 0 8px}"
+        "a.btn{display:block;text-align:center;background:#c2702a;color:#fbf7ef;font-weight:700;"
+        "text-decoration:none;padding:15px;border-radius:12px;margin:18px 0 14px;font-size:1.08rem}"
+        ".muted{color:#6f6557;font-size:.95rem;margin:8px 0}"
+        "ol{margin:10px 0;padding-left:22px;color:#2c2620}"
+        "ol li{margin:6px 0}"
+        "code{font-family:ui-monospace,Menlo,monospace;background:#ece3d0;color:#2c2620;"
+        "padding:2px 7px;border-radius:6px;font-size:.95em}"
         "</style></head><body><div class=\"card\">"
-        "<h1>🐣 Set up your incubator</h1>"
-        "<p class=\"muted\">This little pop-up can't run the full setup. "
-        "Tap below to open it in your normal browser (Safari or Chrome).</p>"
-        f"<a class=\"btn\" href=\"{portal_url}\">Open setup in your browser</a>"
-        "<p class=\"muted\"><b>iPhone:</b> if it stays here, tap <b>Cancel</b> "
-        "(top-left) → <b>Use Without Internet</b>, then open <b>Safari</b> and go to "
-        f"<code>{portal_url}</code>.<br><b>Android:</b> tap the <b>“Sign in to "
-        "network”</b> notification, then <b>Open in browser</b>.</p>"
+        "<p class=\"eyebrow\">Device setup</p>"
+        "<h1>🐣 Your incubator is ready to set up</h1>"
+        "<p class=\"muted\">This little pop-up can't run the full setup — it needs your "
+        "real browser (Safari or Chrome).</p>"
+        f"<a class=\"btn\" href=\"{portal_url}\">Open setup in my browser</a>"
+        "<p class=\"muted\">If the button keeps you here, do it by hand:</p>"
+        "<ol>"
+        "<li><b>iPhone:</b> tap <b>Cancel</b> (top-left) → <b>Use Without Internet</b>, "
+        f"open <b>Safari</b>, and type <code>{portal_url}</code></li>"
+        "<li><b>Android:</b> tap the <b>“Sign in to network”</b> notification → "
+        f"<b>Open in browser</b>, or open <b>Chrome</b> and type <code>{portal_url}</code></li>"
+        "</ol>"
         "</div></body></html>"
     ).encode()
 
