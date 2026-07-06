@@ -141,3 +141,24 @@ def test_finish_screen_gives_numbered_steps(client):
     assert "Open your browser" in html
     assert "Type this address" in html
     assert "finishCopyBtn" in html
+    # Android phones often can't resolve .local — the card must say what to
+    # do instead of leaving those users at a dead address.
+    assert "Android tip" in html
+
+
+def test_finish_screen_never_auto_navigates_away():
+    """The finish page must stay put.
+
+    It needs no further contact with the device, so it survives in the browser
+    even after the setup AP drops — instructions and the copy button keep
+    working. A past 4-second auto-redirect yanked users to a dashboard that
+    died seconds later, erasing the instructions before anyone read them.
+    """
+    js = open("app/static/js/onboarding.js").read()
+    assert "Opening your incubator in" not in js        # countdown gone
+    assert "window.location.href = openUrl" not in js   # auto-nav gone
+    assert "Keep this page open" in js                  # static guidance instead
+    # The open-now button targets the DURABLE address, not the soon-to-die
+    # hotspot IP.
+    assert "window.open(appUrl" in js
+    assert "window.open(openUrl" not in js
