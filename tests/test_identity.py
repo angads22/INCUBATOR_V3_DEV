@@ -251,3 +251,28 @@ def test_cross_origin_post_refused(client):
     r = client.post("/api/login", json={"username": "x", "password": "yyyyyyyy"},
                     headers={"Origin": f"http://{host}"})
     assert r.status_code in (401, 429)     # reaches the endpoint (auth fails, not blocked)
+
+
+def test_reverse_proxy_post_allowed_via_forwarded_host(client):
+    """Remote access via a reverse proxy: the browser's Origin is the external
+    domain while Host is rewritten to the backend. X-Forwarded-Host (set by the
+    trusted proxy) makes the external Origin a valid served-as host, so the POST
+    must NOT be falsely blocked."""
+    r = client.post(
+        "/api/login",
+        json={"username": "x", "password": "yyyyyyyy"},
+        headers={
+            "Origin": "https://farm.example.com",
+            "Host": "10.42.0.1:8000",
+            "X-Forwarded-Host": "farm.example.com",
+        },
+    )
+    assert r.status_code in (401, 429)     # reached the handler, not the 403 guard
+    # …but a genuine cross-site Origin is still blocked even with XFH present.
+    r = client.post(
+        "/api/login",
+        json={"username": "x", "password": "y"},
+        headers={"Origin": "https://evil.example", "Host": "10.42.0.1:8000",
+                 "X-Forwarded-Host": "farm.example.com"},
+    )
+    assert r.status_code == 403

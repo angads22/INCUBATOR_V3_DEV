@@ -66,20 +66,29 @@ async def _security_headers(request, call_next):
 
     Headers: stop MIME sniffing, forbid framing (clickjacking), and keep
     referrers on-device. Origin check: browsers attach an Origin header to
-    cross-site POST/PUT/PATCH/DELETE; if one is present and its host doesn't
-    match the Host we're being addressed as, the request came from another
-    site's page and is refused — CSRF protection that needs no tokens and
-    can't break same-origin fetches or non-browser clients (which send no
-    Origin at all).
+    cross-site POST/PUT/PATCH/DELETE; if one is present and its host matches
+    none of the hosts we're legitimately served as, the request came from
+    another site's page and is refused — token-free CSRF protection that can't
+    break same-origin fetches or non-browser clients (which send no Origin).
+
+    Reverse-proxy aware: remote access via a proxy (a documented setup) sends
+    the browser's Origin as the external domain while ``Host`` may be rewritten
+    to the backend, so ``X-Forwarded-Host`` is accepted as an equally valid
+    served-as host. Both are set by the trusted proxy, not the attacker's page.
     """
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         origin = request.headers.get("origin", "")
-        host = request.headers.get("host", "")
-        if origin and origin not in ("null",) and host:
+        if origin and origin != "null":
             from urllib.parse import urlsplit
 
-            origin_host = urlsplit(origin).netloc
-            if origin_host and origin_host != host:
+            origin_host = urlsplit(origin).netloc.lower()
+            allowed = {request.headers.get("host", "").lower()}
+            # X-Forwarded-Host may be a comma-separated chain (proxy → proxy).
+            for xfh in request.headers.get("x-forwarded-host", "").split(","):
+                if xfh.strip():
+                    allowed.add(xfh.strip().lower())
+            allowed.discard("")
+            if origin_host and allowed and origin_host not in allowed:
                 from fastapi.responses import JSONResponse
 
                 return JSONResponse(

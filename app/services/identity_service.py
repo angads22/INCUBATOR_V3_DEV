@@ -167,8 +167,10 @@ class IdentityService:
             if time.time() > flow["expires_at"]:
                 self._flows.pop(flow_id, None)
                 return {"status": "expired"}
-            # Respect Google's minimum poll interval regardless of UI timing.
-            if time.time() - flow["last_poll"] < flow["interval"]:
+            # Respect Google's minimum poll interval regardless of UI timing,
+            # but allow a 1 s margin so a client polling at exactly ``interval``
+            # isn't skipped by jitter (which would double the sign-in latency).
+            if time.time() - flow["last_poll"] < max(0.0, flow["interval"] - 1.0):
                 return {"status": "pending"}
             flow["last_poll"] = time.time()
             device_code = flow["device_code"]
