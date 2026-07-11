@@ -30,6 +30,34 @@
     </div>
     <p id="ap-password-msg" class="hint"></p>
   </article>
+  <article id="linked-accounts" class="card form-panel">
+    <h3>Linked sign-in accounts</h3>
+    <p class="muted">Link a Google or Apple account so you can sign in without a password. Your username &amp; password keep working either way.</p>
+    <div id="linkedAccountsList"><p class="muted">Loading…</p></div>
+    <div id="identityProviders" hidden>
+      <div class="button-row" style="gap:8px;margin-top:8px">
+        <button type="button" id="googleSignInBtn" class="btn btn-secondary" hidden>Link Google</button>
+        <button type="button" id="appleSignInBtn" class="btn btn-secondary" hidden>Link Apple</button>
+      </div>
+      <div id="googleDevicePanel" class="card" style="margin-top:10px" hidden>
+        <p class="muted" style="margin:0 0 6px">On your phone or computer, go to</p>
+        <p style="text-align:center;margin:4px 0"><code id="googleVerifyUrl" style="font-size:1.05rem"></code></p>
+        <p class="muted" style="margin:6px 0">and enter this code:</p>
+        <p style="text-align:center;margin:6px 0"><code id="googleUserCode" style="font-size:1.5rem;letter-spacing:0.15em;padding:6px 14px;-webkit-user-select:all;user-select:all"></code></p>
+        <p id="googleFlowMsg" class="hint" style="text-align:center">Waiting for you to approve…</p>
+      </div>
+      <div id="applePanel" class="card" style="margin-top:10px" hidden>
+        <p class="muted" style="margin:0 0 6px">Sign in with Apple on the account portal, then paste the code it gives you:</p>
+        <label>Portal code
+          <input id="brokerAssertion" type="text" autocomplete="off" placeholder="Paste the code here" />
+        </label>
+        <div class="button-row"><button type="button" id="brokerSubmitBtn" class="btn btn-primary">Verify</button></div>
+        <p id="appleFlowMsg" class="hint"></p>
+      </div>
+    </div>
+    <p class="muted" id="identityUnavailableNote" hidden>Provider sign-in isn't configured for this device.</p>
+  </article>
+
   <form id="settings-form" class="card form-panel">
     <h3 id="device">Device Controls</h3>
     <div class="form-grid">
@@ -58,6 +86,8 @@
 {% block scripts %}
 <script src="/static/js/settings.js"></script>
 <script src="/static/js/network.js"></script>
+<script>document.body.dataset.identityIntent = 'link';</script>
+<script src="/static/js/identity.js"></script>
 <script>
   // Setup-AP password (optional, post-setup). Self-contained to keep the
   // onboarding-recovery flow independent of the larger settings/network logic.

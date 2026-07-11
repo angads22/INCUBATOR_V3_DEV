@@ -59,6 +59,50 @@ from .settings_store import ensure_defaults, get_settings
 app = FastAPI(title="Incubator v3 — Pi Zero 2W")
 logger = logging.getLogger(__name__)
 
+
+@app.middleware("http")
+async def _security_headers(request, call_next):
+    """Baseline browser hardening + cross-site write protection.
+
+    Headers: stop MIME sniffing, forbid framing (clickjacking), and keep
+    referrers on-device. Origin check: browsers attach an Origin header to
+    cross-site POST/PUT/PATCH/DELETE; if one is present and its host matches
+    none of the hosts we're legitimately served as, the request came from
+    another site's page and is refused — token-free CSRF protection that can't
+    break same-origin fetches or non-browser clients (which send no Origin).
+
+    Reverse-proxy aware: remote access via a proxy (a documented setup) sends
+    the browser's Origin as the external domain while ``Host`` may be rewritten
+    to the backend, so ``X-Forwarded-Host`` is accepted as an equally valid
+    served-as host. Both are set by the trusted proxy, not the attacker's page.
+    """
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        origin = request.headers.get("origin", "")
+        if origin and origin != "null":
+            from urllib.parse import urlsplit
+
+            origin_host = urlsplit(origin).netloc.lower()
+            allowed = {request.headers.get("host", "").lower()}
+            # X-Forwarded-Host may be a comma-separated chain (proxy → proxy).
+            for xfh in request.headers.get("x-forwarded-host", "").split(","):
+                if xfh.strip():
+                    allowed.add(xfh.strip().lower())
+            allowed.discard("")
+            if origin_host and allowed and origin_host not in allowed:
+                from fastapi.responses import JSONResponse
+
+                return JSONResponse(
+                    status_code=403,
+                    content={"ok": False, "detail": "Cross-origin write refused"},
+                )
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    return response
+
+
 BASE_DIR = Path(__file__).resolve().parent
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 app.include_router(web_router)
@@ -67,6 +111,12 @@ app.include_router(camera_router)
 app.include_router(captures_router)
 app.include_router(growth_router)
 app.include_router(testing_router)
+
+# Sign in with Google / Apple + linked accounts (buttons appear only when the
+# fleet env configures a provider — see config.py).
+from .routes.identity import router as identity_router  # noqa: E402
+
+app.include_router(identity_router)
 
 # ------------------------------------------------------------------
 # Service wiring

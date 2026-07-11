@@ -2,6 +2,8 @@ import hashlib
 import hmac
 import os
 import secrets
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -11,6 +13,55 @@ from .models import Session as AuthSession, User
 
 # Default session lifetime — 7 days.
 DEFAULT_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
+
+# ── Login throttling (brute-force protection) ─────────────────────────────
+# After LOGIN_MAX_FAILURES consecutive failures for the same client+identifier
+# pair, further attempts are refused for LOGIN_LOCKOUT_SECONDS. In-memory on
+# purpose: it protects the running process, resets on reboot (which is fine —
+# a reboot takes longer than the lockout), and adds zero SD-card writes.
+LOGIN_MAX_FAILURES = 5
+LOGIN_LOCKOUT_SECONDS = 60.0
+
+_throttle_lock = threading.Lock()
+_failed_logins: dict[str, tuple[int, float]] = {}  # key -> (count, last_failure_ts)
+
+
+def _throttle_key(client_ip: str, identifier: str) -> str:
+    return f"{client_ip}|{(identifier or '').strip().lower()}"
+
+
+def login_throttled(client_ip: str, identifier: str) -> float:
+    """Seconds the caller must still wait, or 0.0 when the attempt may proceed."""
+    with _throttle_lock:
+        entry = _failed_logins.get(_throttle_key(client_ip, identifier))
+        if not entry:
+            return 0.0
+        count, last_ts = entry
+        if count < LOGIN_MAX_FAILURES:
+            return 0.0
+        remaining = LOGIN_LOCKOUT_SECONDS - (time.time() - last_ts)
+        return max(0.0, remaining)
+
+
+def record_login_result(client_ip: str, identifier: str, success: bool) -> None:
+    key = _throttle_key(client_ip, identifier)
+    with _throttle_lock:
+        if success:
+            _failed_logins.pop(key, None)
+            return
+        count, _ = _failed_logins.get(key, (0, 0.0))
+        _failed_logins[key] = (count + 1, time.time())
+        # Opportunistic prune so the map can't grow unbounded under a spray.
+        if len(_failed_logins) > 1000:
+            cutoff = time.time() - LOGIN_LOCKOUT_SECONDS
+            for k in [k for k, (_, ts) in _failed_logins.items() if ts < cutoff]:
+                _failed_logins.pop(k, None)
+
+
+def reset_login_throttle() -> None:
+    """Test helper — drop all throttle state."""
+    with _throttle_lock:
+        _failed_logins.clear()
 
 
 def _utcnow() -> datetime:
@@ -62,6 +113,10 @@ def create_session(db: Session, user_id: int, ttl_seconds: int = DEFAULT_SESSION
     """
     token = secrets.token_urlsafe(32)
     expires_at = _utcnow() + timedelta(seconds=ttl_seconds)
+    # Opportunistic hygiene: purge expired sessions whenever a new one is made,
+    # so stale token hashes don't accumulate forever on the SD card.
+    for row in db.scalars(select(AuthSession).where(AuthSession.expires_at <= _utcnow())).all():
+        db.delete(row)
     db.add(AuthSession(user_id=user_id, token_hash=_token_hash(token), expires_at=expires_at))
     db.commit()
     return token

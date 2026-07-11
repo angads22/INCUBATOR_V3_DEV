@@ -169,6 +169,24 @@ class Settings:
     control_state_path: str = field(default_factory=lambda: os.getenv("CONTROL_STATE_PATH", "/run/incubator/control-state.json"))
     control_command_path: str = field(default_factory=lambda: os.getenv("CONTROL_COMMAND_PATH", "/run/incubator/control-commands.jsonl"))
 
+    # --- Sign in with Google / Apple ---
+    # Google uses the OAuth "limited-input device" flow (the TV flow): the UI
+    # shows a short code, the operator enters it at google.com/device on their
+    # phone, and the incubator polls Google for the resulting identity. This is
+    # the only Google flow that works on a LAN appliance with no HTTPS and no
+    # fixed domain. Register a "TVs and Limited Input devices" OAuth client and
+    # bake its id (and its non-confidential secret) into the fleet env.
+    google_oauth_client_id: str = field(default_factory=lambda: os.getenv("GOOGLE_OAUTH_CLIENT_ID", "").strip())
+    google_oauth_client_secret: str = field(default_factory=lambda: os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "").strip())
+    # Apple mandates HTTPS return URLs, so Sign in with Apple cannot terminate
+    # on the appliance itself. An HTTPS broker page (your cloud) runs the Apple
+    # leg, then hands the operator a short-lived assertion signed with this
+    # shared secret; the device verifies it locally (stdlib HMAC, no new deps).
+    # Both settings empty = Apple button hidden. The broker may also relay
+    # Google identities for fleets that prefer one path for both providers.
+    identity_broker_url: str = field(default_factory=lambda: os.getenv("IDENTITY_BROKER_URL", "").strip())
+    identity_broker_secret: str = field(default_factory=lambda: os.getenv("IDENTITY_BROKER_SECRET", "").strip())
+
     # --- Dev overrides ---
     gpio_mock: bool = field(default_factory=lambda: os.getenv("GPIO_MOCK", "false").lower() == "true")
     button_mock_file: str = field(default_factory=lambda: os.getenv("INCUBATOR_BUTTON_MOCK_FILE", ""))
