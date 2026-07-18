@@ -8,7 +8,12 @@ After=local-fs.target
 Wants=incubator-wifi-country.service
 
 [Service]
-Type=simple
+# App-level watchdog: daemon pings WATCHDOG=1 each control iteration
+# (10 s, or every 15 s while idling disabled). A hung control loop is
+# restarted by systemd; fail-safe (heater OFF) re-applies on start.
+Type=notify
+NotifyAccess=all
+WatchdogSec=60
 User=root
 WorkingDirectory=__INSTALL_DIR__
 EnvironmentFile=/etc/incubator.env

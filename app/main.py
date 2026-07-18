@@ -328,12 +328,40 @@ class _SensorPoller(threading.Thread):
         super().__init__(daemon=True, name="sensor-poller")
         self.interval = interval
         self._stop_flag = threading.Event()
+        self._last_retention_sweep = 0.0
 
     def run(self) -> None:
         # Wait for a settled reading before the first log
         time.sleep(5)
         while not self._stop_flag.wait(self.interval):
             self._poll()
+            # Heartbeat AFTER a completed poll: if this thread dies or the
+            # process wedges, pings stop and systemd's WatchdogSec restarts
+            # the app — the hang-coverage Restart=always cannot provide.
+            from .sd_notify import sd_watchdog_ping
+
+            sd_watchdog_ping()
+
+    def _retention_sweep(self, db) -> None:
+        """Once a day, prune old sensor/action log rows (SD-card longevity)."""
+        if time.time() - self._last_retention_sweep < 24 * 3600:
+            return
+        self._last_retention_sweep = time.time()
+        from datetime import datetime, timedelta, timezone
+
+        from sqlalchemy import delete
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        try:
+            if settings.sensor_log_retention_days > 0:
+                cutoff = now - timedelta(days=settings.sensor_log_retention_days)
+                db.execute(delete(SensorLog).where(SensorLog.captured_at < cutoff))
+            if settings.action_log_retention_days > 0:
+                cutoff = now - timedelta(days=settings.action_log_retention_days)
+                db.execute(delete(ActionLog).where(ActionLog.created_at < cutoff))
+            db.commit()
+        except Exception as exc:  # noqa: BLE001 — retention must never break polling
+            logger.debug("retention sweep skipped: %s", exc)
 
     def _poll(self) -> None:
         db = next(get_db())
@@ -345,6 +373,8 @@ class _SensorPoller(threading.Thread):
                 storage_service.enforce(db)
             except Exception as exc:  # noqa: BLE001 — never let the janitor break polling
                 logger.debug("storage enforce skipped: %s", exc)
+            # Daily DB retention sweep (sensor/action logs) — SD-card longevity.
+            self._retention_sweep(db)
             # Never-unreachable invariant: if the device has no Wi-Fi AND no
             # hotspot, raise the fallback setup AP (and retry the saved Wi-Fi
             # periodically while in fallback). See OnboardingService.ensure_reachable.
@@ -505,15 +535,27 @@ def _utcnow_naive() -> "Any":
 
 @app.on_event("startup")
 def startup() -> None:
+    # Under Type=notify systemd waits for READY — send it first so a slow
+    # first boot (fs expand, big DB) can never be killed as a start timeout.
+    from .sd_notify import sd_ready
+
+    sd_ready()
+
     # Ensure database directory exists
     Path("./database").mkdir(exist_ok=True)
 
-    # A power cut mid-write can corrupt the SQLite file; quarantine it instead
-    # of crash-looping forever (the incubator must always come up).
+    # A power cut mid-write can corrupt the SQLite file; quarantine it (and
+    # restore the newest snapshot) instead of crash-looping forever.
     ensure_sqlite_healthy()
 
     Base.metadata.create_all(bind=engine)
     _ensure_egg_roi_columns()
+
+    # Daily snapshot AFTER the health check passed: corruption later restores
+    # from this instead of factory-resetting the farmer's device.
+    from .database import snapshot_sqlite
+
+    snapshot_sqlite()
 
     db = next(get_db())
     try:

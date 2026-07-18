@@ -25,6 +25,27 @@ HEATER = "heater"
 FAN = "fan"
 TURNER = "turner"
 
+# Hard safety bounds on the values the loop will PURSUE, regardless of what
+# the settings store says. The DB is user-writable and power-cut-corruptible;
+# a target of "100" (bad API write, bit-rot, unit confusion) must never make
+# the loop cook the eggs. These mirror the UI's input limits — anything
+# outside them is clamped, and the clamp is logged so it's visible.
+TEMP_TARGET_MIN_C = 20.0
+TEMP_TARGET_MAX_C = 42.0
+HUMIDITY_TARGET_MIN_PCT = 20.0
+HUMIDITY_TARGET_MAX_PCT = 95.0
+
+
+def clamp_target(value: float, lo: float, hi: float, name: str = "target") -> float:
+    """Clamp a control target into its safe band (logs when it acts)."""
+    if value < lo:
+        logger.warning("%s %.1f below safe minimum — clamped to %.1f", name, value, lo)
+        return lo
+    if value > hi:
+        logger.warning("%s %.1f above safe maximum — clamped to %.1f", name, value, hi)
+        return hi
+    return value
+
 
 # ──────────────────────────────────────────────────────────────────────────
 # Pure decision logic (unit-tested, no hardware)
@@ -152,8 +173,14 @@ class ControlDaemon:
         temp = reading.get("temperature_c") if reading.get("ok") else None
         hum = reading.get("humidity_pct") if reading.get("ok") else None
 
-        target_t = self._f(settings, "target_temp_c", 37.5)
-        target_h = self._f(settings, "target_humidity_pct", 55.0)
+        target_t = clamp_target(
+            self._f(settings, "target_temp_c", 37.5),
+            TEMP_TARGET_MIN_C, TEMP_TARGET_MAX_C, "target_temp_c",
+        )
+        target_h = clamp_target(
+            self._f(settings, "target_humidity_pct", 55.0),
+            HUMIDITY_TARGET_MIN_PCT, HUMIDITY_TARGET_MAX_PCT, "target_humidity_pct",
+        )
         hum_tol = self._f(settings, "alert_humidity_tolerance_pct", 10.0)
         turn_interval = self._f(settings, "turn_interval_hours", self._turn_interval_hours)
         turner_enabled = self._b(settings, "turner_enabled", True)
@@ -256,13 +283,20 @@ class ControlDaemon:
                 logger.warning("fail-safe set %s failed: %s", output, exc)
 
     def run(self) -> None:
+        from ..sd_notify import sd_ready, sd_watchdog_ping
+
         logger.info("Control daemon starting (interval=%ss)", self._interval)
         self.apply_failsafe()
+        sd_ready()
         while not self._stop.is_set():
             try:
                 self.loop_once()
             except Exception as exc:  # noqa: BLE001 — a bad iteration must not kill control
                 logger.warning("control iteration error: %s", exc)
+            # Heartbeat AFTER the iteration: a wedged loop stops pinging and
+            # systemd (WatchdogSec) restarts the daemon — the layer between
+            # Restart=always (exits only) and the hardware watchdog (kernel).
+            sd_watchdog_ping()
             self._stop.wait(self._interval)
         # On a clean stop, leave outputs in the defined safe state.
         self.apply_failsafe()
@@ -324,11 +358,17 @@ def main() -> None:
     # When disabled, idle quietly (don't touch GPIO) so it can't contend with
     # the web app, and don't exit (Restart=always would thrash).
     if not settings.control_daemon_enabled:
+        from ..sd_notify import sd_ready, sd_watchdog_ping
+
         logger.info("Control daemon disabled (CONTROL_DAEMON_ENABLED=false) — idling.")
         stop = threading.Event()
         signal.signal(signal.SIGTERM, lambda *_: stop.set())
         signal.signal(signal.SIGINT, lambda *_: stop.set())
-        stop.wait()
+        sd_ready()
+        # Keep petting the service watchdog while intentionally idle, or
+        # systemd would endlessly restart a daemon that is doing its job.
+        while not stop.wait(15):
+            sd_watchdog_ping()
         return
 
     daemon = build_daemon()
