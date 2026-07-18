@@ -471,10 +471,24 @@ def onboarding_page(request: Request, db: Session = Depends(get_db)):
     # Show the REAL setup-network name so the operator can tell it apart from any
     # stale "Incubator-…" networks their phone remembers from earlier flashes.
     ap_ssid = settings.ap_ssid_prefix
-    if _onboarding_service:
-        config = db.scalar(select(DeviceConfig).limit(1))
-        if config and config.device_id:
-            ap_ssid = _onboarding_service.ap_ssid(config.device_id)
+    config = db.scalar(select(DeviceConfig).limit(1))
+    if _onboarding_service and config and config.device_id:
+        ap_ssid = _onboarding_service.ap_ssid(config.device_id)
+
+    # Recovery mode: an account exists but no Wi-Fi is saved — the last join
+    # failed (a failed join clears wifi_ssid) and the setup AP came back. The
+    # wizard then asks ONLY for the Wi-Fi, with the failed network preselected,
+    # instead of walking the whole first-run flow again.
+    retry_mode = bool(config and not config.wifi_ssid and has_any_user(db))
+    retry_ssid = ""
+    if retry_mode:
+        last_fail = db.scalar(
+            select(ActionLog)
+            .where(ActionLog.action == "system.wifi_join_failed")
+            .order_by(ActionLog.id.desc())
+            .limit(1)
+        )
+        retry_ssid = (last_fail.payload or "") if last_fail else ""
 
     return _render(
         request=request,
@@ -486,6 +500,9 @@ def onboarding_page(request: Request, db: Session = Depends(get_db)):
             "ap_password": effective_ap_password(db),
             "ap_ssid_prefix": settings.ap_ssid_prefix,
             "ap_ssid": ap_ssid,
+            "retry_mode": retry_mode,
+            "retry_ssid": retry_ssid,
+            "device_name": (config.device_name or "") if config else "",
         },
     )
 

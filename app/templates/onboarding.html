@@ -2,11 +2,29 @@
 {% block content %}
 {% with eyebrow='Device Setup', title='Incubator Setup Wizard', subtitle='Follow the steps to connect and configure your device.' %}{% include 'partials/section_header.html' %}{% endwith %}
 
-<div class="wizard-wrap">
+<div class="wizard-wrap" id="wizardWrap"
+     data-retry="{{ '1' if retry_mode else '' }}"
+     data-retry-ssid="{{ retry_ssid or '' }}"
+     data-device-name="{{ device_name or '' }}">
+
+  {% if retry_mode %}
+  <!-- Recovery mode: the last Wi-Fi join failed, the setup network came back,
+       and the phone landed here again. Say what happened in plain words and
+       ask ONLY for the Wi-Fi — the incubator already has its name and login. -->
+  <article class="card" style="border:2px solid var(--accent);margin-bottom:14px">
+    <strong>⚠️ Let's fix the Wi-Fi</strong>
+    <p class="muted" style="margin:6px 0 0">
+      Your incubator couldn't join
+      {% if retry_ssid %}<strong>&ldquo;{{ retry_ssid }}&rdquo;</strong>{% else %}your Wi-Fi{% endif %}
+      — usually that's a mistyped password. Everything else is already saved,
+      so just pick your Wi-Fi and enter the password again.
+    </p>
+  </article>
+  {% endif %}
 
   <div class="wizard-progress" aria-hidden="true">
     <div class="wizard-progress-track"><div class="wizard-progress-fill" id="wizardProgressFill"></div></div>
-    <p class="wizard-step-label" id="wizardStepLabel">Step 1 of 7 · Welcome</p>
+    <p class="wizard-step-label" id="wizardStepLabel">Step 1 of 6 · Welcome</p>
   </div>
 
   <!-- Step 0: Welcome -->
@@ -23,7 +41,9 @@
     </article>
   </div>
 
-  <!-- Step 1: Wi-Fi Selection -->
+  <!-- Step 1: Wi-Fi — network AND password on one screen. The password field
+       appears only when it's needed (locked network picked, or name typed by
+       hand), so an open network is a single tap. -->
   <div class="wizard-step" data-step="1">
     <article class="card">
       <h3>Connect to your Wi-Fi</h3>
@@ -33,7 +53,13 @@
       <label class="manual-ssid">Don't see your Wi-Fi? Type its name here
         <input id="manualSsid" type="text" placeholder="Your Wi-Fi name" autocomplete="off" />
       </label>
-      <p class="muted hint">While in setup mode the incubator can't always see other networks — typing the name works just as well.</p>
+      <div id="wifiPasswordWrap" hidden>
+        <label>Password for <strong id="selectedSsidLabel">&mdash;</strong>
+          <input id="wifiPassword" type="password" placeholder="Your Wi-Fi password" autocomplete="off" />
+        </label>
+        <p class="muted hint" style="margin-top:2px">If this network has no password, leave it blank.</p>
+      </div>
+      <p id="wifiStepMsg" class="hint"></p>
       <div class="wizard-nav">
         <button class="btn btn-ghost" type="button" data-prev>Back</button>
         <button class="btn btn-primary" type="button" data-next id="wifiNextBtn" disabled>Next</button>
@@ -41,23 +67,8 @@
     </article>
   </div>
 
-  <!-- Step 2: Wi-Fi Password -->
+  <!-- Step 2: Account Creation (optional) -->
   <div class="wizard-step" data-step="2">
-    <article class="card">
-      <h3>Wi-Fi password</h3>
-      <p class="muted">Type the password for your Wi-Fi. If your Wi-Fi has no password, leave this blank.</p>
-      <label>Password for <strong id="selectedSsidLabel">&mdash;</strong>
-        <input id="wifiPassword" type="password" placeholder="Your Wi-Fi password" autocomplete="off" />
-      </label>
-      <div class="wizard-nav">
-        <button class="btn btn-ghost" type="button" data-prev>Back</button>
-        <button class="btn btn-primary" type="button" data-next>Next</button>
-      </div>
-    </article>
-  </div>
-
-  <!-- Step 3: Account Creation (optional) -->
-  <div class="wizard-step" data-step="3">
     <article class="card">
       <h3>Create a login <span class="badge-optional">Optional</span></h3>
       <p class="muted">A login keeps others from changing your incubator's settings. You can skip this now and add one later from the menu in the top-right.</p>
@@ -74,8 +85,8 @@
     </article>
   </div>
 
-  <!-- Step 4: Device Naming -->
-  <div class="wizard-step" data-step="4">
+  <!-- Step 3: Device Naming -->
+  <div class="wizard-step" data-step="3">
     <article class="card">
       <h3>Name Your Device</h3>
       <p class="muted">Give your incubator a friendly name.</p>
@@ -89,8 +100,8 @@
     </article>
   </div>
 
-  <!-- Step 5: Quick Tour -->
-  <div class="wizard-step" data-step="5">
+  <!-- Step 4: Quick Tour -->
+  <div class="wizard-step" data-step="4">
     <article class="card">
       <h3>Quick Tour</h3>
       <ul class="stack-list">
@@ -106,8 +117,8 @@
     </article>
   </div>
 
-  <!-- Step 6: Completing -->
-  <div class="wizard-step" data-step="6">
+  <!-- Step 5: Completing -->
+  <div class="wizard-step" data-step="5">
     <article class="card wizard-finish">
       <h3 id="finishTitle">Saving setup&hellip;</h3>
       <p id="finishMsg" class="muted">Please wait while your device saves configuration and reconnects.</p>
@@ -133,6 +144,7 @@
           <p id="finishCopyMsg" class="hint" style="text-align:center"></p>
           <p class="muted" style="margin:8px 0 0">Once it loads, <strong>bookmark it</strong> or use your browser menu to <strong>Add to Home Screen</strong> — then your incubator is one tap away, just like an app.</p>
           <p class="muted" style="margin:8px 0 0;font-size:0.9em"><strong>Android tip:</strong> if that address won't load, some Android phones can't use <em>.local</em> names — open your Wi-Fi router's app or device list, find <em>your incubator's name</em>, and use its IP address (like <code>http://192.168.1.23:8000</code>) instead.</p>
+          <p class="muted" style="margin:8px 0 0;font-size:0.9em"><strong>Safety net:</strong> if the address doesn't work after a couple of minutes, the Wi-Fi join probably failed — your incubator will automatically turn its <em>{{ ap_ssid }}</em> setup network back on. Reconnect to it and we'll fix the Wi-Fi together; everything else stays saved.</p>
         </div>
       </div>
     </article>
