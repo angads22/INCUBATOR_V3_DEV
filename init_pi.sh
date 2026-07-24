@@ -268,6 +268,22 @@ if [ -n "$BOOT_CONFIG" ]; then
     grep -qE '^[[:space:]]*dtoverlay=i2c-rtc,ds3231' "$BOOT_CONFIG" \
         || echo 'dtoverlay=i2c-rtc,ds3231' >> "$BOOT_CONFIG"
     info "  I2C + RTC overlay written to ${BOOT_CONFIG}"
+
+    # ── Safe GPIO states from POWER-ON, before the kernel even loads ──
+    # Without this, the relay pins sit as inputs with pull-DOWNS during the
+    # ~40 s kernel boot (and during any crash-loop). Standard active-LOW
+    # relay boards read a pulled-down input as ON — i.e. the HEATER would
+    # blast from power-on until the app finally sets its pins. These
+    # firmware-level directives make the GPU drive the pins to their OFF
+    # levels before anything else runs:
+    #   * 12,13,17,27 (lock/door/heater/fan relays, active-LOW) → output HIGH
+    #   * 22,23,24,25 (turner step/dir, candle, buzzer)         → output LOW
+    # GPIO4 (DHT22) and GPIO18 (setup button) stay untouched as inputs.
+    grep -qE '^[[:space:]]*gpio=12,13,17,27=op,dh' "$BOOT_CONFIG" \
+        || echo 'gpio=12,13,17,27=op,dh' >> "$BOOT_CONFIG"
+    grep -qE '^[[:space:]]*gpio=22,23,24,25=op,dl' "$BOOT_CONFIG" \
+        || echo 'gpio=22,23,24,25=op,dl' >> "$BOOT_CONFIG"
+    info "  Boot-safe GPIO states written (relays OFF from power-on)"
 else
     warn "No boot config.txt found — skipping I2C/RTC overlay (add it manually if needed)."
 fi
