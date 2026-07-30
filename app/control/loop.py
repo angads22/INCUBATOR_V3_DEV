@@ -35,6 +35,79 @@ TEMP_TARGET_MAX_C = 42.0
 HUMIDITY_TARGET_MIN_PCT = 20.0
 HUMIDITY_TARGET_MAX_PCT = 95.0
 
+# ── Sensor integrity: a reading that says "ok" is not automatically true ──
+# A DHT22 can fail in ways that still report success, and both are dangerous
+# with a bang-bang thermostat:
+#   * glitched LOW (e.g. -40 °C) → reads as "always below target" → the heater
+#     runs forever;
+#   * LATCHED (the same value returned indefinitely — a known DHT failure) →
+#     the loop flies blind on a stale number, so it either bakes the eggs or
+#     lets them go cold while every indicator looks healthy.
+# Both routes therefore end where a dead sensor ends: the fail-safe (heater
+# OFF), because that is the only safe answer to "I don't know the temperature".
+SENSOR_PLAUSIBLE_MIN_C = 0.0    # a working incubator chamber is never colder
+SENSOR_PLAUSIBLE_MAX_C = 60.0   # ...nor hotter; outside this the sensor is lying
+# Real DHT22 readings jitter ~±0.1 °C, so bit-identical temperature AND humidity
+# for this long means the sensor latched, not that the chamber is that stable.
+SENSOR_STUCK_SECONDS = 900.0    # 15 minutes
+
+# Anti-runaway: continuous heat with no temperature response means the sensor is
+# misplaced/latched or the heater is failing. Warm-up from room temperature
+# legitimately takes ~20-30 min, so the window is generous — but past it, with
+# essentially no rise, holding the heater ON is the dangerous choice.
+HEAT_RUNAWAY_SECONDS = 2700.0   # 45 minutes of continuous heat
+HEAT_RUNAWAY_MIN_RISE_C = 0.5   # ...with less rise than this = something's wrong
+
+
+def reading_plausible(temp_c: float | None) -> bool:
+    """False when a reading is outside the physically possible chamber range.
+
+    Critically this catches the glitched-LOW case, which a naive thermostat
+    would answer with permanent heating.
+    """
+    if temp_c is None:
+        return False
+    return SENSOR_PLAUSIBLE_MIN_C <= temp_c <= SENSOR_PLAUSIBLE_MAX_C
+
+
+def sensor_stuck(
+    temp_c: float | None,
+    hum_pct: float | None,
+    last_temp: float | None,
+    last_hum: float | None,
+    unchanged_since_ts: float | None,
+    now_ts: float,
+    window_seconds: float = SENSOR_STUCK_SECONDS,
+) -> tuple[bool, float | None]:
+    """Detect a latched sensor. Returns ``(is_stuck, unchanged_since_ts)``.
+
+    The caller carries ``unchanged_since_ts`` between iterations: it marks when
+    the currently-repeating value was first seen, and resets the moment any
+    reading changes.
+    """
+    if temp_c is None:
+        return False, None
+    if (temp_c != last_temp) or (hum_pct != last_hum) or unchanged_since_ts is None:
+        return False, now_ts
+    return (now_ts - unchanged_since_ts) >= window_seconds, unchanged_since_ts
+
+
+def heat_runaway(
+    heater_on: bool,
+    temp_c: float | None,
+    heat_start_ts: float | None,
+    heat_start_temp: float | None,
+    now_ts: float,
+    window_seconds: float = HEAT_RUNAWAY_SECONDS,
+    min_rise_c: float = HEAT_RUNAWAY_MIN_RISE_C,
+) -> bool:
+    """True when the heater has run continuously without warming the chamber."""
+    if not heater_on or temp_c is None or heat_start_ts is None or heat_start_temp is None:
+        return False
+    if (now_ts - heat_start_ts) < window_seconds:
+        return False
+    return (temp_c - heat_start_temp) < min_rise_c
+
 
 def clamp_target(value: float, lo: float, hi: float, name: str = "target") -> float:
     """Clamp a control target into its safe band (logs when it acts)."""
@@ -152,6 +225,15 @@ class ControlDaemon:
         self._last_turn_ts: float | None = None
         self._heater_on = False
         self._fan_on = False
+        # Sensor-integrity state: last reading (latch detection) and when the
+        # currently-repeating value was first seen.
+        self._last_temp: float | None = None
+        self._last_hum: float | None = None
+        self._unchanged_since_ts: float | None = None
+        # Anti-runaway state: start of the current continuous heating stretch.
+        self._heat_start_ts: float | None = None
+        self._heat_start_temp: float | None = None
+        self._runaway_latched = False
 
     # -- settings helpers -------------------------------------------------
     @staticmethod
@@ -172,6 +254,36 @@ class ControlDaemon:
         reading = self._gpio.read_temperature_humidity()
         temp = reading.get("temperature_c") if reading.get("ok") else None
         hum = reading.get("humidity_pct") if reading.get("ok") else None
+
+        # ── Sensor integrity: distrust an "ok" reading that can't be true ──
+        # Mock readings are exempt: the mock sensor deliberately returns a fixed
+        # value, so integrity checks would flag every dev/demo/sensor-less unit
+        # as faulty after the latch window.
+        sensor_fault = ""
+        is_mock = bool(reading.get("mock"))
+        if is_mock:
+            pass
+        elif temp is not None and not reading_plausible(temp):
+            sensor_fault = "implausible"
+            logger.error(
+                "Sensor reported %.1f C — outside the possible range; treating as failed",
+                temp,
+            )
+        if not sensor_fault and not is_mock:
+            stuck, self._unchanged_since_ts = sensor_stuck(
+                temp, hum, self._last_temp, self._last_hum,
+                self._unchanged_since_ts, now_ts,
+            )
+            if stuck:
+                sensor_fault = "stuck"
+                logger.error(
+                    "Sensor frozen at %.1f C for >%.0f min — treating as failed",
+                    temp, SENSOR_STUCK_SECONDS / 60.0,
+                )
+        self._last_temp, self._last_hum = temp, hum
+        if sensor_fault:
+            # Same treatment as a dead sensor: we do not know the temperature.
+            temp = hum = None
 
         target_t = clamp_target(
             self._f(settings, "target_temp_c", 37.5),
@@ -194,9 +306,46 @@ class ControlDaemon:
             want_heat = failsafe_outputs()[HEATER]
         else:
             want_heat = thermostat_decision(temp, target_t, self._hysteresis)
+
+        # Anti-runaway: heat that isn't warming the chamber means the sensor is
+        # misplaced/latched or the heater is failing — either way, continuing to
+        # call for heat is the dangerous choice. Latch it OFF until a restart or
+        # a real temperature rise clears the condition.
+        if heat_runaway(
+            self._heater_on, temp, self._heat_start_ts, self._heat_start_temp, now_ts,
+        ):
+            if not self._runaway_latched:
+                logger.error(
+                    "Heater ran %.0f min with <%.1f C rise — forcing OFF (sensor or heater fault)",
+                    HEAT_RUNAWAY_SECONDS / 60.0, HEAT_RUNAWAY_MIN_RISE_C,
+                )
+            self._runaway_latched = True
+        if self._runaway_latched:
+            want_heat = False
+            # Report for as long as the latch holds — not just on the iteration
+            # it tripped. Once the heater is forced off the runaway condition
+            # stops being true, so a trip-only report would leave the UI
+            # showing a healthy sensor while heat is actually suppressed.
+            sensor_fault = sensor_fault or "heat_runaway"
+
         if want_heat is not None and want_heat != self._heater_on:
             self._gpio.set_heater(want_heat)
             self._heater_on = want_heat
+            # Track the start of each continuous heating stretch so the
+            # runaway check has a baseline to compare against.
+            if want_heat:
+                self._heat_start_ts, self._heat_start_temp = now_ts, temp
+            else:
+                self._heat_start_ts = self._heat_start_temp = None
+        # A genuine rise while heating clears the latch (e.g. the sensor was
+        # reseated, or the door was closed).
+        if (
+            self._runaway_latched and temp is not None
+            and self._heat_start_temp is not None
+            and (temp - self._heat_start_temp) >= HEAT_RUNAWAY_MIN_RISE_C
+        ):
+            logger.info("Chamber is warming again — clearing heat-runaway latch")
+            self._runaway_latched = False
 
         # Humidity (optional vent-fan mode).
         want_fan = humidity_decision(hum, target_h, hum_tol, self._humidity_mode)
@@ -223,7 +372,10 @@ class ControlDaemon:
             "fan_on": self._fan_on,
             "turned": turned,
             "last_turn_ts": self._last_turn_ts,
-            "online": bool(reading.get("ok")),
+            # A sensor that failed integrity checks is NOT online, however
+            # cheerfully it reported success — the UI/alerts must see the truth.
+            "online": bool(reading.get("ok")) and not sensor_fault,
+            "sensor_fault": sensor_fault,
         }
         self._publish_state(state)
         return state
