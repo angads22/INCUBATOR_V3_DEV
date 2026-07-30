@@ -116,6 +116,11 @@ class Settings:
     # --- Sensor polling ---
     sensor_poll_interval_seconds: int = field(default_factory=lambda: int(os.getenv("SENSOR_POLL_INTERVAL", "30")))
     sensor_log_to_db: bool = field(default_factory=lambda: os.getenv("SENSOR_LOG_TO_DB", "true").lower() == "true")
+    # DB retention: sensor readings accumulate ~1M rows/year at a 30 s poll —
+    # unbounded growth eventually fills the SD card and slows every query.
+    # Rows older than these windows are pruned once a day. 0 disables pruning.
+    sensor_log_retention_days: int = field(default_factory=lambda: int(os.getenv("SENSOR_LOG_RETENTION_DAYS", "45")))
+    action_log_retention_days: int = field(default_factory=lambda: int(os.getenv("ACTION_LOG_RETENTION_DAYS", "180")))
 
     # --- Heater-circuit integrity (optional INA219 current sensor) ---
     # When a current sensor is fitted on the heater leg, the poller cross-checks

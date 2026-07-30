@@ -11,7 +11,14 @@ Wants=NetworkManager.service
 StartLimitIntervalSec=0
 
 [Service]
-Type=simple
+# Type=notify + WatchdogSec: the app sends READY=1 at startup and pings
+# WATCHDOG=1 from its sensor-poll loop (~30 s). If the process HANGS —
+# deadlock, wedged event loop — the pings stop and systemd restarts it.
+# Restart= only covers exits; the hardware watchdog only covers the
+# kernel. This is the missing middle layer.
+Type=notify
+NotifyAccess=all
+WatchdogSec=120
 User=root
 WorkingDirectory=__INSTALL_DIR__
 EnvironmentFile=/etc/incubator.env

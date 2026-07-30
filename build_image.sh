@@ -535,6 +535,16 @@ verify_artifact() {
             fail "hardware watchdog config missing — a hung system would never reboot"
         fi
 
+        # App-level watchdog: a HUNG (not crashed) app/daemon must be restarted.
+        for u in incubator.service incubator-control.service; do
+            if grep -q "^Type=notify" "$r/etc/systemd/system/$u" 2>/dev/null \
+               && grep -q "^WatchdogSec=" "$r/etc/systemd/system/$u" 2>/dev/null; then
+                pass "$u app watchdog armed (Type=notify + WatchdogSec)"
+            else
+                fail "$u missing Type=notify/WatchdogSec — a hung service would never restart"
+            fi
+        done
+
         umount "$r" 2>/dev/null || umount -lf "$r" 2>/dev/null
     else
         fail "cannot mount root partition ${loop}p2"
