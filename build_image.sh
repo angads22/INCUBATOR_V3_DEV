@@ -455,6 +455,14 @@ verify_artifact() {
         else
             fail "dtoverlay=i2c-rtc,ds3231 missing from config.txt — a fitted RTC would not bind"
         fi
+        # Relays must be OFF from POWER-ON: firmware drives the pins to safe
+        # levels before the kernel, else the heater blasts during every boot.
+        if [[ -f "$b/config.txt" ]] && grep -q 'gpio=12,13,17,27=op,dh' "$b/config.txt" \
+           && grep -q 'gpio=22,23,24,25=op,dl' "$b/config.txt"; then
+            pass "boot-safe GPIO states baked (relays off from power-on)"
+        else
+            fail "gpio=...op,dh/op,dl lines missing from config.txt — heater relay would energize during boot"
+        fi
         if [[ "$ENABLE_SSH" == "1" ]]; then
             [[ -e "$b/ssh" || -e "$b/ssh.txt" ]] && pass "ssh enable flag present" || fail "ssh flag file missing from boot partition"
         fi

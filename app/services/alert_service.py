@@ -36,6 +36,7 @@ ALERT_MESSAGES = {
     "humidity_low": "Humidity is below the target range",
     "humidity_high": "Humidity is above the target range",
     "sensor_offline": "Sensor is not responding — live readings are unavailable",
+    "sensor_faulty": "Sensor readings are not trustworthy (frozen or impossible values) — heating has been stopped as a precaution",
     "heater_cutoff": "Heater is ON but no current is flowing — the thermal cutoff may have tripped or the heater is disconnected",
     "heater_stuck": "Current is flowing to the heater while it is commanded OFF — the relay may be stuck closed",
 }
@@ -66,6 +67,9 @@ class AlertService:
         self._active: dict[str, str] = {}  # alert type -> ISO timestamp raised
         self._silenced = False
         self._alarm_on = False
+        # Sensor-integrity tracking (latch detection across polls).
+        self._integ_last: tuple[float | None, float | None] = (None, None)
+        self._integ_unchanged_since: float | None = None
 
     def reset(self) -> None:
         """Drop all cached state (used by tests and re-initialisation)."""
@@ -78,6 +82,38 @@ class AlertService:
             self._active = {}
             self._silenced = False
             self._alarm_on = False
+            self._integ_last = (None, None)
+            self._integ_unchanged_since = None
+
+    # ------------------------------------------------------------------
+    # Sensor integrity
+    # ------------------------------------------------------------------
+
+    def _integrity_fault(self, reading: dict[str, Any]) -> str:
+        """Name the integrity problem with an ok=True reading, else "".
+
+        Shares the control daemon's thresholds so the alarm and the thermostat
+        can never disagree about whether the sensor is trustworthy.
+        """
+        import time as _time
+
+        from ..control.loop import reading_plausible, sensor_stuck
+
+        # Mock readings are exempt — the mock sensor returns a fixed value by
+        # design, so checking it would alarm on every dev/demo/sensor-less unit.
+        if not reading.get("ok") or reading.get("mock"):
+            self._integ_unchanged_since = None
+            return ""
+        temp = reading.get("temperature_c")
+        hum = reading.get("humidity_pct")
+        if temp is not None and not reading_plausible(temp):
+            return "implausible"
+        last_t, last_h = self._integ_last
+        stuck, self._integ_unchanged_since = sensor_stuck(
+            temp, hum, last_t, last_h, self._integ_unchanged_since, _time.time(),
+        )
+        self._integ_last = (temp, hum)
+        return "stuck" if stuck else ""
 
     # ------------------------------------------------------------------
     # Poller entry point
@@ -92,6 +128,20 @@ class AlertService:
         """
         events: list[dict[str, str]] = []
         with self._lock:
+            # A reading can claim ok=True and still be untrustworthy: a DHT22
+            # that latches returns the same value forever, and a glitched read
+            # can be physically impossible. The control daemon already refuses
+            # to act on these; the farmer needs to HEAR about it too, so an
+            # integrity failure raises its own alarm rather than being silently
+            # averaged into a healthy-looking history.
+            integrity_fault = self._integrity_fault(reading)
+            if integrity_fault:
+                self._range_counts.clear()
+                events += self._raise("sensor_faulty")
+                self._apply_alarm(app_settings)
+                return events
+            events += self._clear("sensor_faulty")
+
             if reading.get("ok"):
                 self._online = True
                 self._fail_count = 0

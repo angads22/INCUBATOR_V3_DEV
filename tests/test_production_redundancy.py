@@ -184,3 +184,19 @@ def test_retention_sweep_prunes_old_rows(client):
         assert "old.event" not in actions and "new.event" in actions
     finally:
         db.close()
+
+
+# ── Boot-safe GPIO states (relays OFF from power-on) ─────────────────────────
+
+def test_boot_safe_gpio_directives_are_installed_and_gated():
+    """Firmware must drive relay pins OFF before the kernel loads.
+
+    During boot the pins would otherwise be inputs with pull-downs, which an
+    active-LOW relay board reads as ON — i.e. the heater blasting from
+    power-on until the app starts (worse in a crash loop).
+    """
+    init = open("init_pi.sh").read()
+    assert "gpio=12,13,17,27=op,dh" in init      # active-LOW relays → OFF (high)
+    assert "gpio=22,23,24,25=op,dl" in init      # turner/candle/buzzer → OFF (low)
+    gate = open("build_image.sh").read()
+    assert "gpio=12,13,17,27=op,dh" in gate      # zero-tolerance gate enforces it

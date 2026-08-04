@@ -114,3 +114,46 @@ def test_hardware_send_alarm_actions(client):
 
     r = client.post("/hardware/send", json={"action": "alarm_test"})
     assert r.status_code == 200 and r.json()["ok"] is True
+
+
+# ── Sensor integrity reaches the buzzer, not just the control loop ───────────
+
+# Real (non-mock) readings — integrity checks only apply to these.
+REAL_STEADY = {"ok": True, "temperature_c": 37.5, "humidity_pct": 55.0}
+ALARM_ON = {"target_temp_c": "37.5", "target_humidity_pct": "55", "alarm_enabled": "true"}
+
+
+def test_latched_sensor_raises_alarm():
+    """A frozen-but-'ok' sensor must alarm — the farmer has to hear about it."""
+    import time as _t
+
+    from app import main
+
+    real = _t.time
+    try:
+        _t.time = lambda: 1000.0
+        main.alert_service.record_reading(REAL_STEADY, ALARM_ON)   # first sighting
+        _t.time = lambda: 1000.0 + 901                             # identical 15 min on
+        events = main.alert_service.record_reading(REAL_STEADY, ALARM_ON)
+    finally:
+        _t.time = real
+
+    assert any(e.get("type") == "sensor_faulty" for e in events)
+
+
+def test_implausible_reading_raises_alarm():
+    from app import main
+
+    events = main.alert_service.record_reading(
+        {"ok": True, "temperature_c": -40.0, "humidity_pct": 50.0}, ALARM_ON,
+    )
+    assert any(e.get("type") == "sensor_faulty" for e in events)
+
+
+def test_mock_reading_never_raises_integrity_alarm():
+    """Mock readings are constant by design — they must never alarm."""
+    from app import main
+
+    for _ in range(50):
+        events = main.alert_service.record_reading(NORMAL, ALARM_ON)
+        assert not any(e.get("type") == "sensor_faulty" for e in events)
