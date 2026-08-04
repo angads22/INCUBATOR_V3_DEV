@@ -91,7 +91,7 @@
         msg.textContent = (data && (data.detail || data.error)) || 'Connection failed. Check the password and try again.';
       }
     } catch {
-      msg.textContent = 'No response — if the incubator switched networks, join the new Wi-Fi and reload this page.';
+      msg.textContent = 'No response, if the incubator switched networks, join the new Wi-Fi and reload this page.';
     } finally {
       clearTimeout(timeout);
       connectBtn.disabled = false;

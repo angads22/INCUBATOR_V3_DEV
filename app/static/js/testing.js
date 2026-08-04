@@ -1,4 +1,4 @@
-// Testing tab — choose images, run vision_service.predict_stage on each, and
+// Testing tab, choose images, run vision_service.predict_stage on each, and
 // record predicted-vs-actual to measure MAE. Uses the shared apiGet/apiPost
 // helpers (base.js) for JSON; predict uses multipart FormData directly.
 
@@ -123,7 +123,7 @@
   function fmtDay(p) {
     const lo = p.day_range ? p.day_range[0] : null;
     const hi = p.day_range ? p.day_range[1] : null;
-    const range = (lo != null && hi != null) ? ` (day ${lo}–${hi})` : '';
+    const range = (lo != null && hi != null) ? ` (day ${lo}-${hi})` : '';
     return `≈ day ${Number(p.day_estimate).toFixed(1)}${range}`;
   }
 
@@ -148,7 +148,7 @@
           `<div class="chip-row">` +
             `<span class="status-pill ${pillClass}">${p.stage || 'unclear'}</span>` +
             `<span class="status-chip status-info">conf ${Number(p.confidence || 0).toFixed(2)}</span>` +
-            `<span class="status-chip status-info">${p.backend || '—'}</span>` +
+            `<span class="status-chip status-info">${p.backend || ', '}</span>` +
           `</div>` +
         `</div>` +
       `</div>` +
@@ -221,7 +221,7 @@
     const recorded = document.getElementById('testingRecorded');
     const body = document.getElementById('testingSavedBody');
     const empty = document.getElementById('testingSavedEmpty');
-    if (mae) mae.textContent = data.mae != null ? `${data.mae}` : '—';
+    if (mae) mae.textContent = data.mae != null ? `${data.mae}` : ', ';
     if (recorded) recorded.textContent = `${data.count || 0}`;
     const rows = data.results || [];
     body.innerHTML = '';
@@ -232,8 +232,8 @@
       tr.innerHTML =
         cell(`<span title="${r.image_path}">${name}</span>`) +
         cell(Number(r.predicted_day).toFixed(1)) +
-        cell(r.actual_day != null ? Number(r.actual_day).toFixed(1) : '—') +
-        cell(r.error != null ? r.error : '—') +
+        cell(r.actual_day != null ? Number(r.actual_day).toFixed(1) : ', ') +
+        cell(r.error != null ? r.error : ', ') +
         cell(r.stage) +
         cell(r.backend);
       body.appendChild(tr);
