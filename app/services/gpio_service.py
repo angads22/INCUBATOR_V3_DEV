@@ -88,7 +88,16 @@ class GPIOService:
         self._heater_current_shunt_ohms = heater_current_shunt_ohms
         self._ina_bus: Any = None
         self._ina_attempted = False
+        # Two locks, deliberately. A DHT22 read blocks for up to ~6 s (three
+        # attempts, each a slow bit-banged read, with retry sleeps between).
+        # While it held the single shared lock, EVERY relay button press queued
+        # behind the in-flight sensor read, which is what made the UI feel
+        # frozen for seconds at a time. The sensor sits on its own pin and the
+        # outputs on theirs, so they never needed to serialise against each
+        # other: reads take _sensor_lock, writes take _lock, and a button press
+        # is now immediate no matter what the poller is doing.
         self._lock = threading.Lock()
+        self._sensor_lock = threading.Lock()
         self._mock_state: dict[str, Any] = {
             "heater": False,
             "fan": False,
@@ -183,8 +192,12 @@ class GPIOService:
     # ------------------------------------------------------------------
 
     def read_temperature_humidity(self) -> dict[str, Any]:
-        """Read DHT22.  Returns dict with temperature_c, humidity_pct, ok."""
-        with self._lock:
+        """Read DHT22.  Returns dict with temperature_c, humidity_pct, ok.
+
+        Holds only ``_sensor_lock`` so a slow read never blocks relay writes
+        (see the lock comment in __init__).
+        """
+        with self._sensor_lock:
             if self._mock or not self._dht_device:
                 return {
                     "ok": True,

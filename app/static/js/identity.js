@@ -53,7 +53,7 @@
     const { status, body } = await post('/api/identity/google/begin');
     if (status !== 200 || !body.ok) {
       if (panel) panel.removeAttribute('hidden');
-      if (msg) msg.textContent = 'Google is unreachable right now — check the incubator is online and try again.';
+      if (msg) msg.textContent = 'Google is unreachable right now, check the incubator is online and try again.';
       return;
     }
     if ($('googleVerifyUrl')) $('googleVerifyUrl').textContent = body.verification_url;
@@ -78,9 +78,9 @@
         return;
       }
       if (msg) msg.textContent = b.detail || b.error === 'access_denied'
-        ? 'Sign-in was cancelled or refused.' : (b.detail || 'Sign-in failed — try again.');
+        ? 'Sign-in was cancelled or refused.' : (b.detail || 'Sign-in failed, try again.');
       if (res.status === 403 && b.detail) msg.textContent = b.detail;
-      if (b.status === 'expired' && msg) msg.textContent = 'The code expired — tap Continue with Google to get a new one.';
+      if (b.status === 'expired' && msg) msg.textContent = 'The code expired, tap Continue with Google to get a new one.';
     }, interval);
   });
 
@@ -107,7 +107,7 @@
       }
       return;
     }
-    if (msg) msg.textContent = body.detail || 'That code was not accepted — get a fresh one from the portal.';
+    if (msg) msg.textContent = body.detail || 'That code was not accepted, get a fresh one from the portal.';
   });
 
   // ── Linked-accounts list (settings page) ────────────────────────────────

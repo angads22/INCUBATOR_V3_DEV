@@ -16,20 +16,40 @@
       <button id="wifi-connect-btn" class="btn btn-primary" type="button">Connect</button>
     </div>
     <p id="network-msg" class="hint"></p>
-    <p class="muted">Switching networks can briefly drop this page — if it stops responding, join the new Wi-Fi and reload.</p>
+    <p class="muted">Switching networks can briefly drop this page, if it stops responding, join the new Wi-Fi and reload.</p>
   </article>
 
   <article id="setup-network" class="card form-panel">
     <h3>Setup network password</h3>
     <p class="muted">Your incubator's own setup Wi-Fi (<strong>Incubator-XXXX</strong>) is <strong>open</strong> so it's easy to connect the first time. If you'd like, set a password to protect future setup sessions. Leave blank to keep it open.</p>
     <label>Setup Wi-Fi password (optional)
-      <input id="ap-password" type="password" autocomplete="new-password" placeholder="8–63 characters, or blank for open">
+      <input id="ap-password" type="password" autocomplete="new-password" placeholder="8 to 63 characters, or blank for open">
     </label>
     <div class="button-row">
       <button id="ap-password-save" class="btn btn-primary" type="button">Save</button>
     </div>
     <p id="ap-password-msg" class="hint"></p>
   </article>
+  <article id="display" class="card form-panel">
+    <h3>Display</h3>
+    <p class="muted">Set these once and forget them. They apply to this device for everyone who opens it.</p>
+    <label>Temperature units
+      <div class="unit-toggle-row">
+        <button id="unitToggle" class="unit-toggle" type="button" aria-label="Toggle temperature unit">
+          <span data-unit="C">&deg;C</span><span data-unit="F">&deg;F</span>
+        </button>
+        <span class="muted">Tap to switch between Celsius and Fahrenheit.</span>
+      </div>
+    </label>
+    <label>Accent colour
+      <div class="theme-switch" id="themeSwitch" role="group" aria-label="Accent theme">
+        <button type="button" class="theme-dot" data-theme-choice="clay" title="Clay" aria-label="Clay theme"></button>
+        <button type="button" class="theme-dot" data-theme-choice="sage" title="Sage" aria-label="Sage theme"></button>
+        <button type="button" class="theme-dot" data-theme-choice="harvest" title="Harvest" aria-label="Harvest theme"></button>
+      </div>
+    </label>
+  </article>
+
   <article id="linked-accounts" class="card form-panel">
     <h3>Linked sign-in accounts</h3>
     <p class="muted">Link a Google or Apple account so you can sign in without a password. Your username &amp; password keep working either way.</p>
@@ -61,11 +81,11 @@
   <form id="settings-form" class="card form-panel">
     <h3 id="device">Device Controls</h3>
     <div class="form-grid">
-      <label>Target Temp (°C, 20–42)<input type="number" step="0.1" min="20" max="42" name="target_temp_c" value="{{ settings.target_temp_c }}" required></label>
-      <label>Target Humidity (%, 0–100)<input type="number" step="0.1" min="0" max="100" name="target_humidity_pct" value="{{ settings.target_humidity_pct }}" required></label>
-      <label>Alert tolerance — temp (±°C)<input type="number" step="0.1" min="0.1" max="10" name="alert_temp_tolerance_c" value="{{ settings.get('alert_temp_tolerance_c', '1.0') }}" required></label>
-      <label>Alert tolerance — humidity (±%)<input type="number" step="0.5" min="1" max="50" name="alert_humidity_tolerance_pct" value="{{ settings.get('alert_humidity_tolerance_pct', '10') }}" required></label>
-      <label>Incubation day (0–21)<input type="number" step="1" min="0" max="21" name="incubation_day" value="{{ settings.get('incubation_day', '0') }}"></label>
+      <label>Target Temp (°C, 20 to 42)<input type="number" step="0.1" min="20" max="42" name="target_temp_c" value="{{ settings.target_temp_c }}" required></label>
+      <label>Target Humidity (%, 0 to 100)<input type="number" step="0.1" min="0" max="100" name="target_humidity_pct" value="{{ settings.target_humidity_pct }}" required></label>
+      <label>Alert tolerance: temp (±°C)<input type="number" step="0.1" min="0.1" max="10" name="alert_temp_tolerance_c" value="{{ settings.get('alert_temp_tolerance_c', '1.0') }}" required></label>
+      <label>Alert tolerance: humidity (±%)<input type="number" step="0.5" min="1" max="50" name="alert_humidity_tolerance_pct" value="{{ settings.get('alert_humidity_tolerance_pct', '10') }}" required></label>
+      <label>Incubation day (0 to 21)<input type="number" step="1" min="0" max="21" name="incubation_day" value="{{ settings.get('incubation_day', '0') }}"></label>
     </div>
     <p class="muted">The incubation day drives the day-progress loop ring on the dashboard (21-day cycle).</p>
     <p class="muted">Readings outside target ± tolerance raise an alert and sound the buzzer (when the alarm is enabled).</p>

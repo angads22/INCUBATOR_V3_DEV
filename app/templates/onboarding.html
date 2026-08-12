@@ -10,13 +10,12 @@
   {% if retry_mode %}
   <!-- Recovery mode: the last Wi-Fi join failed, the setup network came back,
        and the phone landed here again. Say what happened in plain words and
-       ask ONLY for the Wi-Fi — the incubator already has its name and login. -->
+       ask ONLY for the Wi-Fi. The incubator already has its name and login. -->
   <article class="card" style="border:2px solid var(--accent);margin-bottom:14px">
     <strong>⚠️ Let's fix the Wi-Fi</strong>
     <p class="muted" style="margin:6px 0 0">
       Your incubator couldn't join
-      {% if retry_ssid %}<strong>&ldquo;{{ retry_ssid }}&rdquo;</strong>{% else %}your Wi-Fi{% endif %}
-      — usually that's a mistyped password. Everything else is already saved,
+      {% if retry_ssid %}<strong>&ldquo;{{ retry_ssid }}&rdquo;</strong>{% else %}your Wi-Fi{% endif %}, usually that's a mistyped password. Everything else is already saved,
       so just pick your Wi-Fi and enter the password again.
     </p>
   </article>
@@ -31,9 +30,9 @@
   <div class="wizard-step active" data-step="0">
     <article class="card">
       <h3>Let's set up your incubator</h3>
-      <p>This takes about two minutes. We'll connect your incubator to your Wi-Fi and get it ready. No technical know-how needed — just follow along.</p>
-      <p class="muted">You're already connected to your incubator's own Wi-Fi (<strong>{{ ap_ssid }}</strong>{% if ap_password %}, password <code>{{ ap_password }}</code>{% else %} — it's open, no password{% endif %}) and this page opened by itself. If you ever need to get back here, hold the <strong>setup button</strong> on the device for 4&nbsp;seconds and reconnect to that network.</p>
-      <p class="muted" style="font-size:0.9em">See other <strong>Incubator&hellip;</strong> networks that ask for a password? Those are leftovers your phone remembers from earlier — you can safely <em>Forget</em> them in your Wi-Fi settings. This incubator's network is the open one named <strong>{{ ap_ssid }}</strong>.</p>
+      <p>This takes about two minutes. We'll connect your incubator to your Wi-Fi and get it ready. No technical know-how needed, just follow along.</p>
+      <p class="muted">You're already connected to your incubator's own Wi-Fi (<strong>{{ ap_ssid }}</strong>{% if ap_password %}, password <code>{{ ap_password }}</code>{% else %}, it's open, no password{% endif %}) and this page opened by itself. If you ever need to get back here, hold the <strong>setup button</strong> on the device for 4&nbsp;seconds and reconnect to that network.</p>
+      <p class="muted" style="font-size:0.9em">See other <strong>Incubator&hellip;</strong> networks that ask for a password? Those are leftovers your phone remembers from earlier, you can safely <em>Forget</em> them in your Wi-Fi settings. This incubator's network is the open one named <strong>{{ ap_ssid }}</strong>.</p>
       <div class="button-row">
         <button class="btn btn-primary" id="beginSetupBtn" type="button">Start</button>
       </div>
@@ -41,7 +40,7 @@
     </article>
   </div>
 
-  <!-- Step 1: Wi-Fi — network AND password on one screen. The password field
+  <!-- Step 1: Wi-Fi, network AND password on one screen. The password field
        appears only when it's needed (locked network picked, or name typed by
        hand), so an open network is a single tap. -->
   <div class="wizard-step" data-step="1">
@@ -133,18 +132,18 @@
         <div class="card" style="margin-top:14px;border:2px solid var(--accent)">
           <strong>📌 How to reach your incubator from now on</strong>
           <ol class="stack-list" style="margin:10px 0;padding-left:22px">
-            <li><strong>Reconnect your phone to your home Wi-Fi</strong> <strong id="finishHomeSsid"></strong> — the <em>{{ ap_ssid }}</em> setup network is about to disappear.</li>
+            <li><strong>Reconnect your phone to your home Wi-Fi</strong> <strong id="finishHomeSsid"></strong>, the <em>{{ ap_ssid }}</em> setup network is about to disappear.</li>
             <li><strong>Open your browser</strong> (Safari or Chrome).</li>
-            <li><strong>Type this address into the address bar</strong> — tap it below to select it:</li>
+            <li><strong>Type this address into the address bar</strong>, tap it below to select it:</li>
           </ol>
           <p style="text-align:center;margin:10px 0"><code id="finishUrl" style="font-size:1.15rem;padding:8px 12px;display:inline-block;-webkit-user-select:all;user-select:all"></code></p>
           <div class="button-row" style="justify-content:center">
             <button type="button" id="finishCopyBtn" class="btn btn-secondary">Copy address</button>
           </div>
           <p id="finishCopyMsg" class="hint" style="text-align:center"></p>
-          <p class="muted" style="margin:8px 0 0">Once it loads, <strong>bookmark it</strong> or use your browser menu to <strong>Add to Home Screen</strong> — then your incubator is one tap away, just like an app.</p>
-          <p class="muted" style="margin:8px 0 0;font-size:0.9em"><strong>Android tip:</strong> if that address won't load, some Android phones can't use <em>.local</em> names — open your Wi-Fi router's app or device list, find <em>your incubator's name</em>, and use its IP address (like <code>http://192.168.1.23:8000</code>) instead.</p>
-          <p class="muted" style="margin:8px 0 0;font-size:0.9em"><strong>Safety net:</strong> if the address doesn't work after a couple of minutes, the Wi-Fi join probably failed — your incubator will automatically turn its <em>{{ ap_ssid }}</em> setup network back on. Reconnect to it and we'll fix the Wi-Fi together; everything else stays saved.</p>
+          <p class="muted" style="margin:8px 0 0">Once it loads, <strong>bookmark it</strong> or use your browser menu to <strong>Add to Home Screen</strong>, then your incubator is one tap away, just like an app.</p>
+          <p class="muted" style="margin:8px 0 0;font-size:0.9em"><strong>Android tip:</strong> if that address won't load, some Android phones can't use <em>.local</em> names, open your Wi-Fi router's app or device list, find <em>your incubator's name</em>, and use its IP address (like <code>http://192.168.1.23:8000</code>) instead.</p>
+          <p class="muted" style="margin:8px 0 0;font-size:0.9em"><strong>Safety net:</strong> if the address doesn't work after a couple of minutes, the Wi-Fi join probably failed, your incubator will automatically turn its <em>{{ ap_ssid }}</em> setup network back on. Reconnect to it and we'll fix the Wi-Fi together; everything else stays saved.</p>
         </div>
       </div>
     </article>

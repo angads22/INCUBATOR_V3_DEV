@@ -10,18 +10,18 @@ const FINISH_STEP = 5;
 
 // Recovery mode: the last Wi-Fi join failed and the setup network came back.
 // The server marks the page (wizard-wrap data attributes); the wizard then
-// asks ONLY for the Wi-Fi — name and login are already saved on the device.
+// asks ONLY for the Wi-Fi, name and login are already saved on the device.
 const _wrap = document.getElementById('wizardWrap');
 const RETRY_MODE = !!(_wrap && _wrap.dataset.retry);
 const RETRY_DEVICE_NAME = _wrap?.dataset.deviceName || '';
 const RETRY_SSID = _wrap?.dataset.retrySsid || '';
 
 // Mirrors the device-side SSID rule so a name the incubator would reject
-// fails HERE, with a friendly message — not minutes later as a dead join.
+// fails HERE, with a friendly message, not minutes later as a dead join.
 const SSID_OK_RE = /^[\w\s\-\.@#!]{1,32}$/;
 
 // Persist wizard fields so a brief Wi-Fi blip (or a captive-sheet reload) doesn't
-// wipe what the user already typed — on reconnect the wizard resumes. Passwords
+// wipe what the user already typed, on reconnect the wizard resumes. Passwords
 // are intentionally NOT persisted.
 const WIZ_KEY = 'incubatorWizardState';
 function saveWizard() {
@@ -35,7 +35,7 @@ function saveWizard() {
       username: g('acctUsername')?.value || '',
       email: g('acctEmail')?.value || '',
     }));
-  } catch { /* storage disabled — non-fatal */ }
+  } catch { /* storage disabled, non-fatal */ }
 }
 function restoreWizard() {
   try {
@@ -65,7 +65,7 @@ function showStep(n) {
   if (target) target.classList.add('active');
   currentStep = n;
 
-  // Progress indicator (optional — guarded so it never breaks the wizard).
+  // Progress indicator (optional, guarded so it never breaks the wizard).
   const total = WIZARD_LABELS.length - 1; // steps 0..6
   const fill = document.getElementById('wizardProgressFill');
   const label = document.getElementById('wizardStepLabel');
@@ -88,14 +88,14 @@ function wifiStepValid() {
   const say = (t) => { if (msg) msg.textContent = t; return false; };
   if (!selectedSsid) return say('Pick your Wi-Fi from the list, or type its name.');
   if (!SSID_OK_RE.test(selectedSsid)) {
-    return say("That network name has characters the incubator can't use — double-check the spelling.");
+    return say("That network name has characters the incubator can't use, double-check the spelling.");
   }
   const pw = document.getElementById('wifiPassword')?.value || '';
   if (pw && pw.length < 8) {
-    return say('Wi-Fi passwords are at least 8 characters — double-check yours.');
+    return say('Wi-Fi passwords are at least 8 characters, double-check yours.');
   }
   if (selectedSsidSecure === true && !pw) {
-    return say('This network is locked 🔒 — it needs its Wi-Fi password.');
+    return say('This network is locked 🔒, it needs its Wi-Fi password.');
   }
   if (msg) msg.textContent = '';
   return true;
@@ -107,7 +107,7 @@ document.querySelectorAll('[data-next]').forEach((btn) => {
     if (currentStep === 1) {
       if (!wifiStepValid()) return;
       if (RETRY_MODE) {
-        // Everything else is already on the device — go straight to saving.
+        // Everything else is already on the device, go straight to saving.
         showStep(FINISH_STEP);
         submitSetup();
         return;
@@ -195,7 +195,7 @@ function _showPasswordFor(ssid, secure) {
   }
 }
 
-// Manual SSID entry — the single-radio Pi often can't scan while its own
+// Manual SSID entry. The single-radio Pi often can't scan while its own
 // hotspot is up, so let the operator just type the network name.
 document.getElementById('manualSsid')?.addEventListener('input', (e) => {
   const value = e.target.value.trim();
@@ -203,7 +203,7 @@ document.getElementById('manualSsid')?.addEventListener('input', (e) => {
   if (value) {
     document.querySelectorAll('.wifi-item').forEach((el) => el.classList.remove('selected'));
     selectedSsid = value;
-    selectedSsidSecure = null;        // unknown — password shown but optional
+    selectedSsidSecure = null;        // unknown, password shown but optional
     _showPasswordFor(value, null);
     if (nextBtn) nextBtn.disabled = false;
   } else {
@@ -226,7 +226,7 @@ document.getElementById('finishSetupBtn')?.addEventListener('click', () => {
 });
 
 // Recovery mode: skip the welcome screen, make sure the AP session is
-// registered (idempotent — never drops the phone), and land straight on
+// registered (idempotent, never drops the phone), and land straight on
 // the Wi-Fi step with the failed network preselected for a fast retry.
 if (RETRY_MODE) {
   fetch('/onboarding/start', { method: 'POST' }).catch(() => {});
@@ -275,7 +275,7 @@ async function submitSetup() {
   const payload = {
     ssid: selectedSsid,
     wifi_password: document.getElementById('wifiPassword')?.value || '',
-    // Recovery: keep the name the device already has — the wizard never
+    // Recovery: keep the name the device already has, the wizard never
     // showed the naming step, so the input still holds its placeholder.
     device_name: RETRY_MODE
       ? (RETRY_DEVICE_NAME || document.getElementById('deviceName')?.value || 'My Incubator')
@@ -333,7 +333,7 @@ async function submitSetup() {
 
       // Copy the durable address so the user can paste it into their browser.
       // navigator.clipboard does NOT exist on plain-http pages (this setup page
-      // is http://10.42.0.1) — fall back to the legacy execCommand('copy')
+      // is http://10.42.0.1), fall back to the legacy execCommand('copy')
       // path, and if even that fails, select the address and say exactly how
       // to copy it by hand.
       const copyBtn = document.getElementById('finishCopyBtn');
@@ -374,7 +374,7 @@ async function submitSetup() {
             if (copyMsg) copyMsg.textContent = 'Copied! Paste it into Safari or Chrome once you’re back on your home Wi-Fi.';
           } catch {
             selectUrl();
-            if (copyMsg) copyMsg.textContent = 'The address above is selected — press and hold it, then choose Copy.';
+            if (copyMsg) copyMsg.textContent = 'The address above is selected, press and hold it, then choose Copy.';
           }
         });
       }

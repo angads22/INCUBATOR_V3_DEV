@@ -23,7 +23,7 @@
       {% with label='Humidity', value='%.1f%%'|format(environment.humidity_pct), hint=('Simulated' if environment.mock else ('Live' if environment.online else 'Last known')) %}{% include 'partials/metric_card.html' %}{% endwith %}
     </div>
     {% if not environment.online %}
-    <p class="muted">Sensor is offline — showing the last known reading{% if environment.read_at %} from {{ environment.read_at }}{% endif %}. Check the DHT22 sensor wiring (data pin GPIO{{ health.dht_pin }}).</p>
+    <p class="muted">Sensor is offline, showing the last known reading{% if environment.read_at %} from {{ environment.read_at }}{% endif %}. Check the DHT22 sensor wiring (data pin GPIO{{ health.dht_pin }}).</p>
     {% endif %}
     {% else %}
     <p class="muted">No sensor reading available yet. Check the DHT22 sensor wiring (data pin GPIO{{ health.dht_pin }}).</p>

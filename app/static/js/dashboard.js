@@ -16,13 +16,13 @@
   let lastFetched = null;
 
   function fmt(value, suffix) {
-    return value == null ? '—' : `${value.toFixed(1)}${suffix}`;
+    return value == null ? '--' : `${value.toFixed(1)}${suffix}`;
   }
 
   function render(data) {
     if (data.temperature_c == null) {
       tempEl.removeAttribute('data-temp-c');
-      tempEl.textContent = '—';
+      tempEl.textContent = '--';
     } else {
       tempEl.dataset.tempC = data.temperature_c;
       // Respect the °C/°F header toggle when one is present.
@@ -31,7 +31,7 @@
     humEl.textContent = fmt(data.humidity_pct, '%');
     offlineRow.hidden = !!data.online;
     if (!data.online) {
-      const last = data.read_at ? ` — last reading ${new Date(data.read_at).toLocaleString()}` : '';
+      const last = data.read_at ? `, last reading ${new Date(data.read_at).toLocaleString()}` : '';
       offlineChip.textContent = `Sensor offline${last}`;
     }
     const alerts = data.alerts || { active: [], alarm_on: false };
@@ -52,7 +52,7 @@
     if (lastFetched == null) return;
     const secs = Math.round((Date.now() - lastFetched) / 1000);
     updatedEl.textContent = secs > (3 * POLL_MS) / 1000
-      ? `No update for ${secs}s — connection to the incubator may be lost.`
+      ? `No update for ${secs}s, connection to the incubator may be lost.`
       : `Updated ${secs}s ago.`;
   }
 

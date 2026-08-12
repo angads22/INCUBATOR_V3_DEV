@@ -284,6 +284,17 @@ if [ -n "$BOOT_CONFIG" ]; then
     grep -qE '^[[:space:]]*gpio=22,23,24,25=op,dl' "$BOOT_CONFIG" \
         || echo 'gpio=22,23,24,25=op,dl' >> "$BOOT_CONFIG"
     info "  Boot-safe GPIO states written (relays OFF from power-on)"
+
+    # ── Pi Camera ──
+    # On Bookworm the CSI camera stays OFF unless this is present: libcamera
+    # (and therefore picamera2) enumerates zero cameras without it, which is
+    # exactly the "camera doesn't work" symptom no amount of app-side code can
+    # fix. dtoverlay=vc4-kms-v3d is required for the camera stack to bind.
+    grep -qE '^[[:space:]]*camera_auto_detect=1' "$BOOT_CONFIG" \
+        || echo 'camera_auto_detect=1' >> "$BOOT_CONFIG"
+    grep -qE '^[[:space:]]*dtoverlay=vc4-kms-v3d' "$BOOT_CONFIG" \
+        || echo 'dtoverlay=vc4-kms-v3d' >> "$BOOT_CONFIG"
+    info "  Pi Camera enabled in firmware (camera_auto_detect + vc4-kms-v3d)"
 else
     warn "No boot config.txt found — skipping I2C/RTC overlay (add it manually if needed)."
 fi

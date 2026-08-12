@@ -42,7 +42,7 @@ async function apiRequest(url, options = {}) {
   try {
     res = await fetch(url, options);
   } catch {
-    return { ok: false, status: 0, data: null, message: 'Cannot reach the incubator — check your connection.' };
+    return { ok: false, status: 0, data: null, message: 'Cannot reach the incubator, check your connection.' };
   }
   let data = null;
   try { data = await res.json(); } catch { /* non-JSON response */ }
@@ -116,7 +116,7 @@ if (logoutBtn) {
 
   // Shared formatter so live-polling scripts render in the chosen unit too.
   window.formatTemp = (c) => {
-    if (c == null || Number.isNaN(Number(c))) return '—';
+    if (c == null || Number.isNaN(Number(c))) return '--';
     return getUnit() === 'F'
       ? `${cToF(Number(c)).toFixed(1)}°F`
       : `${Number(c).toFixed(1)}°C`;
@@ -170,5 +170,5 @@ if (logoutBtn) {
         popup.addEventListener('transitionend', () => { popup.hidden = true; }, { once: true });
       });
     })
-    .catch(() => { /* offline / unavailable — stay quiet */ });
+    .catch(() => { /* offline / unavailable, stay quiet */ });
 })();

@@ -256,6 +256,42 @@ class CameraService:
     # Public — file capture (existing API, kept working)
     # ------------------------------------------------------------------
 
+    def failure_hint(self, exc: Exception) -> str:
+        """Turn a camera exception into something an operator can act on.
+
+        A bare traceback ("no cameras available") tells a farmer nothing. The
+        two real-world causes are a camera that is not enabled in firmware and
+        a ribbon cable that is loose or in backwards, so name them.
+        """
+        text = str(exc).lower()
+        if isinstance(exc, ImportError) or "picamera2" in text:
+            return (
+                "The Pi camera library is missing. Install it with: "
+                "sudo apt install -y python3-picamera2"
+            )
+        if "no cameras" in text or "not detected" in text or "index out of range" in text:
+            return (
+                "No camera detected. Check the ribbon cable is fully seated at both "
+                "ends with the contacts facing the right way, then reboot. If it still "
+                "fails, confirm camera_auto_detect=1 is in /boot/firmware/config.txt."
+            )
+        if "busy" in text or "resource" in text:
+            return "The camera is busy. Another process may be using it; a reboot clears this."
+        return "Camera error. Check the ribbon cable seating and reboot."
+
+    def diagnostics(self) -> dict[str, Any]:
+        """Non-destructive camera health probe for the UI/status page."""
+        info: dict[str, Any] = {"backend": self.backend, "ok": False, "detail": ""}
+        if self.backend == "mock":
+            info.update(ok=True, detail="Mock camera (no hardware needed).")
+            return info
+        try:
+            self.snapshot_jpeg()
+            info.update(ok=True, detail="Camera is working.")
+        except Exception as exc:  # noqa: BLE001
+            info.update(ok=False, detail=self.failure_hint(exc), error=str(exc))
+        return info
+
     def capture(self) -> dict[str, Any]:
         """Capture a full-res still to disk and return its path.
 
@@ -267,7 +303,10 @@ class CameraService:
             data = self.snapshot_jpeg()
         except Exception as exc:  # noqa: BLE001
             logger.error("%s capture failed: %s", self.backend, exc)
-            return {"ok": False, "error": str(exc), "backend": self.backend}
+            return {
+                "ok": False, "error": str(exc), "backend": self.backend,
+                "hint": self.failure_hint(exc),
+            }
         try:
             path.write_bytes(data)
         except Exception as exc:  # noqa: BLE001

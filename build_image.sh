@@ -463,6 +463,13 @@ verify_artifact() {
         else
             fail "gpio=...op,dh/op,dl lines missing from config.txt — heater relay would energize during boot"
         fi
+        # Pi Camera: without camera_auto_detect the CSI camera is invisible to
+        # libcamera/picamera2, so candling and vision silently never work.
+        if [[ -f "$b/config.txt" ]] && grep -q 'camera_auto_detect=1' "$b/config.txt"; then
+            pass "Pi Camera enabled in firmware"
+        else
+            fail "camera_auto_detect=1 missing from config.txt — the Pi Camera would not be detected"
+        fi
         if [[ "$ENABLE_SSH" == "1" ]]; then
             [[ -e "$b/ssh" || -e "$b/ssh.txt" ]] && pass "ssh enable flag present" || fail "ssh flag file missing from boot partition"
         fi
