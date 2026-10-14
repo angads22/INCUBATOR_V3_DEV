@@ -204,7 +204,7 @@ this bus.
 
 ### OS / image integration (I can ship this)
 
-Changes to `init_pi.sh` / boot config — no app redesign:
+Changes to `install.sh` (formerly `init_pi.sh`) / boot config — no app redesign:
 
 1. **Enable I²C + load the RTC overlay** in `/boot/firmware/config.txt`:
    ```
@@ -219,7 +219,7 @@ Changes to `init_pi.sh` / boot config — no app redesign:
    the DS3231. `fake-hwclock` is the clock fallback for units **without** an RTC,
    so disabling it would regress them (worse clock, not better). A fitted DS3231
    takes precedence at boot via the kernel `rtc` class regardless, so the two
-   coexist safely. **Implemented this way** in `init_pi.sh`.
+   coexist safely. **Implemented this way** in `install.sh`.
 
 3. **Write-back on NTP sync:** with `systemd-timesyncd` active and the overlay
    loaded, the kernel syncs system→RTC automatically once NTP lands. No cron
