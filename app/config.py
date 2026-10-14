@@ -1,7 +1,16 @@
 from dataclasses import dataclass, field
 import os
+import tempfile
 
 from .version import VERSION
+
+
+def _default_setup_state_path() -> str:
+    """tmpfs on an appliance (cleared each boot), temp dir on a laptop."""
+    run_dir = "/run/incubator"
+    if os.path.isdir(run_dir) and os.access(run_dir, os.W_OK):
+        return os.path.join(run_dir, "setup-state.json")
+    return os.path.join(tempfile.gettempdir(), "incubator_setup_state.json")
 
 
 @dataclass(frozen=True)
@@ -19,20 +28,27 @@ class Settings:
     # Session lifetime in seconds (default 7 days).
     session_ttl_seconds: int = field(default_factory=lambda: int(os.getenv("INCUBATOR_SESSION_TTL", "604800")))
 
-    # --- GPIO pin assignments (BCM numbering) ---
+    # --- GPIO pin assignments ---
+    # A pin is a *string* so it can name a line on any Linux board, not only a
+    # BCM number. Accepted forms (see app/hal/gpio.parse_pin):
+    #   "17"                 line offset; on a Raspberry Pi this is the BCM number
+    #                        (the HAL finds the chip that names a line "GPIO17")
+    #   "GPIO17" / "PA12"    kernel line name (any gpiochip)
+    #   "gpiochip1:5"        explicit chip + offset ("/dev/gpiochip1:5" also works)
+    # Defaults are the Pi BCM wiring of the reference build.
     # Sensors
-    gpio_dht_pin: int = field(default_factory=lambda: int(os.getenv("GPIO_DHT_PIN", "4")))        # DHT22 data pin
+    gpio_dht_pin: str = field(default_factory=lambda: os.getenv("GPIO_DHT_PIN", "4").strip())        # DHT22 data pin
     # Outputs (relays are active-LOW by default)
-    gpio_heater_pin: int = field(default_factory=lambda: int(os.getenv("GPIO_HEATER_PIN", "17")))  # Heater relay
-    gpio_fan_pin: int = field(default_factory=lambda: int(os.getenv("GPIO_FAN_PIN", "27")))        # Fan relay
-    gpio_turner_pin: int = field(default_factory=lambda: int(os.getenv("GPIO_TURNER_PIN", "22")))  # Turner motor step
-    gpio_turner_dir_pin: int = field(default_factory=lambda: int(os.getenv("GPIO_TURNER_DIR_PIN", "23")))  # Turner direction
-    gpio_candle_pin: int = field(default_factory=lambda: int(os.getenv("GPIO_CANDLE_PIN", "24"))) # Candle LED
-    gpio_alarm_pin: int = field(default_factory=lambda: int(os.getenv("GPIO_ALARM_PIN", "25")))   # Buzzer
-    gpio_lock_pin: int = field(default_factory=lambda: int(os.getenv("GPIO_LOCK_PIN", "12")))     # Lock relay
-    gpio_door_pin: int = field(default_factory=lambda: int(os.getenv("GPIO_DOOR_PIN", "13")))     # Door servo signal
+    gpio_heater_pin: str = field(default_factory=lambda: os.getenv("GPIO_HEATER_PIN", "17").strip())  # Heater relay
+    gpio_fan_pin: str = field(default_factory=lambda: os.getenv("GPIO_FAN_PIN", "27").strip())        # Fan relay
+    gpio_turner_pin: str = field(default_factory=lambda: os.getenv("GPIO_TURNER_PIN", "22").strip())  # Turner motor step
+    gpio_turner_dir_pin: str = field(default_factory=lambda: os.getenv("GPIO_TURNER_DIR_PIN", "23").strip())  # Turner direction
+    gpio_candle_pin: str = field(default_factory=lambda: os.getenv("GPIO_CANDLE_PIN", "24").strip()) # Candle LED
+    gpio_alarm_pin: str = field(default_factory=lambda: os.getenv("GPIO_ALARM_PIN", "25").strip())   # Buzzer
+    gpio_lock_pin: str = field(default_factory=lambda: os.getenv("GPIO_LOCK_PIN", "12").strip())     # Lock relay
+    gpio_door_pin: str = field(default_factory=lambda: os.getenv("GPIO_DOOR_PIN", "13").strip())     # Door servo signal
     # Inputs
-    gpio_setup_button_pin: int = field(default_factory=lambda: int(os.getenv("GPIO_SETUP_BUTTON_PIN", "18")))  # Onboarding button
+    gpio_setup_button_pin: str = field(default_factory=lambda: os.getenv("GPIO_SETUP_BUTTON_PIN", "18").strip())  # Onboarding button
     gpio_relay_active_low: bool = field(default_factory=lambda: os.getenv("GPIO_RELAY_ACTIVE_LOW", "true").lower() == "true")
 
     # --- Setup / Onboarding ---
@@ -191,6 +207,36 @@ class Settings:
     # Google identities for fleets that prefer one path for both providers.
     identity_broker_url: str = field(default_factory=lambda: os.getenv("IDENTITY_BROKER_URL", "").strip())
     identity_broker_secret: str = field(default_factory=lambda: os.getenv("IDENTITY_BROKER_SECRET", "").strip())
+
+    # --- Hardware abstraction (app/hal) ---
+    # GPIO access method: auto (gpiod char device -> RPi.GPIO -> sysfs -> mock),
+    # or force one of gpiod | rpi | sysfs | mock.
+    gpio_backend: str = field(default_factory=lambda: os.getenv("GPIO_BACKEND", "auto").strip().lower() or "auto")
+    # gpiochip for bare offsets, e.g. "gpiochip0" or "/dev/gpiochip4". "" = auto
+    # (on a Pi the HAL finds the chip that names its lines GPIO<n>).
+    gpio_chip: str = field(default_factory=lambda: os.getenv("GPIO_CHIP", "").strip())
+    # Temperature/humidity sensor: auto (IIO -> I2C probes -> adafruit DHT),
+    # or iio | sht3x | aht20 | bme280 | htu21d | dht | mock | none.
+    sensor_backend: str = field(default_factory=lambda: os.getenv("SENSOR_BACKEND", "auto").strip().lower() or "auto")
+    sensor_i2c_bus: int = field(default_factory=lambda: int(os.getenv("SENSOR_I2C_BUS", "1")))
+    # 0 = the driver's default address(es); hex ("0x44") or decimal accepted.
+    sensor_i2c_addr: int = field(default_factory=lambda: int(os.getenv("SENSOR_I2C_ADDR", "0") or "0", 0))
+    # Force a Linux IIO device ("iio:device0" or a full sysfs path). "" = scan.
+    sensor_iio_device: str = field(default_factory=lambda: os.getenv("SENSOR_IIO_DEVICE", "").strip())
+    # Status LED: auto (first sysfs LED like ACT/led0/status) | none |
+    # <sysfs led name> | gpio:<pinspec>
+    status_led: str = field(default_factory=lambda: os.getenv("STATUS_LED", "auto").strip() or "auto")
+    # Buzzer feedback for boot/setup/connect events (the alert siren is separate).
+    sound_feedback: bool = field(default_factory=lambda: os.getenv("INCUBATOR_SOUND_FEEDBACK", "true").lower() == "true")
+    # Hold the setup button this long (seconds) to arm a factory reset.
+    factory_reset_hold_seconds: float = field(default_factory=lambda: float(os.getenv("INCUBATOR_FACTORY_RESET_HOLD_SECONDS", "15")))
+    # Wi-Fi interface name; "" = first wireless interface found (else wlan0).
+    wifi_iface: str = field(default_factory=lambda: os.getenv("WIFI_IFACE", "").strip())
+    # Setup-mode state file. Lives in tmpfs on devices so it is cleared on
+    # every boot; falls back to the temp dir on a dev laptop.
+    setup_state_path: str = field(default_factory=lambda: os.getenv("INCUBATOR_SETUP_STATE_PATH", "").strip() or _default_setup_state_path())
+    # Control-daemon persistence (last turn time etc.) that must survive restarts.
+    control_persist_path: str = field(default_factory=lambda: os.getenv("CONTROL_PERSIST_PATH", "./database/control-persist.json"))
 
     # --- Dev overrides ---
     gpio_mock: bool = field(default_factory=lambda: os.getenv("GPIO_MOCK", "false").lower() == "true")
