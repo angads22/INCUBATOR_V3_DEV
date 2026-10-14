@@ -155,6 +155,9 @@ class StatusLed:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
+        # Serialises every write to the LED so a pattern step from the worker
+        # can never interleave with (or land after) a synchronous on/off.
+        self._io_lock = threading.Lock()
         self._closed = False
         self._state: bool | None = None
 
@@ -251,14 +254,20 @@ class StatusLed:
         with self._lock:
             if self._closed:
                 return
-            self.pattern = name
             if name in STEADY:
-                # Steady states need no thread; the worker (if any) parks.
-                self._write(STEADY[name])
-            elif self._thread is None or not self._thread.is_alive():
-                self._stop.clear()
-                self._thread = threading.Thread(target=self._run, name="status-led", daemon=True)
-                self._thread.start()
+                # Steady states are written right here, under the I/O lock, so
+                # the worker (which re-checks the pattern under the same lock
+                # before every step) cannot overwrite them; it then parks.
+                with self._io_lock:
+                    self.pattern = name
+                    self._write(STEADY[name])
+            else:
+                with self._io_lock:
+                    self.pattern = name
+                if self._thread is None or not self._thread.is_alive():
+                    self._stop.clear()
+                    self._thread = threading.Thread(target=self._run, name="status-led", daemon=True)
+                    self._thread.start()
             self._wake.set()
 
     def on(self) -> None:
@@ -271,13 +280,16 @@ class StatusLed:
         while not self._stop.is_set():
             pattern = self.pattern
             if pattern in STEADY:
-                self._write(STEADY[pattern])
+                # set_pattern already wrote the level; just park until it changes.
                 self._wake.wait()
                 self._wake.clear()
                 continue
             steps = PATTERNS.get(pattern, PATTERNS["off"])
             for on, seconds in steps:
-                self._write(on)
+                with self._io_lock:
+                    if self.pattern != pattern or self._stop.is_set():
+                        break  # changed under us: never write a stale step
+                    self._write(on)
                 if self._wake.wait(seconds):
                     self._wake.clear()
                     break  # pattern changed (or stopping) -> restart loop
@@ -289,8 +301,9 @@ class StatusLed:
             if self._closed:
                 return
             self._closed = True
-            self.pattern = "off"
-            self._stop.set()
+            with self._io_lock:
+                self.pattern = "off"
+                self._stop.set()
             self._wake.set()
             thread = self._thread
         if thread is not None and thread.is_alive() and thread is not threading.current_thread():

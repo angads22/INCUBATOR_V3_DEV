@@ -141,9 +141,9 @@ class SysfsGpioBackend(GpioBackend):
     # -- requests ----------------------------------------------------------------
     def _export(self, number: int) -> tuple[str, bool]:
         gpio_dir = os.path.join(self.root, f"gpio{number}")
-        exported = False
-        if not os.path.isdir(gpio_dir):
-            exported = _util.write_text(os.path.join(self.root, "export"), str(number))
+        # The kernel answers EBUSY when the line is already exported (e.g. by a
+        # crashed previous run); then it is not ours to unexport on release.
+        exported = _util.write_text(os.path.join(self.root, "export"), str(number))
         # udev may take a moment to make the new attributes writable.
         deadline = time.monotonic() + self._settle
         direction = os.path.join(gpio_dir, "direction")
