@@ -70,7 +70,16 @@ class OtaUpdater:
 
         prev = self._current_ref()
         self._log(f"OTA: applying {self._current_version} -> {version} ({ref})")
-        self._apply_ref(ref)
+        try:
+            self._apply_ref(ref)
+        except Exception as exc:  # noqa: BLE001 — fetch/checkout failed: nothing changed on disk
+            # The running code is untouched, so do NOT restart the web service
+            # and do NOT record the new version — the next timer tick retries.
+            self._log(f"OTA: could not apply {version} ({exc}) — staying on {self._current_version}")
+            return {
+                "updated": False, "reason": "apply_failed", "error": str(exc),
+                "version": version, "current": self._current_version,
+            }
         self._restart_web()
 
         if self._verify():
@@ -81,7 +90,14 @@ class OtaUpdater:
         # the previous code and restart — no manual intervention. The control
         # daemon was never restarted, so incubation kept running throughout.
         self._log(f"OTA: {version} failed health check — rolling back to {prev}")
-        self._apply_ref(prev)
+        try:
+            self._apply_ref(prev)
+        except Exception as exc:  # noqa: BLE001
+            self._log(f"OTA: rollback checkout of {prev} FAILED ({exc})")
+            return {
+                "updated": False, "rolled_back": True, "restored": prev, "recovered": False,
+                "failed_version": version, "error": str(exc),
+            }
         self._restart_web()
         recovered = self._verify()
         self._log(f"OTA: rollback to {prev} {'recovered' if recovered else 'STILL UNHEALTHY'}")

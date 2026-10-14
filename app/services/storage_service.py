@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..models import EggPhoto
@@ -33,6 +33,10 @@ from ..models import EggPhoto
 logger = logging.getLogger(__name__)
 
 _MB = 1024 * 1024
+# How long the egg_photos size/count aggregate may be reused between polls.
+# Every write through this service invalidates it, so it only ever hides a
+# change made by another process — harmless for a janitor that runs every 30 s.
+DIR_SIZE_CACHE_SECONDS = 60.0
 _SAFE_LABEL = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
 
 
@@ -151,6 +155,8 @@ class StorageService:
         self.max_dir_bytes = max(0, max_dir_mb) * _MB
         self.keep_min = max(0, keep_min)
         self.retention_seconds = max(0, retention_days) * 86400
+        # (monotonic ts, dir bytes, row count) — see _dir_bytes.
+        self._dir_cache: tuple[float, int, int] | None = None
 
     # ------------------------------------------------------------------
     # Disk helpers
@@ -245,6 +251,7 @@ class StorageService:
             db.add(row)
         db.commit()
         db.refresh(row)
+        self._invalidate_cache()
         self.enforce(db)
         return row
 
@@ -252,17 +259,62 @@ class StorageService:
     # Pruning
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Cheap pressure check (runs every poll; must not load rows)
+    # ------------------------------------------------------------------
+
+    def _dir_bytes(self, db: Session) -> tuple[int, int]:
+        """(total bytes, row count) tracked in egg_photos — one aggregate query,
+        cached for ``DIR_SIZE_CACHE_SECONDS`` and invalidated by every write."""
+        now = time.monotonic()
+        if self._dir_cache is not None and now - self._dir_cache[0] < DIR_SIZE_CACHE_SECONDS:
+            return self._dir_cache[1], self._dir_cache[2]
+        row = db.execute(
+            select(func.coalesce(func.sum(EggPhoto.size_bytes), 0), func.count(EggPhoto.id))
+        ).one()
+        total, count = int(row[0] or 0), int(row[1] or 0)
+        self._dir_cache = (now, total, count)
+        return total, count
+
+    def _invalidate_cache(self) -> None:
+        self._dir_cache = None
+
+    def _needs_pruning(self, db: Session, free: int, dir_bytes: int, count: int) -> bool:
+        """Decide from aggregates alone whether loading the photo rows is worth it."""
+        if count == 0:
+            return False
+        if free < self.min_free_bytes:
+            return True
+        if self.max_dir_bytes and dir_bytes > self.max_dir_bytes:
+            return True
+        if self.retention_seconds > 0:
+            oldest = db.scalar(select(func.min(EggPhoto.created_at)).where(EggPhoto.pinned.is_(False)))
+            if oldest is not None and time.time() - self._ts(oldest) > self.retention_seconds:
+                return True
+        return False
+
     def enforce(self, db: Session) -> dict[str, Any]:
-        """Prune oldest non-pinned photos until disk pressure is relieved."""
+        """Prune oldest non-pinned photos until disk pressure is relieved.
+
+        Runs every poll, so the common case (plenty of space, no retention
+        due) costs one ``disk_usage`` plus one cached aggregate query. Photo
+        rows are only loaded — as plain tuples — when pruning is actually due.
+        """
         if not self.enabled:
             return {"enabled": False, "deleted": 0, "freed_bytes": 0}
-        rows = db.scalars(select(EggPhoto)).all()
-        dir_bytes = sum(int(r.size_bytes or 0) for r in rows)
         free, _total = self._disk_free_total()
+        dir_bytes, count = self._dir_bytes(db)
+        if not self._needs_pruning(db, free, dir_bytes, count):
+            return {"enabled": True, "deleted": 0, "freed_bytes": 0, "checked": "aggregate"}
+
+        rows = db.execute(
+            select(EggPhoto.id, EggPhoto.size_bytes, EggPhoto.created_at, EggPhoto.pinned)
+        ).all()
         photos = [
-            {"id": r.id, "size": int(r.size_bytes or 0), "created_ts": self._ts(r.created_at), "pinned": r.pinned}
+            {"id": r[0], "size": int(r[1] or 0), "created_ts": self._ts(r[2]), "pinned": bool(r[3])}
             for r in rows
         ]
+        dir_bytes = sum(p["size"] for p in photos)
         ids = plan_pruning(
             photos,
             free_bytes=free,
@@ -275,14 +327,11 @@ class StorageService:
             retention_seconds=self.retention_seconds,
         )
         if not ids:
-            return {"enabled": True, "deleted": 0, "freed_bytes": 0}
-        by_id = {r.id: r for r in rows}
+            return {"enabled": True, "deleted": 0, "freed_bytes": 0, "checked": "rows"}
+        victims = db.scalars(select(EggPhoto).where(EggPhoto.id.in_(ids))).all()
         freed = 0
         deleted = 0
-        for pid in ids:
-            row = by_id.get(pid)
-            if row is None:
-                continue
+        for row in victims:
             try:
                 Path(row.path).unlink(missing_ok=True)
             except OSError as exc:
@@ -291,8 +340,9 @@ class StorageService:
             deleted += 1
             db.delete(row)
         db.commit()
+        self._invalidate_cache()
         logger.info("Storage janitor pruned %d photo(s), freed ~%d MB", deleted, freed // _MB)
-        return {"enabled": True, "deleted": deleted, "freed_bytes": freed}
+        return {"enabled": True, "deleted": deleted, "freed_bytes": freed, "checked": "rows"}
 
     def delete(self, db: Session, photo_id: int) -> bool:
         row = db.scalar(select(EggPhoto).where(EggPhoto.id == photo_id))
@@ -304,6 +354,7 @@ class StorageService:
             pass
         db.delete(row)
         db.commit()
+        self._invalidate_cache()
         return True
 
     def set_pinned(self, db: Session, photo_id: int, pinned: bool) -> EggPhoto | None:

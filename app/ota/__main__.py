@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -20,6 +21,8 @@ from ..config import settings
 from .updater import OtaUpdater
 
 logger = logging.getLogger("incubator-ota")
+
+_SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 
 INSTALL_DIR = os.getenv("INCUBATOR_INSTALL_DIR", "/opt/incubator")
 GITHUB_LATEST = "https://api.github.com/repos/angads22/INCUBATOR_V3_DEV/releases/latest"
@@ -90,33 +93,72 @@ def _get_latest() -> dict | None:
         return None
 
 
-def _git(*args: str) -> str:
-    return subprocess.check_output(["git", "-C", INSTALL_DIR, *args], text=True).strip()
+class OtaApplyError(RuntimeError):
+    """Fetching or checking out the release failed; nothing was applied."""
+
+
+def _git(*args: str, install_dir: str | None = None) -> str:
+    return subprocess.check_output(["git", "-C", install_dir or INSTALL_DIR, *args], text=True).strip()
 
 
 def _current_ref() -> str:
     return _git("rev-parse", "HEAD")
 
 
-def _apply_ref(ref: str) -> None:
-    # Forward updates: fetch the release tag from GitHub and check it out via
-    # FETCH_HEAD (a bare `git fetch origin <tag>` doesn't create a local ref).
-    # Rollback: ref is a local sha already in the repo, so `git checkout <sha>`
-    # succeeds directly and the fetch is a harmless no-op.
-    subprocess.run(["git", "-C", INSTALL_DIR, "fetch", "--depth", "1", "origin", ref], check=False)
-    checked_out = subprocess.run(
-        ["git", "-C", INSTALL_DIR, "checkout", "--force", ref], check=False
-    ).returncode == 0
-    if not checked_out:
-        subprocess.run(["git", "-C", INSTALL_DIR, "checkout", "--force", "FETCH_HEAD"], check=False)
-    # Dependencies: core app + hardware extras (+ Pi legacy extras on a Pi). If
-    # an optional extra fails to build on this board, fall back to the core
-    # install so the update is never left half-applied.
-    if subprocess.run(_pip_install_cmd(), check=False).returncode != 0:
-        logger.warning("OTA: pip install with extras failed — retrying core install only")
-        cmd = _pip_install_cmd()
-        cmd[-2] = INSTALL_DIR  # "-e <dir>" without extras
-        subprocess.run(cmd, check=False)
+def _local_commit(ref: str, install_dir: str) -> str | None:
+    """The full sha when ``ref`` already resolves to a commit in the local repo."""
+    try:
+        return _git("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}", install_dir=install_dir)
+    except subprocess.CalledProcessError:
+        return None
+
+
+def _apply_ref(ref: str, install_dir: str | None = None, *, pip: bool = True) -> str:
+    """Check out ``ref`` and prove it: returns the new HEAD sha.
+
+    Forward updates: fetch the release tag from GitHub (a bare ``git fetch
+    origin <tag>`` creates no local ref, so the fetched commit is taken from
+    FETCH_HEAD) and check out that exact sha. Rollback: ``ref`` is a sha already
+    in the repo, so no fetch is needed. Any failure — fetch refused by a
+    firewall, checkout error, HEAD not moving — raises :class:`OtaApplyError`
+    so the caller never records a version that is not actually on disk.
+    """
+    install_dir = install_dir or INSTALL_DIR
+    git = ["git", "-C", install_dir]
+
+    target = _local_commit(ref, install_dir) if _SHA_RE.match(ref) else None
+    if target is None:
+        fetch = subprocess.run([*git, "fetch", "--depth", "1", "origin", ref], check=False)
+        if fetch.returncode != 0:
+            raise OtaApplyError(f"git fetch origin {ref} failed (exit {fetch.returncode})")
+        try:
+            target = _git("rev-parse", "FETCH_HEAD", install_dir=install_dir)
+        except subprocess.CalledProcessError as exc:
+            raise OtaApplyError(f"FETCH_HEAD unreadable after fetching {ref}: {exc}") from exc
+    if not target:
+        raise OtaApplyError(f"could not resolve {ref} to a commit")
+
+    checkout = subprocess.run([*git, "checkout", "--force", "--detach", target], check=False)
+    if checkout.returncode != 0:
+        raise OtaApplyError(f"git checkout {target[:12]} failed (exit {checkout.returncode})")
+    try:
+        head = _git("rev-parse", "HEAD", install_dir=install_dir)
+    except subprocess.CalledProcessError as exc:
+        raise OtaApplyError(f"git rev-parse HEAD failed after checkout: {exc}") from exc
+    if head != target:
+        raise OtaApplyError(f"HEAD is {head[:12]} but {target[:12]} was expected after checkout")
+
+    if pip:
+        # Dependencies: core app + hardware extras (+ Pi legacy extras on a Pi).
+        # If an optional extra fails to build on this board, fall back to the
+        # core install so the update is never left half-applied.
+        if subprocess.run(_pip_install_cmd(install_dir), check=False).returncode != 0:
+            logger.warning("OTA: pip install with extras failed — retrying core install only")
+            cmd = _pip_install_cmd(install_dir)
+            cmd[-2] = install_dir  # "-e <dir>" without extras
+            if subprocess.run(cmd, check=False).returncode != 0:
+                logger.error("OTA: core pip install failed — the health check decides whether to roll back")
+    return head
 
 
 def _restart_web() -> None:

@@ -2,12 +2,32 @@ import logging
 import os
 import time
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 from .config import settings
 
 logger = logging.getLogger(__name__)
+
+# SQLite PRAGMAs applied to EVERY connection (see ``_apply_sqlite_pragmas``).
+# WAL + synchronous=NORMAL turns ~4 fsyncs and a journal create/unlink per
+# commit into one WAL append — the difference between an SD card that lasts
+# years and one that wears out — and lets the control daemon's reads never
+# block behind the web app's writes. busy_timeout replaces "database is
+# locked" errors with a short wait; temp_store keeps sort scratch in RAM.
+SQLITE_PRAGMAS: tuple[tuple[str, str], ...] = (
+    ("journal_mode", "WAL"),
+    ("synchronous", "NORMAL"),
+    ("temp_store", "MEMORY"),
+    ("busy_timeout", "5000"),
+)
+
+# Indexes that ``create_all`` only builds for NEW tables; ``ensure_indexes``
+# adds them to databases created before the columns were indexed.
+INDEXES: tuple[tuple[str, str, str], ...] = (
+    ("ix_sensor_logs_captured_at", "sensor_logs", "captured_at"),
+    ("ix_action_logs_created_at", "action_logs", "created_at"),
+)
 
 
 class Base(DeclarativeBase):
@@ -156,10 +176,65 @@ def ensure_sqlite_healthy(db_url: str | None = None) -> bool:
     return False
 
 
-engine = create_engine(
-    settings.db_url,
-    connect_args={"check_same_thread": False} if settings.db_url.startswith("sqlite") else {},
-)
+def _apply_sqlite_pragmas(dbapi_conn, _record) -> None:
+    """SQLAlchemy 'connect' hook: set the PRAGMAs on each new connection.
+
+    ``journal_mode`` is persistent in the file but the others are
+    per-connection, so this runs for every pooled connection. Any failure
+    (read-only media, :memory:) is logged and ignored — pragmas tune, they
+    must never block startup.
+    """
+    try:
+        cur = dbapi_conn.cursor()
+        try:
+            for name, value in SQLITE_PRAGMAS:
+                cur.execute(f"PRAGMA {name}={value}")
+        finally:
+            cur.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("sqlite pragma setup skipped: %s", exc)
+
+
+def make_engine(db_url: str | None = None):
+    """Build an engine for ``db_url`` (default: settings.db_url) with the
+    SQLite pragmas attached. Used by the app and by tests on temp files."""
+    url = db_url or settings.db_url
+    is_sqlite = url.startswith("sqlite")
+    eng = create_engine(url, connect_args={"check_same_thread": False} if is_sqlite else {})
+    if is_sqlite:
+        event.listen(eng, "connect", _apply_sqlite_pragmas)
+    return eng
+
+
+def ensure_indexes(eng=None) -> list[str]:
+    """CREATE INDEX IF NOT EXISTS for the hot time columns on an EXISTING db.
+
+    ``Base.metadata.create_all`` never alters tables it already finds, so a
+    database from before ``index=True`` was added would keep full-scanning
+    sensor_logs (130k rows at 45 days) on every dashboard fallback and boot.
+    Returns the index names that were (re)asserted. Never raises.
+    """
+    eng = eng or engine
+    done: list[str] = []
+    try:
+        with eng.begin() as conn:
+            existing: set[str] = set()
+            if eng.dialect.name == "sqlite":
+                existing = {
+                    row[0]
+                    for row in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+                }
+            for name, table, column in INDEXES:
+                if existing and table not in existing:
+                    continue
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({column})"))
+                done.append(name)
+    except Exception as exc:  # noqa: BLE001 — never block startup on a schema patch
+        logger.warning("index check skipped: %s", exc)
+    return done
+
+
+engine = make_engine()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
