@@ -36,18 +36,18 @@ from fastapi import (
     HTTPException,
     Request,
     UploadFile,
-    status,
 )
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from ..auth import get_user_id_from_session, has_any_user
 from ..config import settings
 from ..database import get_db
 from ..models import Egg, StageTest
+from ._auth import auth_redirect as _auth_redirect  # noqa: F401 — shared gate
+from ._auth import require_api_user as _require_api_user
 
 if TYPE_CHECKING:
     from ..services.vision_service import VisionService
@@ -70,24 +70,7 @@ def set_testing_services(vision) -> None:
     _vision_service = vision
 
 
-# ------------------------------------------------------------------
-# Auth (mirrors web.py / hardware send)
-# ------------------------------------------------------------------
-
-def _login_required(db: Session) -> bool:
-    return settings.require_login or has_any_user(db)
-
-
-def _auth_redirect(db: Session, session_token: str | None):
-    if _login_required(db) and not get_user_id_from_session(db, session_token):
-        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
-    return None
-
-
-def _require_api_user(db: Session, session_token: str | None) -> None:
-    if _login_required(db) and not get_user_id_from_session(db, session_token):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
-
+# Auth: the shared gate in routes/_auth.py (open until an account exists).
 
 # ------------------------------------------------------------------
 # Safe paths — uploads + browsable captures live under known roots only.
