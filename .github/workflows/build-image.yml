@@ -51,7 +51,7 @@ jobs:
           df -h /
 
       # build_image.sh downloads Raspberry Pi OS Lite (arm64), grows it, chroots
-      # in (natively — no QEMU), runs init_pi.sh in IMAGE_BUILD mode, enables SSH,
+      # in (natively — no QEMU), runs install.sh in IMAGE_BUILD mode, enables SSH,
       # runs the verify_artifact gate on the RAW image, zeroes the ext4 free space
       # (zerofree), then compresses to dist/incubator-v3-<version>-<date>.img.xz.
       #
@@ -97,6 +97,9 @@ jobs:
           name: Incubator v3 SD image ${{ steps.meta.outputs.version }}
           body: |
             Flashable Raspberry Pi SD-card image for Incubator v3.
+
+            First boot: join the open Wi-Fi **Incubator-XXXX**, the setup page
+            opens by itself (two steps: your Wi-Fi, then a name + optional login).
 
             **Download `incubator-v3-*.img.xz`** and flash it directly with
             Raspberry Pi Imager ("Use custom") or balenaEtcher — no manual unzip.

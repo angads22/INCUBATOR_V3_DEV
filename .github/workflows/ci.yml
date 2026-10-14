@@ -11,24 +11,65 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: bash -n on all scripts
+      - name: bash -n on every script (installer, image builder, hooks)
         run: |
-          for s in build_image.sh init_pi.sh scripts/*.sh; do
+          set -e
+          for s in install.sh init_pi.sh build_image.sh scripts/*.sh rpi-image/layer/incubator/hooks/*; do
             echo "checking $s"
             bash -n "$s"
           done
+      # Advisory only: shellcheck ships on the runner image, but the job never
+      # depends on it being present or on a clean report.
+      - name: shellcheck (advisory, never fails the build)
+        run: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -S warning install.sh init_pi.sh build_image.sh scripts/*.sh rpi-image/layer/incubator/hooks/* || true
+          else
+            echo "shellcheck not installed — skipped"
+          fi
 
   tests:
-    name: App tests (auth lifecycle)
+    name: App tests (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
       - name: Install
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
       - name: Run pytest
         run: pytest -q
+
+  install-dry-run:
+    # Runs the real installer on a stock Ubuntu runner exactly the way
+    # build_image.sh runs it inside an image chroot (INCUBATOR_IMAGE_BUILD=1:
+    # install everything, enable units, start nothing), then asserts what it
+    # left behind. Catches package-name drift, broken templating and venv
+    # problems before they reach a flashed card.
+    name: install.sh dry run (image-build mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Keep package postinst scripts from starting daemons on the runner
+        run: |
+          printf '#!/bin/sh\nexit 101\n' | sudo tee /usr/sbin/policy-rc.d >/dev/null
+          sudo chmod +x /usr/sbin/policy-rc.d
+      - name: Run install.sh (image-build mode, no tuning)
+        run: sudo INCUBATOR_IMAGE_BUILD=1 ./install.sh /tmp/incubator-ci --no-tuning
+      - name: Verify the result
+        run: sudo scripts/verify_install.sh /tmp/incubator-ci
+      - name: Re-run must be idempotent (env preserved, units re-templated)
+        run: |
+          echo "CI_MARKER=keep" | sudo tee -a /etc/incubator.env >/dev/null
+          sudo INCUBATOR_IMAGE_BUILD=1 ./install.sh /tmp/incubator-ci --no-tuning --skip-packages
+          grep -q '^CI_MARKER=keep' /etc/incubator.env
+          test "$(grep -c '^GPIO_BACKEND=' /etc/incubator.env)" = "1"
+          sudo scripts/verify_install.sh /tmp/incubator-ci

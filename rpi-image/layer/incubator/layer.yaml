@@ -5,12 +5,14 @@
 name: incubator
 description: |
   Incubator v3 application layer for Raspberry Pi Zero 2W.
-  Installs the FastAPI incubator application, configures systemd services,
-  and sets up the OTA update agent for automatic application updates.
+  Installs the FastAPI incubator application by running its own install.sh
+  (venv, systemd services, NetworkManager hotspot config, mDNS, OTA checkout).
 author: Incubator Team
 
 # ---------------------------------------------------------------------------
 # APT packages installed into the image filesystem
+# (install.sh installs the same set itself; listing them here lets bdebstrap
+# fetch them in its package phase, which is faster and cache-friendly.)
 # ---------------------------------------------------------------------------
 packages:
   # Python runtime
@@ -19,18 +21,24 @@ packages:
   - python3-venv
   - python3-dev
 
-  # Version control (git-pull OTA)
+  # Version control (OTA updates check out release tags)
   - git
 
-  # Network utilities
+  # Network: NetworkManager owns Wi-Fi; dnsmasq-base serves DHCP/DNS for the
+  # setup hotspot (NM shared mode); avahi makes <hostname>.local resolve.
   - curl
   - ca-certificates
   - network-manager
-  - dnsmasq                  # Needed for AP hotspot DHCP
+  - dnsmasq-base
+  - avahi-daemon
+  - rfkill
   - iw
+  - wireless-regdb
 
-  # GPIO / hardware
+  # GPIO / I2C hardware access (libgpiod character device, I2C sensors/RTC)
   - libgpiod-dev
+  - python3-libgpiod
+  - i2c-tools
 
   # Camera (picamera2 is a Raspberry Pi OS system package)
   - python3-picamera2
@@ -45,10 +53,8 @@ packages:
   - gcc
   - build-essential
 
-  # Utilities used by hook and OTA scripts
-  - jq
+  # Utilities used by install.sh
   - rsync
-  - xxd
 
 # ---------------------------------------------------------------------------
 # Layer variables
@@ -59,7 +65,7 @@ variables:
   INCUBATOR_APP_REPO:
     type: string
     description: Git remote URL for the incubator application
-    default: https://github.com/angads22/incubator_v3_dev.git
+    default: https://github.com/angads22/INCUBATOR_V3_DEV.git
     optional: false
 
   INCUBATOR_APP_GIT_REF:
@@ -74,6 +80,12 @@ variables:
     default: incubator
     optional: true
 
+  INCUBATOR_WIFI_COUNTRY:
+    type: string
+    description: Wi-Fi regulatory country (ISO 3166-1 alpha-2) baked into the image
+    default: US
+    optional: true
+
 # ---------------------------------------------------------------------------
 # Hook scripts executed during the bdebstrap build phases.
 # Scripts run INSIDE the chroot after all packages have been installed.
@@ -82,6 +94,3 @@ hooks:
   # Main customisation phase (runs after pkg installation, inside chroot)
   customize:
     - hooks/10-install-incubator
-    - hooks/20-configure-services
-    - hooks/30-ota-setup
-    - hooks/40-firstboot-setup
