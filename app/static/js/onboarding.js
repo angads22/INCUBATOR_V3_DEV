@@ -538,7 +538,7 @@
           || (payload.hotspot_active === undefined && now > AP_RETURN_GRACE_MS);
         if (onHomeNetwork) {
           stop();
-          showFound(candidates[i], payload, hostname);
+          showFound(candidates[i], payload);
           return;
         }
       }

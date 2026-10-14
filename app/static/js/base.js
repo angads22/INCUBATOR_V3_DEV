@@ -20,7 +20,7 @@ function closeMenu() {
   if (!profileMenu) return;
   profileMenu.classList.remove('open');
   profileMenu.addEventListener('transitionend', () => {
-    profileMenu.hidden = true;
+    if (!profileMenu.classList.contains('open')) profileMenu.hidden = true;
   }, { once: true });
   // Reduced-motion users get no transitionend; hide on a timer as a fallback.
   setTimeout(() => { if (!profileMenu.classList.contains('open')) profileMenu.hidden = true; }, 260);
@@ -60,11 +60,12 @@ async function apiRequest(url, options = {}) {
   if (res.status === 401) {
     return { ok: false, status: 401, data, message: 'Please log in to do that.' };
   }
-  if (res.status === 404) {
-    return { ok: false, status: 404, data, message: 'This feature is not available on this software version.' };
-  }
   if (!res.ok || (data && data.ok === false)) {
     const detail = data && (data.detail ?? data.error);
+    if (res.status === 404 && (!detail || detail === 'Not Found')) {
+      // Route missing entirely (older software) rather than a lookup miss.
+      return { ok: false, status: 404, data, message: 'This feature is not available on this software version.' };
+    }
     const message = Array.isArray(detail)
       ? detail.map((d) => d.msg || '').filter(Boolean).join(' ') || 'Invalid input.'
       : detail || `Request failed (${res.status}).`;

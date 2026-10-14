@@ -98,7 +98,7 @@
 .wizard-step { display: none; }
 .wizard-step.active { display: block; }
 .wizard-step .card h3 { font-size: 1.3rem; letter-spacing: -0.01em; display: flex; align-items: center; gap: 10px; }
-.wizard-step .card > label { display: grid; gap: 6px; color: var(--muted); font-size: 0.9rem; font-weight: 600; margin-top: 10px; }
+.wizard-step .card label { display: grid; gap: 6px; color: var(--muted); font-size: 0.9rem; font-weight: 600; margin-top: 10px; }
 .wizard-nav { display: flex; justify-content: space-between; align-items: center; margin-top: 18px; gap: 8px; }
 .step-num {
   flex: none;
