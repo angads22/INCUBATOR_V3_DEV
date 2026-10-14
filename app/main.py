@@ -1,35 +1,46 @@
 """
-Incubator v3 — Raspberry Pi Zero 2W edition.
+Incubator v3 — portable Linux incubator appliance (web app process).
 
-Startup sequence:
-  1. Ensure SQLite DB exists and tables are created.
+Startup sequence (``lifespan``):
+  1. Ensure SQLite DB exists, is healthy, tables + indexes are created.
   2. Generate device_id / claim_code if first boot.
   3. Ensure app_settings defaults are seeded.
   4. OnboardingService.boot() — if device is unclaimed, auto-starts WiFi AP.
-  5. SetupButtonService.start() — watches physical button for manual AP trigger.
-  6. GPIOService.setup() — initialises all pins.
+  5. GPIOService.setup() — requests the pins THIS process owns (all of them,
+     or only candle/alarm/lock/door when the control daemon owns the climate
+     lines) and the status LED; FeedbackService plays the boot chirp.
+  6. SetupButtonService.start() — 4 s hold = setup mode, 15 s = factory reset.
   7. VisionService.setup() — loads TFLite model if configured.
-  8. SensorPoller.start() — background thread reading DHT22 every N seconds.
+  8. SensorPoller.start() — background thread polling the sensor (or the
+     control daemon's state file) every N seconds.
   9. CloudService.register_device() — optional heartbeat to remote API.
 """
 
+import inspect
 import logging
 import secrets
 import threading
 import time
 import uuid
+from contextlib import asynccontextmanager
 from typing import Any
 from pathlib import Path
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response, status
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .auth import create_session, get_user_id_from_session, has_any_user, hash_password
-from .config import settings
-from .database import Base, engine, ensure_sqlite_healthy, get_db
-from .models import ActionLog, DeviceConfig, SensorLog, User
+# uvicorn configures only its own loggers; without a root handler every
+# app.* INFO line (hotspot up, claim code, Wi-Fi joined...) vanished from
+# journald. Guarded so an embedding process that already configured logging
+# (tests, gunicorn) is left alone.
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+from .auth import create_session, get_user_id_from_session, has_any_user, hash_password  # noqa: E402
+from .config import settings  # noqa: E402
+from .database import Base, engine, ensure_indexes, ensure_sqlite_healthy, get_db  # noqa: E402
+from .models import ActionLog, DeviceConfig, SensorLog, User  # noqa: E402
 from .routes.ai import (
     router as ai_router,
     set_vision_hardware,
@@ -40,24 +51,53 @@ from .routes.camera import router as camera_router, set_camera_service
 from .routes.captures import router as captures_router, set_capture_services
 from .routes.growth import router as growth_router, set_growth_services
 from .routes.testing import router as testing_router, set_testing_services
-from .routes.web import router as web_router, set_runtime_services
-from .schemas import HardwareCommand, OnboardingPayload, SetupStatus
-from .services.alert_service import AlertService
-from .services.button_service import SetupButtonService
-from .services.camera_service import CameraService
-from .services.cloud_service import CloudService
-from .services.gpio_service import GPIOService
-from .services.hardware_service import HardwareService
-from .services.onboarding_service import OnboardingService
-from .services.growth_service import GrowthService
-from .services.setup_mode_service import SetupModeService
-from .services.storage_service import StorageService
-from .services.vision_service import VisionService
-from .services.wifi_service import WiFiService
-from .settings_store import ensure_defaults, get_settings
+from .routes.web import router as web_router, set_runtime_services  # noqa: E402
+from .schemas import HardwareCommand, OnboardingPayload, SetupStatus  # noqa: E402
+from .services.alert_service import AlertService  # noqa: E402
+from .services.button_service import SetupButtonService  # noqa: E402
+from .services.camera_service import CameraService  # noqa: E402
+from .services.cloud_service import CloudService  # noqa: E402
+from .services.feedback_service import FeedbackService  # noqa: E402
+from .services.gpio_service import WEB_OUTPUTS, GPIOService  # noqa: E402
+from .services.hardware_service import HardwareService  # noqa: E402
+from .services.onboarding_service import OnboardingService  # noqa: E402
+from .services.growth_service import GrowthService  # noqa: E402
+from .services.setup_mode_service import SetupModeService  # noqa: E402
+from .services.storage_service import StorageService  # noqa: E402
+from .services.vision_service import VisionService  # noqa: E402
+from .services.wifi_service import WiFiService  # noqa: E402
+from .settings_store import ensure_defaults, get_settings  # noqa: E402
+from .static_files import CachedStaticFiles, add_web_middleware  # noqa: E402
 
-app = FastAPI(title="Incubator v3 — Pi Zero 2W")
 logger = logging.getLogger(__name__)
+
+
+def _accepted_kwargs(fn: Any, **candidates: Any) -> dict[str, Any]:
+    """Keep only the keyword arguments ``fn`` actually accepts.
+
+    Services evolve in parallel (e.g. ``OnboardingService(on_event=...)``,
+    ``set_runtime_services(gpio_service=...)``); passing an unknown kwarg would
+    be a TypeError at import, so look at the signature instead of guessing.
+    """
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return {}
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return dict(candidates)
+    return {k: v for k, v in candidates.items() if k in params}
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    startup()
+    try:
+        yield
+    finally:
+        shutdown()
+
+
+app = FastAPI(title="Incubator v3", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -104,7 +144,10 @@ async def _security_headers(request, call_next):
 
 
 BASE_DIR = Path(__file__).resolve().parent
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+# Long-lived caching for versioned assets + gzip for text responses: a phone on
+# the Pi's own 2.4 GHz AP should not re-download 50 KB of CSS per page view.
+app.mount("/static", CachedStaticFiles(directory=str(BASE_DIR / "static")), name="static")
+add_web_middleware(app)
 app.include_router(web_router)
 app.include_router(ai_router)
 app.include_router(camera_router)
@@ -121,6 +164,12 @@ app.include_router(identity_router)
 # ------------------------------------------------------------------
 # Service wiring
 # ------------------------------------------------------------------
+
+# Pin ownership: with the control daemon enabled it owns heater/fan/turner and
+# the chamber sensor; this process keeps candle/alarm/lock/door and reads the
+# daemon's published state instead of the sensor. Without the daemon the web
+# app owns everything (dev laptop, tests, legacy single-process deployments).
+_DAEMON_OWNS_CLIMATE = settings.control_daemon_enabled
 
 gpio_service = GPIOService(
     dht_pin=settings.gpio_dht_pin,
@@ -139,6 +188,14 @@ gpio_service = GPIOService(
     heater_current_bus=settings.heater_current_i2c_bus,
     heater_current_addr=settings.heater_current_i2c_addr,
     heater_current_shunt_ohms=settings.heater_current_shunt_ohms,
+    backend=settings.gpio_backend,
+    chip=settings.gpio_chip,
+    sensor=None if _DAEMON_OWNS_CLIMATE else "auto",
+    owned_outputs=WEB_OUTPUTS if _DAEMON_OWNS_CLIMATE else None,
+    sensor_backend=settings.sensor_backend,
+    sensor_i2c_bus=settings.sensor_i2c_bus,
+    sensor_i2c_addr=settings.sensor_i2c_addr,
+    sensor_iio_device=settings.sensor_iio_device,
 )
 
 camera_service = CameraService(
@@ -150,7 +207,16 @@ camera_service = CameraService(
     frame_dir=settings.camera_frame_dir,
 )
 
-hardware_service = HardwareService(gpio=gpio_service, camera=camera_service)
+hardware_service = HardwareService(
+    gpio=gpio_service,
+    camera=camera_service,
+    daemon_state_path=settings.control_state_path if _DAEMON_OWNS_CLIMATE else None,
+)
+
+# Status LED is attached in startup() once the GPIO backend exists; the buzzer
+# side works from the start so even a failed boot can beep.
+status_led: Any = None
+feedback_service = FeedbackService(gpio_service, None, sound=settings.sound_feedback)
 
 storage_service = StorageService(
     captures_dir=settings.captures_dir,
@@ -208,13 +274,18 @@ onboarding_service = OnboardingService(
     ap_ip=settings.ap_ip,
     auto_hotspot=settings.auto_hotspot_on_unclaimed,
     ap_password_resolver=_resolve_ap_password,
+    # LED/buzzer feedback for setup_ready / connecting / connected / failed.
+    **_accepted_kwargs(OnboardingService.__init__, on_event=feedback_service.event),
 )
 
 button_service = SetupButtonService(
     hold_seconds=settings.setup_button_hold_seconds,
     callback=lambda reason: _on_button_held(reason),
+    read_pressed=gpio_service.read_button,
     gpio_pin=settings.gpio_setup_button_pin,
     mock_file=settings.button_mock_file,
+    factory_reset_hold_seconds=settings.factory_reset_hold_seconds,
+    on_progress=lambda stage: _on_button_progress(stage),
 )
 
 cloud_service = CloudService()
@@ -226,6 +297,7 @@ set_runtime_services(
     hardware_service=hardware_service,
     vision_service=vision_service,
     alert_service=alert_service,
+    **_accepted_kwargs(set_runtime_services, gpio_service=gpio_service, camera_service=camera_service),
 )
 set_vision_hardware(vision=vision_service, hardware=hardware_service)
 set_ai_storage(storage_service)
@@ -236,21 +308,66 @@ set_growth_services(growth_service, hardware_service)
 set_testing_services(vision_service)
 
 
-def _on_button_held(reason: str) -> None:
-    """Callback from button_service — restart the AP for re-onboarding."""
-    logger.info("Setup button held (%s) — starting manual hotspot", reason)
-    # Short chirp so the operator knows the press registered.
-    gpio_service.pulse_alarm(0.15)
+def _current_device_id() -> str:
     db = next(get_db())
     try:
         config = db.scalar(select(DeviceConfig).limit(1))
-        device_id = config.device_id if config else "PI-XXXX"
+        return config.device_id if config else "PI-XXXX"
     finally:
         db.close()
-    result = onboarding_service.start_manual_hotspot(device_id)
-    if result.get("ok"):
-        # Longer chirp: the hotspot is up and ready to join.
-        gpio_service.pulse_alarm(0.5)
+
+
+def _on_button_progress(stage: str) -> None:
+    """Button gesture milestones that need feedback but no action yet."""
+    if stage == "factory_reset_armed":
+        logger.warning("Factory reset armed by the setup button — release to wipe the device")
+        feedback_service.event("factory_reset_armed")
+
+
+def _factory_reset_from_button() -> None:
+    """Wipe accounts/config/Wi-Fi and return to setup mode (device_service)."""
+    try:
+        from .services import device_service
+    except ImportError as exc:
+        logger.error("Factory reset requested but device_service is unavailable: %s", exc)
+        feedback_service.event("failed")
+        return
+    device_id = _current_device_id()
+    db = next(get_db())
+    try:
+        result = device_service.factory_reset(
+            db,
+            wifi_service=wifi_service,
+            onboarding_service=onboarding_service,
+            setup_mode_service=setup_mode_service,
+            device_id=device_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — must not kill the button thread
+        logger.error("Factory reset failed: %s", exc)
+        feedback_service.event("failed")
+        return
+    finally:
+        db.close()
+    logger.warning("Factory reset done: %s", result)
+    feedback_service.event("factory_reset")
+
+
+def _on_button_held(reason: str) -> None:
+    """Callback from button_service.
+
+    ``button_hold`` (4 s): acknowledge and raise the setup AP for re-onboarding.
+    ``factory_reset`` (released after a 15 s hold): wipe and return to setup.
+    """
+    if reason == "factory_reset":
+        logger.warning("Setup button: factory reset")
+        _factory_reset_from_button()
+        return
+    logger.info("Setup button held (%s) — starting manual hotspot", reason)
+    # Medium chirp so the operator knows the press registered.
+    feedback_service.event("button_ack")
+    result = onboarding_service.start_manual_hotspot(_current_device_id())
+    if not result.get("ok"):
+        feedback_service.event("failed")
 
 
 # Shared hardware command dispatch, used by both the HTTP endpoint and the
@@ -324,27 +441,36 @@ fleet_service = None
 class _SensorPoller(threading.Thread):
     """Reads DHT22 every N seconds and persists to sensor_logs."""
 
+    # Daily sweep, but never on the boot path: the first one runs an hour
+    # after start so a reboot never pays for a full-table DELETE while the
+    # setup wizard / dashboard are being served for the first time.
+    RETENTION_PERIOD = 24 * 3600
+    RETENTION_BOOT_DELAY = 3600
+
     def __init__(self, interval: int) -> None:
         super().__init__(daemon=True, name="sensor-poller")
         self.interval = interval
         self._stop_flag = threading.Event()
-        self._last_retention_sweep = 0.0
+        self._last_retention_sweep = time.time() - self.RETENTION_PERIOD + self.RETENTION_BOOT_DELAY
 
     def run(self) -> None:
+        from .sd_notify import sd_watchdog_ping
+
         # Wait for a settled reading before the first log
         time.sleep(5)
         while not self._stop_flag.wait(self.interval):
+            # Heartbeat BEFORE and AFTER each poll: the poll itself can block
+            # on nmcli/DB work, and a ping only at the end would let a slow
+            # (but healthy) iteration overrun WatchdogSec. If this thread dies
+            # or the process wedges, pings stop and systemd restarts the app —
+            # the hang-coverage Restart=always cannot provide.
+            sd_watchdog_ping()
             self._poll()
-            # Heartbeat AFTER a completed poll: if this thread dies or the
-            # process wedges, pings stop and systemd's WatchdogSec restarts
-            # the app — the hang-coverage Restart=always cannot provide.
-            from .sd_notify import sd_watchdog_ping
-
             sd_watchdog_ping()
 
     def _retention_sweep(self, db) -> None:
         """Once a day, prune old sensor/action log rows (SD-card longevity)."""
-        if time.time() - self._last_retention_sweep < 24 * 3600:
+        if time.time() - self._last_retention_sweep < self.RETENTION_PERIOD:
             return
         self._last_retention_sweep = time.time()
         from datetime import datetime, timedelta, timezone
@@ -403,14 +529,18 @@ class _SensorPoller(threading.Thread):
             # fires when the temp sensor is offline. No-op unless a sensor is fitted.
             if settings.heater_current_sense_enabled:
                 try:
-                    commanded_heat = (
-                        bool(reading.get("heater_on"))
-                        if settings.control_daemon_enabled
-                        else bool(gpio_service.get_state().get("heater"))
-                    )
+                    if settings.control_daemon_enabled:
+                        # daemon_reading passes the daemon's heater_on through;
+                        # None means the state file is stale, so the commanded
+                        # state is unknown and the check is skipped this poll.
+                        commanded = reading.get("heater_on")
+                    else:
+                        commanded = gpio_service.get_state().get("heater")
                     current = gpio_service.read_heater_current()
+                    if commanded is None:
+                        current = {"present": False, "amps": None}
                     hevents = alert_service.evaluate_heater(
-                        commanded_heat, current.get("present", False),
+                        bool(commanded), current.get("present", False),
                         current.get("amps"), get_settings(db),
                     )
                     for event in hevents:
@@ -533,7 +663,21 @@ def _utcnow_naive() -> "Any":
     return _dt.now(_tz.utc).replace(tzinfo=None)
 
 
-@app.on_event("startup")
+def _attach_status_led() -> None:
+    """Best-effort status LED (sysfs LED or a GPIO line via the HAL backend)."""
+    global status_led
+    try:
+        from .hal import StatusLed
+
+        status_led = StatusLed.create(settings.status_led, gpio_backend=getattr(gpio_service, "_backend", None))
+    except Exception as exc:  # noqa: BLE001 — a LED must never stop the incubator
+        logger.debug("status LED unavailable: %s", exc)
+        status_led = None
+    feedback_service.attach_led(status_led)
+    if status_led is not None:
+        logger.info("Status LED: %s", status_led.describe())
+
+
 def startup() -> None:
     # Under Type=notify systemd waits for READY — send it first so a slow
     # first boot (fs expand, big DB) can never be killed as a start timeout.
@@ -550,6 +694,9 @@ def startup() -> None:
 
     Base.metadata.create_all(bind=engine)
     _ensure_egg_roi_columns()
+    # create_all never alters existing tables: add the time-column indexes to
+    # databases created before they existed.
+    ensure_indexes(engine)
 
     # Daily snapshot AFTER the health check passed: corruption later restores
     # from this instead of factory-resetting the farmer's device.
@@ -605,6 +752,7 @@ def startup() -> None:
         db.close()
 
     gpio_service.setup()
+    _attach_status_led()
     vision_service.setup()
     button_service.start()
     # Prime the sensor cache once synchronously so the dashboard has data
@@ -632,20 +780,31 @@ def startup() -> None:
         fleet_service.start()
 
     logger.info(
-        "Incubator v3 started — version=%s gpio_mock=%s vision_backend=%s camera=%s",
+        "Incubator v3 started — version=%s gpio=%s%s sensor=%s vision_backend=%s camera=%s daemon=%s",
         settings.app_version,
-        settings.gpio_mock,
+        gpio_service.backend_name,
+        " (MOCK FALLBACK)" if gpio_service.mock_fallback else "",
+        gpio_service.sensor_name,
         settings.vision_backend,
-        settings.camera_backend,
+        camera_service.backend_resolved,
+        _DAEMON_OWNS_CLIMATE,
     )
+    # Power on, app ready: one short beep, fast blink until the network
+    # settles (OnboardingService then emits setup_ready / connected).
+    feedback_service.event("boot")
 
 
-@app.on_event("shutdown")
 def shutdown() -> None:
     _sensor_poller.stop()
     if fleet_service is not None:
         fleet_service.stop()
     button_service.stop()
+    feedback_service.close()
+    if status_led is not None:
+        try:
+            status_led.close()
+        except Exception:  # noqa: BLE001
+            pass
     camera_service.cleanup()
     gpio_service.cleanup()
 
@@ -653,6 +812,16 @@ def shutdown() -> None:
 # ------------------------------------------------------------------
 # Core API endpoints
 # ------------------------------------------------------------------
+
+def _board_summary() -> dict:
+    try:
+        from .hal import detect_board
+
+        info = detect_board().as_dict()
+        return {k: info.get(k) for k in ("model", "family", "arch", "distro_id", "distro_version", "is_raspberry_pi")}
+    except Exception as exc:  # noqa: BLE001 — diagnostics never break /health
+        return {"model": "unknown", "error": str(exc)}
+
 
 @app.get("/health")
 def health() -> dict:
@@ -662,7 +831,15 @@ def health() -> dict:
         "version": settings.app_version,
         "setup_mode": setup_mode_service.is_setup_mode(),
         "hotspot_active": onboarding_service.is_hotspot_active(),
-        "gpio_mock": settings.gpio_mock,
+        # Effective mock state: true when GPIO_MOCK is set OR the GPIO backend
+        # silently resolved to mock on a box that expected real hardware.
+        "gpio_mock": bool(settings.gpio_mock or gpio_service.is_mock),
+        "gpio_mock_fallback": bool(gpio_service.mock_fallback),
+        "board": _board_summary(),
+        "gpio_backend": gpio_service.backend_name,
+        "sensor_backend": gpio_service.sensor_name or ("control-daemon" if _DAEMON_OWNS_CLIMATE else "none"),
+        "camera_backend": camera_service.backend_resolved,
+        "control_daemon_enabled": _DAEMON_OWNS_CLIMATE,
     }
 
 

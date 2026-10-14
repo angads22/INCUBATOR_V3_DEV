@@ -78,6 +78,16 @@ class FeedbackService:
     def led(self) -> Any:
         return self._led
 
+    def attach_led(self, led: Any) -> None:
+        """Set (or replace) the status LED once the GPIO backend exists.
+
+        The last event's LED pattern is replayed so a LED attached after
+        ``event("boot")`` still shows the boot pattern.
+        """
+        self._led = led
+        if led is not None and self.last_event is not None:
+            self._set_led(LED_PATTERNS.get(self.last_event))
+
     @property
     def sound(self) -> bool:
         return self._sound
