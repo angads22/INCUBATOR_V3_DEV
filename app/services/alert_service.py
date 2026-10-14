@@ -65,7 +65,10 @@ class AlertService:
         self._range_counts: dict[str, int] = {}
         self._heater_counts: dict[str, int] = {}
         self._active: dict[str, str] = {}  # alert type -> ISO timestamp raised
-        self._silenced = False
+        # Alert TYPES the operator silenced. Silence applies only to the alerts
+        # that were active when the button was pressed: a new, different alert
+        # (humidity_low muted, then temp_high appears) sounds the buzzer again.
+        self._silenced: set[str] = set()
         self._alarm_on = False
         # Sensor-integrity tracking (latch detection across polls).
         self._integ_last: tuple[float | None, float | None] = (None, None)
@@ -80,7 +83,7 @@ class AlertService:
             self._range_counts = {}
             self._heater_counts = {}
             self._active = {}
-            self._silenced = False
+            self._silenced = set()
             self._alarm_on = False
             self._integ_last = (None, None)
             self._integ_unchanged_since = None
@@ -225,21 +228,36 @@ class AlertService:
                 snapshot.update(self._last_reading)
             return snapshot
 
+    def _all_silenced(self) -> bool:
+        """True when every active alert has been silenced (call with lock held)."""
+        return bool(self._active) and all(t in self._silenced for t in self._active)
+
     def alert_state(self) -> dict[str, Any]:
         with self._lock:
             return {
                 "active": [
-                    {"type": alert_type, "message": ALERT_MESSAGES[alert_type], "since": since}
+                    {
+                        "type": alert_type,
+                        "message": ALERT_MESSAGES[alert_type],
+                        "since": since,
+                        "silenced": alert_type in self._silenced,
+                    }
                     for alert_type, since in self._active.items()
                 ],
                 "alarm_on": self._alarm_on,
-                "silenced": self._silenced,
+                # Buzzer suppressed for everything currently active.
+                "silenced": self._all_silenced(),
+                "silenced_types": sorted(t for t in self._silenced if t in self._active),
             }
 
     def silence(self) -> dict[str, Any]:
-        """Stop the buzzer until every active alert has cleared."""
+        """Stop the buzzer for the alerts active right now.
+
+        Each silenced alert stays muted until it clears; an alert of a type that
+        is not active yet will still sound the buzzer when it is raised.
+        """
         with self._lock:
-            self._silenced = True
+            self._silenced |= set(self._active)
             if self._alarm_on:
                 self._gpio.set_alarm(False)
                 self._alarm_on = False
@@ -288,6 +306,8 @@ class AlertService:
         if alert_type not in self._active:
             return []
         del self._active[alert_type]
+        # A cleared alert is no longer muted: if it comes back it must be heard.
+        self._silenced.discard(alert_type)
         return [
             {
                 "type": f"{alert_type}_cleared",
@@ -299,8 +319,11 @@ class AlertService:
     def _apply_alarm(self, app_settings: dict[str, str]) -> None:
         alarm_enabled = app_settings.get("alarm_enabled", "true").lower() == "true"
         if not self._active:
-            self._silenced = False
-        should_alarm = bool(self._active) and alarm_enabled and not self._silenced
+            self._silenced.clear()
+        # Sound for any active alert the operator has NOT silenced — so a new
+        # alert type re-sounds the buzzer even while an older one is muted.
+        unmuted = [t for t in self._active if t not in self._silenced]
+        should_alarm = bool(unmuted) and alarm_enabled
         if should_alarm != self._alarm_on:
             self._gpio.set_alarm(should_alarm)
             self._alarm_on = should_alarm
