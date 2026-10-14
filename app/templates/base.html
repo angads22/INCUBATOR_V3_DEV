@@ -2,17 +2,29 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{{ title or 'Incubator v3' }}</title>
-  <link rel="stylesheet" href="/static/css/tokens.css" />
-  <link rel="stylesheet" href="/static/css/layout.css" />
-  <link rel="stylesheet" href="/static/css/components.css" />
-  <link rel="stylesheet" href="/static/css/pages.css" />
-  <link rel="stylesheet" href="/static/css/animations.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>{% block title %}{{ title or 'Life Loop Incubator' }}{% endblock %}</title>
+  {# PWA: installable from the browser menu ("Add to Home Screen"); no service worker on purpose —
+     the device is local-only, so a stale cached shell would only hide real state. #}
+  <meta name="theme-color" content="#c2702a" />
+  <meta name="application-name" content="Incubator" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Incubator" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <link rel="manifest" href="/static/manifest.webmanifest" />
+  <link rel="icon" href="/static/icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png" />
+  {% set asset_v = version | default('') %}
+  <link rel="stylesheet" href="/static/css/tokens.css?v={{ asset_v }}" />
+  <link rel="stylesheet" href="/static/css/layout.css?v={{ asset_v }}" />
+  <link rel="stylesheet" href="/static/css/components.css?v={{ asset_v }}" />
+  <link rel="stylesheet" href="/static/css/pages.css?v={{ asset_v }}" />
+  <link rel="stylesheet" href="/static/css/animations.css?v={{ asset_v }}" />
 </head>
 <body>
   {% include 'partials/nav.html' %}
-  <main class="app-main container">
+  <main class="app-main container" id="main">
     {% block content %}{% endblock %}
   </main>
 
@@ -21,11 +33,11 @@
     <p class="update-popup-eyebrow">Update available</p>
     <h3 class="update-popup-title">Life Loop <span id="updateVersion"></span></h3>
     <p class="update-popup-notes" id="updateNotes" hidden></p>
-    <p class="update-popup-steps">Re-flash the SD card with the new image, or on the device run <code>git pull</code> and restart the incubator service.</p>
-    <a id="updateLink" class="btn btn-primary" href="#" target="_blank" rel="noopener">View release</a>
+    <p class="update-popup-steps">Your incubator updates itself automatically within about 15 minutes while online. View the release notes:</p>
+    <a id="updateLink" class="btn btn-primary" href="#" target="_blank" rel="noopener">View release notes</a>
   </div>
 
-  <script src="/static/js/base.js"></script>
+  <script src="/static/js/base.js?v={{ asset_v }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

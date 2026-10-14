@@ -1,59 +1,103 @@
 {% extends 'base.html' %}
+{% block title %}Help · Life Loop Incubator{% endblock %}
 {% block content %}
-{% with eyebrow='Guidance', title='How to Use Your Incubator', subtitle='Day-to-day operation, what the status indicators mean, and how to recover when something goes wrong.' %}{% include 'partials/section_header.html' %}{% endwith %}
+{% set _hold = hold_seconds | default(4) %}
+{% set _reset_hold = factory_reset_hold_seconds | default(15) %}
+{% set _ap_prefix = ap_ssid_prefix | default('Incubator') %}
+{% set _ap_ip = ap_ip | default('10.42.0.1') %}
+{% with eyebrow='Guidance', title='How to use your incubator', subtitle='Day-to-day operation, what the light and sounds mean, and how to recover when something goes wrong.' %}{% include 'partials/section_header.html' %}{% endwith %}
 <section class="two-col">
   <article class="card">
-    <h3>Main Tabs</h3>
+    <h3>Getting around</h3>
     <ul class="stack-list">
-      <li><strong>Home:</strong> Live temperature and humidity, active alerts, quick actions, and recent events. Readings refresh automatically — the "Updated Xs ago" note shows how fresh they are.</li>
-      <li><strong>Status:</strong> Hardware link health, sensor state, alarms, and output state (heater, fan, door, lock, candling light).</li>
-      <li><strong>Hardware:</strong> Manual controls — lock, door, egg turner, camera, candling light, and the alarm test. Actions that affect the eggs ask for confirmation first.</li>
-      <li><strong>Settings</strong> (profile menu, top right): targets, alert tolerances, device toggles, and Wi-Fi.</li>
+      <li><strong>Home:</strong> live temperature and humidity, the incubation-day ring, alerts, quick actions and recent events. Readings refresh by themselves — the "Updated Xs ago" note shows how fresh they are.</li>
+      <li><strong>Controls:</strong> lock, door, egg turner, camera, candling light and the alarm test. Actions that affect the eggs ask for confirmation first.</li>
+      <li><strong>Status:</strong> hardware link health, sensor state, alarms and what each output is doing right now.</li>
+      <li><strong>Help:</strong> this page.</li>
+      <li><strong>Menu</strong> (the <span aria-hidden="true">&#9679;</span> button, top right): Settings, Network settings, Vision lab, Setup / change Wi-Fi, and Logout.</li>
+    </ul>
+    <p class="muted">On a phone the four main tabs sit at the bottom of the screen. Use your browser's <strong>Add to Home Screen</strong> to open the incubator like an app.</p>
+  </article>
+
+  <article class="card">
+    <h3>What the light and sounds mean</h3>
+    <p class="muted">The status LED and buzzer tell you what the incubator is doing without a screen.</p>
+    <table class="help-table" id="ledTable">
+      <thead><tr><th>Event</th><th>Buzzer</th><th>Status LED</th></tr></thead>
+      <tbody>
+        <tr><td>Power on, app ready</td><td>1 short</td><td>fast blink, then the pattern below</td></tr>
+        <tr><td>Setup mode (own Wi-Fi up)</td><td>2 short</td><td>double-blink (pairing)</td></tr>
+        <tr><td>Joining your Wi-Fi</td><td>–</td><td>fast blink</td></tr>
+        <tr><td>Connected</td><td>short-short-long (rising)</td><td>slow heartbeat</td></tr>
+        <tr><td>Couldn't join / offline</td><td>1 long</td><td>SOS (3 short, 3 long, 3 short)</td></tr>
+        <tr><td>Setup button registered ({{ _hold }} s)</td><td>1 medium</td><td>–</td></tr>
+        <tr><td>Factory reset armed ({{ _reset_hold }} s)</td><td>3 rapid, then 1 long on release</td><td>fast blink</td></tr>
+      </tbody>
+    </table>
+  </article>
+
+  <article class="card">
+    <h3>The setup button</h3>
+    <ul class="stack-list">
+      <li><strong>Hold {{ _hold }} seconds → setup mode.</strong> The buzzer gives one medium beep, the incubator starts its own open Wi-Fi <code>{{ _ap_prefix }}-XXXX</code>, and the setup page opens by itself when you join it. Use this to change Wi-Fi, to reset a forgotten password, or if the incubator ever becomes unreachable.</li>
+      <li><strong>Hold {{ _reset_hold }} seconds → factory reset.</strong> After {{ _reset_hold }} seconds the buzzer gives 3 rapid beeps (reset armed); <em>letting go</em> then wipes the name, login, Wi-Fi and settings and restarts in setup mode with 1 long beep. Keep holding past {{ _hold }} s only if you really mean it.</li>
+      <li>Nothing happens for short presses, so an accidental tap is harmless.</li>
     </ul>
   </article>
 
   <article class="card">
-    <h3>Status chips explained</h3>
+    <h3>Finding your incubator's address</h3>
     <ul class="stack-list">
-      <li><strong>Sensors: online/offline</strong> — whether the last DHT22 read succeeded. When offline, pages show the last known reading, clearly labelled.</li>
-      <li><strong>Alarms: none / N active</strong> — alerts fire when a reading stays outside target ± tolerance, or the sensor stops responding.</li>
-      <li><strong>Setup mode / Hotspot active</strong> — the device is broadcasting its own Wi-Fi ({{ ap_ssid_prefix }}-XXXX) for onboarding or recovery.</li>
-      <li><strong>GPIO: mock</strong> — the app is running without real hardware (development mode); readings are simulated.</li>
+      <li><strong>By name:</strong> <code>http://&lt;name&gt;.local:8000</code> — the name is shown in <strong>Settings → Device</strong> (it looks like <code>incubator-ab12</code>). Works on iPhone, Mac, Windows and most Android phones.</li>
+      <li><strong>From your router:</strong> open your Wi-Fi router's app or device list and look for the incubator's name; it also shows the IP address.</li>
+      <li><strong>By IP address:</strong> <code>http://192.168.x.x:8000</code> — the current addresses are listed in <strong>Settings → Device</strong>. Use this if <em>.local</em> names don't open on your Android phone.</li>
+      <li><strong>In setup mode:</strong> join <code>{{ _ap_prefix }}-XXXX</code> and open <code>http://{{ _ap_ip }}:8000</code> if the setup page doesn't appear by itself.</li>
+    </ul>
+  </article>
+
+  <article class="card">
+    <h3>Updates are automatic</h3>
+    <ul class="stack-list">
+      <li>While it has internet access, the incubator checks for a new release about every 15 minutes and installs it by itself. A short popup on Home links to the release notes.</li>
+      <li>Updates never interrupt heating: the control loop keeps running and a failed update rolls back on its own.</li>
+      <li>The current version is shown at the bottom of Home and in Status.</li>
     </ul>
   </article>
 
   <article class="card">
     <h3>Troubleshooting: Wi-Fi</h3>
     <ul class="stack-list">
-      <li>To change networks, open <strong>Settings → Network</strong>, scan, pick the new network, and enter its password.</li>
-      <li>If the device is unreachable, hold the setup button for {{ hold_seconds }} seconds — the buzzer chirps, and the device starts its own hotspot. Join it and open <code>http://{{ ap_ip }}:8000</code>.</li>
-      <li>After switching networks, your phone or laptop may still be on the old network — join the new one and reload the page.</li>
+      <li><strong>Change networks:</strong> menu → <strong>Setup / change Wi-Fi</strong> → <em>Start setup mode</em>, then join <code>{{ _ap_prefix }}-XXXX</code> on your phone and pick the new network. Or use <strong>Settings → Network</strong> to switch directly while you're on the same Wi-Fi.</li>
+      <li><strong>Join failed:</strong> the buzzer gives one long beep and the LED flashes SOS; the setup Wi-Fi comes back by itself. Reconnect to it — the wizard asks only for the Wi-Fi again (usually it's the password).</li>
+      <li><strong>Unreachable:</strong> hold the setup button for {{ _hold }} seconds and join the setup Wi-Fi, or check the address list above.</li>
+      <li>After switching networks, your phone may still be on the old network — join the new one and reload the page.</li>
     </ul>
   </article>
 
   <article class="card">
     <h3>Troubleshooting: sensor &amp; alarm</h3>
     <ul class="stack-list">
-      <li><strong>Sensor offline:</strong> check the DHT22 wiring (data pin GPIO{{ dht_pin }}). The dashboard keeps showing the last good reading with its timestamp, never fake values.</li>
-      <li><strong>Alarm sounding:</strong> the dashboard banner says why. Press <strong>Silence alarm</strong> to quiet the buzzer — the alert stays visible until the cause clears.</li>
-      <li><strong>Too many alerts:</strong> widen the alert tolerances in <strong>Settings</strong>, or untick "Alarm Enabled" to disable the buzzer entirely (alerts still appear on screen).</li>
-      <li><strong>Test it works:</strong> use <strong>Hardware → Test Alarm</strong> for a short chirp.</li>
+      <li><strong>Heater keeps switching off ("heat runaway"):</strong> if the heater has run for 45&nbsp;minutes without warming the chamber by half a degree, the control loop assumes the sensor is misplaced or the heater failed and switches the heater <em>off</em> (fail-safe), raising an alert. Every 15&nbsp;minutes it checks again: if the chamber cooled while the heater was off, the sensor is clearly coupled to the heater and heating resumes. Seat the probe inside the chamber air flow, check the heater and relay, and see the Status page.</li>
+      <li><strong>Sensor offline:</strong> check the sensor wiring{% if dht_pin is defined and dht_pin %} (data pin {{ dht_pin }}){% endif %} and that it is firmly seated. Home keeps showing the last good reading with its timestamp — never fake values — and the heater stays off while the sensor is in doubt.</li>
+      <li><strong>Alarm sounding:</strong> the banner on Home says why. Press <strong>Silence alarm</strong> to quiet the buzzer — the alert stays visible until the cause clears.</li>
+      <li><strong>Too many alerts:</strong> widen the alert tolerances in <strong>Settings</strong>, or untick "Alarm enabled" to disable the buzzer entirely (alerts still appear on screen).</li>
+      <li><strong>Test it works:</strong> use <strong>Controls → Test alarm</strong> for a short chirp.</li>
     </ul>
   </article>
 
   <article class="card">
     <h3>Candling eggs</h3>
     <ul class="stack-list">
-      <li>Open <strong>Hardware</strong> and press <strong>Candle ON</strong> to light the candling LED, then <strong>Capture</strong> for a photo.</li>
-      <li>Automated analysis: <code>POST /api/vision/candle</code> runs the full pipeline (light on → capture → AI analysis → light off).</li>
-      <li>Remember to press <strong>Candle OFF</strong> when you finish manual inspection.</li>
+      <li>Open <strong>Controls</strong> and press <strong>Candle ON</strong> to light the candling LED, then tap each egg on the tray to note what you see. Press <strong>Capture</strong> for a photo.</li>
+      <li>The <strong>Vision lab</strong> (menu) runs the camera through the local model to estimate how far along each egg is and tracks development over time.</li>
+      <li>Remember to press <strong>Candle OFF</strong> when you finish.</li>
     </ul>
   </article>
 
   <article class="card">
     <h3>Forgot your password?</h3>
     <ul class="stack-list">
-      <li>Hold the device's setup button for {{ hold_seconds }} seconds (the buzzer chirps when it registers).</li>
+      <li>Hold the device's setup button for {{ _hold }} seconds (the buzzer beeps when it registers).</li>
       <li>Open <a href="/reset-password">Reset password</a> and enter your username or email with a new password.</li>
       <li>This works only while standing at the device — it is the proof that you own it.</li>
     </ul>

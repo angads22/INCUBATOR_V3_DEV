@@ -15,15 +15,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth import get_user_id_from_session, has_any_user
 from ..config import settings
 from ..database import get_db
 from ..models import Egg
+from ._auth import require_api_user
 
 if TYPE_CHECKING:
     from ..services.camera_service import CameraService
@@ -43,8 +43,7 @@ def set_camera_service(camera) -> None:
 
 def _require_camera_user(db: Session, session_token: str | None) -> "CameraService":
     """Mirror /hardware/send auth, then ensure the camera service is wired."""
-    if (settings.require_login or has_any_user(db)) and not get_user_id_from_session(db, session_token):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    require_api_user(db, session_token)
     if _camera_service is None:
         raise HTTPException(status_code=503, detail="Camera service unavailable")
     return _camera_service

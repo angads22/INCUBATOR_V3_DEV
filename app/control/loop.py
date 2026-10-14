@@ -6,6 +6,10 @@ without any hardware. ``ControlDaemon`` wires them to a GPIOService, reads
 targets from the settings store, drains a command file from the web app, and
 publishes a state/health file the web app can read — all without the web app
 needing to own the heater/turner pins.
+
+This module is imported by the control daemon process, which must stay small
+(512 MB boards): nothing here imports SQLAlchemy or the ORM models — settings
+are read with the stdlib ``sqlite3`` module.
 """
 
 from __future__ import annotations
@@ -57,6 +61,15 @@ SENSOR_STUCK_SECONDS = 900.0    # 15 minutes
 # essentially no rise, holding the heater ON is the dangerous choice.
 HEAT_RUNAWAY_SECONDS = 2700.0   # 45 minutes of continuous heat
 HEAT_RUNAWAY_MIN_RISE_C = 0.5   # ...with less rise than this = something's wrong
+# Once latched OFF, re-check every 15 min: if the chamber has COOLED by at
+# least this much with the heater off, the sensor is evidently coupled to the
+# heater (it was just a weak heater / open door), so heating may resume with a
+# fresh baseline. No cooling → the sensor is not where the heat is → stay off.
+RUNAWAY_RECHECK_SECONDS = 900.0
+RUNAWAY_CLEAR_DROP_C = 0.3
+
+# A full scheduled egg turn. Shorter manual nudges do not count as a turn.
+TURN_STEPS = 200
 
 
 def reading_plausible(temp_c: float | None) -> bool:
@@ -107,6 +120,27 @@ def heat_runaway(
     if (now_ts - heat_start_ts) < window_seconds:
         return False
     return (temp_c - heat_start_temp) < min_rise_c
+
+
+def runaway_clear(
+    latch_ts: float | None,
+    latch_temp: float | None,
+    temp_c: float | None,
+    now_ts: float,
+    recheck_seconds: float = RUNAWAY_RECHECK_SECONDS,
+    min_drop_c: float = RUNAWAY_CLEAR_DROP_C,
+) -> bool | None:
+    """Decide whether a heat-runaway latch may clear.
+
+    Returns None while the re-check window has not elapsed, True when the
+    chamber cooled by ``min_drop_c`` since the latch (clear it), False when it
+    did not (keep it latched; the caller restarts the window).
+    """
+    if latch_ts is None or (now_ts - latch_ts) < recheck_seconds:
+        return None
+    if temp_c is None or latch_temp is None:
+        return False
+    return (latch_temp - temp_c) >= min_drop_c
 
 
 def clamp_target(value: float, lo: float, hi: float, name: str = "target") -> float:
@@ -200,6 +234,15 @@ def _atomic_write_json(path: str, data: dict) -> None:
             os.unlink(tmp)
 
 
+def _read_json(path: str) -> dict:
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 class ControlDaemon:
     def __init__(
         self,
@@ -212,6 +255,7 @@ class ControlDaemon:
         humidity_mode: str = "off",
         state_path: str = "/run/incubator/control-state.json",
         command_path: str = "/run/incubator/control-commands.jsonl",
+        persist_path: str | None = None,
     ) -> None:
         self._gpio = gpio
         self._settings_provider = settings_provider
@@ -221,19 +265,50 @@ class ControlDaemon:
         self._humidity_mode = humidity_mode
         self._state_path = state_path
         self._command_path = command_path
+        self._persist_path = persist_path
         self._stop = threading.Event()
         self._last_turn_ts: float | None = None
         self._heater_on = False
         self._fan_on = False
+        # Last settings snapshot that was read successfully. When the store is
+        # unreadable (locked / corrupt DB) the loop keeps regulating on these
+        # instead of skipping the iteration with the heater frozen in place.
+        self._last_settings: dict | None = None
+        self._settings_failing = False
         # Sensor-integrity state: last reading (latch detection) and when the
         # currently-repeating value was first seen.
         self._last_temp: float | None = None
         self._last_hum: float | None = None
         self._unchanged_since_ts: float | None = None
-        # Anti-runaway state: start of the current continuous heating stretch.
+        # Anti-runaway state: start of the current continuous heating stretch,
+        # and (while latched) when/at what temperature the latch engaged.
         self._heat_start_ts: float | None = None
         self._heat_start_temp: float | None = None
         self._runaway_latched = False
+        # Names of outputs whose last write failed (line not requested / backend
+        # error); published so the alert engine can tell the operator.
+        self._output_fault = ""
+        self._runaway_latch_ts: float | None = None
+        self._runaway_latch_temp: float | None = None
+        self._load_persisted()
+
+    # -- persistence (survives restarts; not tmpfs) ------------------------
+    def _load_persisted(self) -> None:
+        if not self._persist_path:
+            return
+        data = _read_json(self._persist_path)
+        ts = data.get("last_turn_ts")
+        if isinstance(ts, (int, float)) and ts > 0:
+            self._last_turn_ts = float(ts)
+            logger.info("Restored last egg turn from %s (%.0f s ago)", self._persist_path, time.time() - ts)
+
+    def _persist(self) -> None:
+        if not self._persist_path:
+            return
+        try:
+            _atomic_write_json(self._persist_path, {"last_turn_ts": self._last_turn_ts})
+        except OSError as exc:
+            logger.warning("could not persist control state to %s: %s", self._persist_path, exc)
 
     # -- settings helpers -------------------------------------------------
     @staticmethod
@@ -247,10 +322,34 @@ class ControlDaemon:
     def _b(settings: dict, key: str, default: bool) -> bool:
         return str(settings.get(key, "true" if default else "false")).lower() == "true"
 
+    def _get_settings(self) -> dict:
+        """Fetch settings; on failure reuse the last good snapshot (or defaults).
+
+        Logged once per outage (and once on recovery) so a flapping SD card
+        does not flood the journal every 10 s.
+        """
+        try:
+            fetched = self._settings_provider()
+        except Exception as exc:  # noqa: BLE001 — the loop must keep regulating
+            if not self._settings_failing:
+                self._settings_failing = True
+                logger.error(
+                    "settings store unreadable (%s) — continuing with %s",
+                    exc, "the last good settings" if self._last_settings is not None else "built-in defaults",
+                )
+            return dict(self._last_settings) if self._last_settings is not None else {}
+        if fetched is None:
+            fetched = {}
+        if self._settings_failing:
+            self._settings_failing = False
+            logger.info("settings store readable again")
+        self._last_settings = dict(fetched)
+        return dict(fetched)
+
     # -- one control iteration (testable) ---------------------------------
     def loop_once(self, now_ts: float | None = None) -> dict:
         now_ts = time.time() if now_ts is None else now_ts
-        settings = self._settings_provider() or {}
+        settings = self._get_settings()
         reading = self._gpio.read_temperature_humidity()
         temp = reading.get("temperature_c") if reading.get("ok") else None
         hum = reading.get("humidity_pct") if reading.get("ok") else None
@@ -284,6 +383,14 @@ class ControlDaemon:
         if sensor_fault:
             # Same treatment as a dead sensor: we do not know the temperature.
             temp = hum = None
+        # A heating stretch that began without a valid reading (manual ON while
+        # the sensor was failing) adopts the first good temperature as its
+        # anti-runaway baseline instead of running unguarded.
+        if (
+            self._heater_on and self._heat_start_ts is not None
+            and self._heat_start_temp is None and temp is not None
+        ):
+            self._heat_start_temp = temp
 
         target_t = clamp_target(
             self._f(settings, "target_temp_c", 37.5),
@@ -309,17 +416,39 @@ class ControlDaemon:
 
         # Anti-runaway: heat that isn't warming the chamber means the sensor is
         # misplaced/latched or the heater is failing — either way, continuing to
-        # call for heat is the dangerous choice. Latch it OFF until a restart or
-        # a real temperature rise clears the condition.
-        if heat_runaway(
+        # call for heat is the dangerous choice. Latch it OFF, then re-check
+        # periodically whether the chamber cools with the heater off (sensor is
+        # coupled to the heater → safe to resume) or not (stay latched).
+        if not self._runaway_latched and heat_runaway(
             self._heater_on, temp, self._heat_start_ts, self._heat_start_temp, now_ts,
         ):
-            if not self._runaway_latched:
-                logger.error(
-                    "Heater ran %.0f min with <%.1f C rise — forcing OFF (sensor or heater fault)",
-                    HEAT_RUNAWAY_SECONDS / 60.0, HEAT_RUNAWAY_MIN_RISE_C,
-                )
+            logger.error(
+                "Heater ran %.0f min with <%.1f C rise — forcing OFF (sensor or heater fault); "
+                "re-checking in %.0f min",
+                HEAT_RUNAWAY_SECONDS / 60.0, HEAT_RUNAWAY_MIN_RISE_C, RUNAWAY_RECHECK_SECONDS / 60.0,
+            )
             self._runaway_latched = True
+            self._runaway_latch_ts, self._runaway_latch_temp = now_ts, temp
+        elif self._runaway_latched:
+            verdict = runaway_clear(self._runaway_latch_ts, self._runaway_latch_temp, temp, now_ts)
+            if verdict is True:
+                logger.info(
+                    "Chamber cooled %.1f -> %.1f C with the heater off — clearing heat-runaway latch",
+                    self._runaway_latch_temp, temp,
+                )
+                self._runaway_latched = False
+                self._runaway_latch_ts = self._runaway_latch_temp = None
+                self._heat_start_ts = self._heat_start_temp = None
+            elif verdict is False:
+                logger.warning(
+                    "Heat-runaway latch holds: chamber did not cool with the heater off (%.1f -> %s C); "
+                    "re-checking in %.0f min",
+                    self._runaway_latch_temp if self._runaway_latch_temp is not None else float("nan"),
+                    "?" if temp is None else f"{temp:.1f}", RUNAWAY_RECHECK_SECONDS / 60.0,
+                )
+                self._runaway_latch_ts = now_ts
+                if temp is not None:
+                    self._runaway_latch_temp = temp
         if self._runaway_latched:
             want_heat = False
             # Report for as long as the latch holds — not just on the iteration
@@ -329,7 +458,6 @@ class ControlDaemon:
             sensor_fault = sensor_fault or "heat_runaway"
 
         if want_heat is not None and want_heat != self._heater_on:
-            self._gpio.set_heater(want_heat)
             self._heater_on = want_heat
             # Track the start of each continuous heating stretch so the
             # runaway check has a baseline to compare against.
@@ -337,28 +465,41 @@ class ControlDaemon:
                 self._heat_start_ts, self._heat_start_temp = now_ts, temp
             else:
                 self._heat_start_ts = self._heat_start_temp = None
-        # A genuine rise while heating clears the latch (e.g. the sensor was
-        # reseated, or the door was closed).
-        if (
-            self._runaway_latched and temp is not None
-            and self._heat_start_temp is not None
-            and (temp - self._heat_start_temp) >= HEAT_RUNAWAY_MIN_RISE_C
-        ):
-            logger.info("Chamber is warming again — clearing heat-runaway latch")
-            self._runaway_latched = False
 
         # Humidity (optional vent-fan mode).
         want_fan = humidity_decision(hum, target_h, hum_tol, self._humidity_mode)
         if want_fan is not None and want_fan != self._fan_on:
-            self._gpio.set_fan(want_fan)
             self._fan_on = want_fan
+
+        # Re-assert BOTH outputs every iteration, changed or not: the web app
+        # (or a glitch, or a restart of the other process) can never leave a
+        # relay in a state the daemon does not know about for longer than one
+        # interval.
+        heater_res = self._gpio.set_heater(self._heater_on) or {}
+        fan_res = self._gpio.set_fan(self._fan_on) or {}
+        # A write that did not land (line never requested — EBUSY, bad pin —
+        # or a backend error) means the published state would be fiction.
+        # Record it so the alert engine can raise it instead of trusting it.
+        output_fault = ",".join(
+            name for name, res in (("heater", heater_res), ("fan", fan_res)) if not res.get("ok")
+        )
+        if output_fault != self._output_fault:
+            if output_fault:
+                logger.error(
+                    "Control outputs could not be driven: %s (%s) — check the GPIO lines / wiring",
+                    output_fault, heater_res.get("error") or fan_res.get("error") or "unknown",
+                )
+            else:
+                logger.info("Control outputs are driven again")
+            self._output_fault = output_fault
 
         # Egg turning on schedule.
         turned = False
         if turner_enabled and turn_due(now_ts, self._last_turn_ts, turn_interval):
-            self._gpio.move_turner(200, 1)
+            self._gpio.move_turner(TURN_STEPS, 1)
             self._last_turn_ts = now_ts
             turned = True
+            self._persist()
 
         self._drain_commands()
 
@@ -376,20 +517,37 @@ class ControlDaemon:
             # cheerfully it reported success — the UI/alerts must see the truth.
             "online": bool(reading.get("ok")) and not sensor_fault,
             "sensor_fault": sensor_fault,
+            "mock": is_mock,
+            "settings_ok": not self._settings_failing,
+            "output_fault": self._output_fault,
         }
         self._publish_state(state)
         return state
 
     # -- command intake (web app → daemon) --------------------------------
     def _drain_commands(self) -> None:
+        """Consume the web app's JSONL command queue.
+
+        The file is claimed with an atomic rename before it is read, so a line
+        the web app appends while we are reading lands in a fresh file (its
+        O_APPEND open creates one) instead of being wiped by a truncate. A
+        leftover ``.processing`` file from a crash mid-drain is replayed first.
+        """
         path = self._command_path
-        if not path or not os.path.exists(path):
+        if not path:
             return
+        processing = path + ".processing"
+        if not os.path.exists(processing):
+            if not os.path.exists(path):
+                return
+            try:
+                os.replace(path, processing)
+            except OSError as exc:
+                logger.debug("command drain claim error: %s", exc)
+                return
         try:
-            with open(path, "r+") as fh:
+            with open(processing, "r") as fh:
                 lines = fh.readlines()
-                fh.seek(0)
-                fh.truncate()
         except OSError as exc:
             logger.debug("command drain read error: %s", exc)
             return
@@ -402,19 +560,42 @@ class ControlDaemon:
                 self._apply_command(cmd.get("action"), cmd.get("value"))
             except Exception as exc:  # noqa: BLE001
                 logger.warning("bad control command %r: %s", line, exc)
+        try:
+            os.unlink(processing)
+        except OSError as exc:
+            logger.debug("command drain cleanup error: %s", exc)
 
     def _apply_command(self, action: str, value: Any) -> None:
         if action == "heater":
             on = bool(value)
             self._gpio.set_heater(on)
+            if on != self._heater_on:
+                # A manual ON must get the same anti-runaway baseline as a
+                # thermostat ON, or a misplaced sensor could heat forever.
+                if on:
+                    self._heat_start_ts, self._heat_start_temp = time.time(), self._last_temp
+                else:
+                    self._heat_start_ts = self._heat_start_temp = None
             self._heater_on = on
         elif action == "fan":
             on = bool(value)
             self._gpio.set_fan(on)
             self._fan_on = on
         elif action == "turn":
-            self._gpio.move_turner(int(value) if value else 200, 1)
-            self._last_turn_ts = time.time()
+            from ..services.gpio_service import clamp_turner_steps
+
+            try:
+                raw = int(value) if value not in (None, "") else TURN_STEPS
+            except (TypeError, ValueError):
+                raw = TURN_STEPS
+            direction = -1 if raw < 0 else 1
+            steps = clamp_turner_steps(raw, default=TURN_STEPS)
+            self._gpio.move_turner(steps, direction)
+            # Only a full turn resets the schedule; a one-step nudge from the
+            # Controls page must not postpone the next real turn by hours.
+            if steps >= TURN_STEPS:
+                self._last_turn_ts = time.time()
+                self._persist()
         else:
             logger.debug("ignoring unknown control command: %s", action)
 
@@ -458,7 +639,54 @@ class ControlDaemon:
         self._stop.set()
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# Settings access without the ORM (keeps SQLAlchemy out of this process)
+# ──────────────────────────────────────────────────────────────────────────
+
+def sqlite_path_from_url(db_url: str) -> str | None:
+    """``sqlite:///./database/incubator.db`` -> ``./database/incubator.db``; None for other engines."""
+    url = (db_url or "").strip()
+    if not url.startswith("sqlite"):
+        return None
+    path = url.split("///", 1)[-1] if "///" in url else ""
+    if not path or path == ":memory:":
+        return None
+    return path.split("?", 1)[0]
+
+
+def read_app_settings_sqlite(path: str, timeout: float = 5.0) -> dict[str, str]:
+    """Read the ``app_settings`` key/value table with the stdlib sqlite3 module.
+
+    A missing file or table means "no settings yet" and returns {} (the loop
+    uses its built-in defaults). Lock/corruption errors propagate so the
+    daemon can log them and fall back to its last good snapshot.
+    """
+    import sqlite3
+
+    if not os.path.exists(path):
+        return {}
+    uri = "file:" + os.path.abspath(path) + "?mode=ro"
+    conn = sqlite3.connect(uri, timeout=timeout, uri=True)
+    try:
+        conn.execute(f"PRAGMA busy_timeout={int(timeout * 1000)}")
+        try:
+            rows = conn.execute("SELECT key, value FROM app_settings").fetchall()
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc).lower():
+                return {}
+            raise
+    finally:
+        conn.close()
+    return {str(k): ("" if v is None else str(v)) for k, v in rows}
+
+
 def _default_settings_provider() -> dict:
+    from ..config import settings
+
+    path = sqlite_path_from_url(settings.db_url)
+    if path is not None:
+        return read_app_settings_sqlite(path)
+    # Non-SQLite deployments (none shipped) fall back to the ORM.
     from ..database import get_db
     from ..settings_store import get_settings
 
@@ -471,7 +699,7 @@ def _default_settings_provider() -> dict:
 
 def build_daemon() -> ControlDaemon:
     from ..config import settings
-    from ..services.gpio_service import GPIOService
+    from ..services.gpio_service import DAEMON_OUTPUTS, GPIOService
 
     gpio = GPIOService(
         dht_pin=settings.gpio_dht_pin,
@@ -486,6 +714,15 @@ def build_daemon() -> ControlDaemon:
         setup_button_pin=settings.gpio_setup_button_pin,
         relay_active_low=settings.gpio_relay_active_low,
         mock=settings.gpio_mock,
+        backend=settings.gpio_backend,
+        chip=settings.gpio_chip,
+        sensor="auto",
+        owned_outputs=DAEMON_OUTPUTS,
+        request_button=False,   # the web app's SetupButtonService owns the button line
+        sensor_backend=settings.sensor_backend,
+        sensor_i2c_bus=settings.sensor_i2c_bus,
+        sensor_i2c_addr=settings.sensor_i2c_addr,
+        sensor_iio_device=settings.sensor_iio_device,
     )
     gpio.setup()
     return ControlDaemon(
@@ -497,6 +734,7 @@ def build_daemon() -> ControlDaemon:
         humidity_mode=settings.humidity_control_mode,
         state_path=settings.control_state_path,
         command_path=settings.control_command_path,
+        persist_path=settings.control_persist_path,
     )
 
 

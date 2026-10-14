@@ -1,0 +1,25 @@
+[Unit]
+# Boot-safe actuator levels for ANY board. During boot, GPIO lines are inputs
+# with weak pulls; an active-LOW relay board reads a pulled-down input as ON —
+# i.e. the heater could run from power-on until the control daemon starts. On a
+# Raspberry Pi the firmware fixes this before the kernel (config.txt gpio=
+# lines written by install.sh). This unit is the equivalent for every other
+# board: it requests each relay/actuator line as an output at its OFF level as
+# early as systemd allows, then releases it (the controller keeps the level),
+# and only then lets the control daemon and the web app start.
+Description=Incubator: drive relay/actuator GPIO lines to their OFF levels at boot
+After=local-fs.target
+Before=incubator-control.service incubator.service
+ConditionPathExists=/etc/incubator.env
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/etc/incubator.env
+WorkingDirectory=__INSTALL_DIR__
+# Always exits 0: a failure here must never hold up the rest of the boot.
+ExecStart=__INSTALL_DIR__/.venv/bin/python -m app.hal --safe-outputs
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

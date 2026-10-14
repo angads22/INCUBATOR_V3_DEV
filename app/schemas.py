@@ -30,3 +30,9 @@ class HotspotSetupPayload(BaseModel):
 class HardwareCommand(BaseModel):
     action: str
     value: str | int | float | None = None
+
+
+class FactoryResetPayload(BaseModel):
+    """POST /api/device/factory-reset — the operator must type RESET."""
+
+    confirm: str = ""

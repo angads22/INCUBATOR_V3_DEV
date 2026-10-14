@@ -7,14 +7,29 @@ from .gpio_service import GPIOService
 
 
 class HardwareService:
-    """High-level hardware commands that map to GPIO actions on the Pi Zero 2W.
+    """High-level hardware commands that map to GPIO actions.
 
     All methods return a dict with at least {"ok": bool}.
+
+    When the control daemon owns the climate lines (``daemon_state_path`` set),
+    every sensor read comes from the daemon's published state file instead of
+    the sensor itself, and ``get_state()`` reports the daemon's heater/fan
+    state — the web process never touches those lines in that mode.
     """
 
-    def __init__(self, gpio: GPIOService, camera: CameraService) -> None:
+    def __init__(self, gpio: GPIOService, camera: CameraService, *, daemon_state_path: str | None = None) -> None:
         self.gpio = gpio
         self.camera = camera
+        self.daemon_state_path = daemon_state_path or None
+
+    @property
+    def daemon_mode(self) -> bool:
+        return self.daemon_state_path is not None
+
+    def _daemon_reading(self) -> dict[str, Any]:
+        from ..control.bridge import daemon_reading
+
+        return daemon_reading(self.daemon_state_path)  # type: ignore[arg-type]
 
     # ------------------------------------------------------------------
     # Enclosure
@@ -59,21 +74,23 @@ class HardwareService:
     # Sensors
     # ------------------------------------------------------------------
 
+    def read_environment(self) -> dict[str, Any]:
+        """Read temperature + humidity in one call (daemon state file in daemon mode)."""
+        if self.daemon_mode:
+            return self._daemon_reading()
+        return self.gpio.read_temperature_humidity()
+
     def read_temp(self) -> dict[str, Any]:
-        result = self.gpio.read_temperature_humidity()
+        result = self.read_environment()
         if not result.get("ok"):
             return result
         return {"ok": True, "temperature_c": result["temperature_c"], "mock": result.get("mock", False)}
 
     def read_humidity(self) -> dict[str, Any]:
-        result = self.gpio.read_temperature_humidity()
+        result = self.read_environment()
         if not result.get("ok"):
             return result
         return {"ok": True, "humidity_pct": result["humidity_pct"], "mock": result.get("mock", False)}
-
-    def read_environment(self) -> dict[str, Any]:
-        """Read both temperature and humidity in one DHT22 call."""
-        return self.gpio.read_temperature_humidity()
 
     # ------------------------------------------------------------------
     # Candling / light
@@ -101,4 +118,15 @@ class HardwareService:
     # ------------------------------------------------------------------
 
     def get_state(self) -> dict[str, Any]:
-        return self.gpio.get_state()
+        """Output snapshot; in daemon mode heater/fan come from the daemon."""
+        state = self.gpio.get_state()
+        if self.daemon_mode:
+            reading = self._daemon_reading()
+            if reading.get("fresh"):
+                state["heater"] = bool(reading.get("heater_on"))
+                state["fan"] = bool(reading.get("fan_on"))
+                state["source"] = "control-daemon"
+            else:
+                state["heater"] = state["fan"] = None
+                state["source"] = "control-daemon-stale"
+        return state

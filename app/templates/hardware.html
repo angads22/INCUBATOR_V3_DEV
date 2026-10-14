@@ -1,10 +1,11 @@
 {% extends 'base.html' %}
+{% block title %}Controls · Life Loop Incubator{% endblock %}
 {% block content %}
-{% with eyebrow='Manual Control', title='Hardware Control Panel', subtitle='Direct command access with explicit operator actions.' %}{% include 'partials/section_header.html' %}{% endwith %}
+{% with eyebrow='Manual control', title='Controls', subtitle='Lock, door, egg turner, camera, candling light and alarm — each action is explicit and confirmed where it matters.' %}{% include 'partials/section_header.html' %}{% endwith %}
 
 <section class="card" style="margin-bottom:18px">
   <h3>Candling tray</h3>
-  <p class="muted">Switch on the candling light, then tap each egg to log what you see: fertile → uncertain → clear → removed. Saved locally on this device.</p>
+  <p class="muted">Switch on the candling light, then tap each egg to log what you see: fertile → uncertain → clear → removed. Saved locally in this browser.</p>
   <div class="candling-tray" id="candlingTray" aria-label="Candling tray">
     {% for i in range(24) %}<span class="egg" data-egg="{{ i }}" data-state="clear" role="button" tabindex="0" aria-label="Egg {{ i + 1 }}"></span>{% endfor %}
   </div>
@@ -13,28 +14,29 @@
     <span><i style="background:var(--egg-uncertain)"></i> Uncertain</span>
     <span><i style="background:var(--egg-clear)"></i> Clear</span>
     <span><i style="border:1px dashed rgba(70,50,20,.4)"></i> Removed</span>
-    <button type="button" id="candlingReset" class="btn btn-ghost" style="margin-left:auto;min-height:34px;padding:6px 12px">Reset tray</button>
+    <button type="button" id="candlingReset" class="btn btn-ghost btn-small" style="margin-left:auto">Reset tray</button>
   </div>
 </section>
 
 <section class="card">
   <div class="action-grid">
-    {% with title='Open Lock', description='Unlock the enclosure for maintenance.', button_text='Open Lock', action_name='open_lock', confirm_text='Open the lock? The enclosure will be accessible.' %}{% include 'partials/action_card.html' %}{% endwith %}
-    {% with title='Close Lock', description='Lock the enclosure after servicing.', button_text='Close Lock', action_name='close_lock', confirm_text='Close and lock the enclosure?', button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
-    {% with title='Open Door', description='Open the incubator door.', button_text='Open Door', action_name='open_door', confirm_text='Open the door? Temperature and humidity will drop while it is open.' %}{% include 'partials/action_card.html' %}{% endwith %}
-    {% with title='Close Door', description='Close the incubator door.', button_text='Close Door', action_name='close_door', confirm_text='Close the door now?', button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
-    {% with title='Capture Image', description='Take a snapshot with the internal camera.', button_text='Capture', action_name='capture_image' %}{% include 'partials/action_card.html' %}{% endwith %}
-    {% with title='Motor Step', description='Advance the egg turner by one step.', button_text='Move', action_name='move_motor', action_value='1', confirm_text='Turn the eggs now?' %}{% include 'partials/action_card.html' %}{% endwith %}
-    {% with card_id='candle', title='Candle ON', description='Switch on the candling light for egg inspection.', button_text='Turn On', action_name='set_candle', action_value='true' %}{% include 'partials/action_card.html' %}{% endwith %}
-    {% with title='Candle OFF', description='Switch the candling light off.', button_text='Turn Off', action_name='set_candle', action_value='false', button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
-    {% with title='Test Alarm', description='Sound a short buzzer chirp to verify the alarm works.', button_text='Test', action_name='alarm_test', button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
-    {% with title='Alarm Off', description='Switch the buzzer off and silence the current alert.', button_text='Silence', action_name='alarm_off', button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Open lock', description='Unlock the enclosure for maintenance.', button_text='Open lock', action_name='open_lock', confirm_text='Open the lock? The enclosure will be accessible.' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Close lock', description='Lock the enclosure after servicing.', button_text='Close lock', action_name='close_lock', confirm_text='Close and lock the enclosure?', button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Open door', description='Open the incubator door.', button_text='Open door', action_name='open_door', confirm_text='Open the door? Temperature and humidity will drop while it is open.' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Close door', description='Close the incubator door.', button_text='Close door', action_name='close_door', confirm_text='Close the door now?', button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Capture image', description='Take a snapshot with the internal camera.', button_text='Capture', action_name='capture_image' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Turn eggs', description='Advance the egg turner by one step.', button_text='Turn', action_name='move_motor', action_value='1', confirm_text='Turn the eggs now?' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with card_id='candle', title='Candle ON', description='Switch on the candling light for egg inspection.', button_text='Turn on', action_name='set_candle', action_value='true' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Candle OFF', description='Switch the candling light off.', button_text='Turn off', action_name='set_candle', action_value='false', button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Test alarm', description='Sound a short buzzer chirp to verify the alarm works.', button_text='Test', action_name='alarm_test', button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
+    {% with title='Alarm off', description='Switch the buzzer off and silence the current alert.', button_text='Silence', action_name='alarm_off', button_tone='btn-secondary' %}{% include 'partials/action_card.html' %}{% endwith %}
   </div>
-  <p id="hardware-msg" class="hint">Awaiting command…</p>
+  <p id="hardware-msg" class="hint" aria-live="polite">Awaiting command…</p>
+  <p class="muted hint">Heater, fan and automatic turning are managed by the control loop from your targets in <a href="/settings">Settings</a>.</p>
 </section>
 {% endblock %}
 {% block scripts %}
-<script src="/static/js/hardware.js"></script>
+<script src="/static/js/hardware.js?v={{ version | default('') }}"></script>
 <script>
 // Candling tray — tap an egg to cycle its state; state persists locally so a
 // candling session survives a page reload. No backend: it is an inspection aid.
@@ -45,7 +47,7 @@
   const STATES = ['clear', 'fertile', 'uncertain', 'removed'];
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { saved = {}; }
-  const persist = () => localStorage.setItem(KEY, JSON.stringify(saved));
+  const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch { /* ignore */ } };
 
   tray.querySelectorAll('.egg').forEach((egg) => {
     const id = egg.dataset.egg;

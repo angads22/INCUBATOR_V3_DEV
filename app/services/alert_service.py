@@ -39,6 +39,7 @@ ALERT_MESSAGES = {
     "sensor_faulty": "Sensor readings are not trustworthy (frozen or impossible values) — heating has been stopped as a precaution",
     "heater_cutoff": "Heater is ON but no current is flowing — the thermal cutoff may have tripped or the heater is disconnected",
     "heater_stuck": "Current is flowing to the heater while it is commanded OFF — the relay may be stuck closed",
+    "output_fault": "The control loop cannot drive a relay line (heater/fan GPIO unavailable) — check the wiring and the control service log",
 }
 
 
@@ -65,7 +66,10 @@ class AlertService:
         self._range_counts: dict[str, int] = {}
         self._heater_counts: dict[str, int] = {}
         self._active: dict[str, str] = {}  # alert type -> ISO timestamp raised
-        self._silenced = False
+        # Alert TYPES the operator silenced. Silence applies only to the alerts
+        # that were active when the button was pressed: a new, different alert
+        # (humidity_low muted, then temp_high appears) sounds the buzzer again.
+        self._silenced: set[str] = set()
         self._alarm_on = False
         # Sensor-integrity tracking (latch detection across polls).
         self._integ_last: tuple[float | None, float | None] = (None, None)
@@ -80,7 +84,7 @@ class AlertService:
             self._range_counts = {}
             self._heater_counts = {}
             self._active = {}
-            self._silenced = False
+            self._silenced = set()
             self._alarm_on = False
             self._integ_last = (None, None)
             self._integ_unchanged_since = None
@@ -128,13 +132,23 @@ class AlertService:
         """
         events: list[dict[str, str]] = []
         with self._lock:
+            # The control daemon reports outputs it could not drive (a relay
+            # line that failed to request). That is an alarm in its own right:
+            # the thermostat may be "on" while nothing is heating.
+            if str(reading.get("output_fault") or ""):
+                events += self._raise("output_fault")
+            else:
+                events += self._clear("output_fault")
             # A reading can claim ok=True and still be untrustworthy: a DHT22
             # that latches returns the same value forever, and a glitched read
             # can be physically impossible. The control daemon already refuses
             # to act on these; the farmer needs to HEAR about it too, so an
             # integrity failure raises its own alarm rather than being silently
             # averaged into a healthy-looking history.
-            integrity_fault = self._integrity_fault(reading)
+            # The control daemon already decided a reading is untrustworthy
+            # (latched / implausible / heat runaway) and reports why; show the
+            # farmer THAT message, not a generic "sensor not responding".
+            integrity_fault = str(reading.get("sensor_fault") or "") or self._integrity_fault(reading)
             if integrity_fault:
                 self._range_counts.clear()
                 events += self._raise("sensor_faulty")
@@ -225,21 +239,36 @@ class AlertService:
                 snapshot.update(self._last_reading)
             return snapshot
 
+    def _all_silenced(self) -> bool:
+        """True when every active alert has been silenced (call with lock held)."""
+        return bool(self._active) and all(t in self._silenced for t in self._active)
+
     def alert_state(self) -> dict[str, Any]:
         with self._lock:
             return {
                 "active": [
-                    {"type": alert_type, "message": ALERT_MESSAGES[alert_type], "since": since}
+                    {
+                        "type": alert_type,
+                        "message": ALERT_MESSAGES[alert_type],
+                        "since": since,
+                        "silenced": alert_type in self._silenced,
+                    }
                     for alert_type, since in self._active.items()
                 ],
                 "alarm_on": self._alarm_on,
-                "silenced": self._silenced,
+                # Buzzer suppressed for everything currently active.
+                "silenced": self._all_silenced(),
+                "silenced_types": sorted(t for t in self._silenced if t in self._active),
             }
 
     def silence(self) -> dict[str, Any]:
-        """Stop the buzzer until every active alert has cleared."""
+        """Stop the buzzer for the alerts active right now.
+
+        Each silenced alert stays muted until it clears; an alert of a type that
+        is not active yet will still sound the buzzer when it is raised.
+        """
         with self._lock:
-            self._silenced = True
+            self._silenced |= set(self._active)
             if self._alarm_on:
                 self._gpio.set_alarm(False)
                 self._alarm_on = False
@@ -288,6 +317,8 @@ class AlertService:
         if alert_type not in self._active:
             return []
         del self._active[alert_type]
+        # A cleared alert is no longer muted: if it comes back it must be heard.
+        self._silenced.discard(alert_type)
         return [
             {
                 "type": f"{alert_type}_cleared",
@@ -299,8 +330,11 @@ class AlertService:
     def _apply_alarm(self, app_settings: dict[str, str]) -> None:
         alarm_enabled = app_settings.get("alarm_enabled", "true").lower() == "true"
         if not self._active:
-            self._silenced = False
-        should_alarm = bool(self._active) and alarm_enabled and not self._silenced
+            self._silenced.clear()
+        # Sound for any active alert the operator has NOT silenced — so a new
+        # alert type re-sounds the buzzer even while an older one is muted.
+        unmuted = [t for t in self._active if t not in self._silenced]
+        should_alarm = bool(unmuted) and alarm_enabled
         if should_alarm != self._alarm_on:
             self._gpio.set_alarm(should_alarm)
             self._alarm_on = should_alarm

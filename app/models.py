@@ -86,7 +86,9 @@ class SensorLog(Base):
     incubator_id: Mapped[int] = mapped_column(ForeignKey("incubators.id"), nullable=False)
     temperature_c: Mapped[float] = mapped_column(Float, nullable=False)
     humidity_pct: Mapped[float] = mapped_column(Float, nullable=False)
-    captured_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    # Indexed: every dashboard fallback, retention sweep and boot check sorts
+    # or filters on this column, and sensor_logs is by far the biggest table.
+    captured_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False, index=True)
 
 
 class ActionLog(Base):
@@ -95,7 +97,7 @@ class ActionLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     action: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False, index=True)
 
 
 class ModelResult(Base):

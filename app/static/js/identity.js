@@ -128,7 +128,11 @@
       row.style.justifyContent = 'space-between';
       row.style.alignItems = 'center';
       const label = document.createElement('span');
-      label.innerHTML = `<strong>${l.provider === 'google' ? 'Google' : 'Apple'}</strong> · ${l.email || 'linked'}`;
+      // Provider name is ours; the email came from the provider — text only.
+      const strong = document.createElement('strong');
+      strong.textContent = l.provider === 'google' ? 'Google' : 'Apple';
+      label.appendChild(strong);
+      label.appendChild(document.createTextNode(` · ${l.email || 'linked'}`));
       const btn = document.createElement('button');
       btn.className = 'btn btn-ghost';
       btn.type = 'button';

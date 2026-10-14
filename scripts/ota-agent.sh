@@ -24,7 +24,14 @@ exec 200>"${LOCK_FILE}"
 flock -n 200 || { _log "Another OTA run is already in progress — exiting."; exit 0; }
 
 # ── Load env ───────────────────────────────────────────────────────────────
-[[ -f "${ENV_FILE}" ]] && source "${ENV_FILE}" || true
+# Export every key so the Python updater (python -m app.ota) sees the device
+# configuration too, not just this shell.
+if [[ -f "${ENV_FILE}" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "${ENV_FILE}" || true
+    set +a
+fi
 OTA_ENABLED="${OTA_ENABLED:-true}"
 if [[ "${OTA_ENABLED}" != "true" ]]; then
     _log "OTA disabled (OTA_ENABLED != true) — skipping."

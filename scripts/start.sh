@@ -8,7 +8,7 @@ API_PORT="${API_PORT:-8000}"
 cd "$PROJECT_ROOT"
 
 if [[ ! -d .venv ]]; then
-  echo "[ERROR] .venv not found. Run: sudo bash init_pi.sh"
+  echo "[ERROR] .venv not found. Run: sudo bash install.sh  (or for dev: python3 -m venv .venv && .venv/bin/pip install -e .[dev])"
   exit 1
 fi
 

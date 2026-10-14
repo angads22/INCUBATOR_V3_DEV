@@ -210,6 +210,11 @@ def test_identity_cannot_be_linked_to_two_accounts(client, google, broker):
     db.add(u2); db.commit()
     token = create_session(db, u2.id)
     db.close()
+    # Drop the first owner's session cookie before setting the second one:
+    # with two same-named cookies in the jar, which one the server sees
+    # depends on the interpreter's cookiejar ordering (Python 3.10 sent the
+    # first owner's, making the request look like a legitimate re-link).
+    client.cookies.clear()
     client.cookies.set("incubator_session", token)
     a2 = identity_service.make_broker_assertion("apple", "shared-sub", None)
     assert client.post("/api/identity/broker", json={"assertion": a2, "intent": "link"}).status_code == 409

@@ -158,8 +158,10 @@ def test_command_file_is_drained_and_applied(tmp_path):
     (tmp_path / "cmd.jsonl").write_text(json.dumps({"action": "heater", "value": True}) + "\n")
     d.loop_once(now_ts=4000.0)
     assert gpio.heater is True
-    # command file is truncated after draining
-    assert (tmp_path / "cmd.jsonl").read_text() == ""
+    # The command file is claimed by rename and consumed: a line the web app
+    # appends mid-drain lands in a fresh file instead of being truncated away.
+    assert not (tmp_path / "cmd.jsonl").exists()
+    assert not (tmp_path / "cmd.jsonl.processing").exists()
 
 
 # ── Sensor integrity: an "ok" reading is not automatically true ──────────────

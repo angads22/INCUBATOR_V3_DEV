@@ -1,20 +1,31 @@
 """
-Camera service for Raspberry Pi Zero 2W.
+Camera service: Pi camera (picamera2), USB camera (OpenCV) or a mock.
 
-Backends (set CAMERA_BACKEND env var):
-  picamera2  — Pi Camera Module v1/v2/v3 via libcamera (default)
-  opencv     — USB webcam via OpenCV / cv2
+Backends (``CAMERA_BACKEND``):
+  auto       — picamera2 importable → picamera2; else cv2 importable and a
+               ``/dev/video*`` node exists → opencv; else mock
+  picamera2  — Pi Camera Module v1/v2/v3 via libcamera
+  opencv     — USB webcam via OpenCV / cv2 (first of /dev/video0..3 that opens
+               AND delivers a frame — on many SBCs /dev/video0 is a VPU node)
   mock       — Returns a placeholder image without touching hardware
+
+``backend_resolved`` is the backend actually in use.
 
 The session is PERSISTENT: the camera is configured and started once and kept
 running. Two outputs are exposed:
 
-  * a low-resolution (~640x480) preview frame at ~1 fps for the live MJPEG stream
+  * a low-resolution (~640x480) preview frame at ~preview_fps for the MJPEG stream
   * a full-resolution still on demand (snapshot / capture)
 
-This fixes the earlier behaviour where picamera2 was stopped after the first
-capture and never restarted — the persistent preview config stays live and
-full-res stills are taken via a momentary mode switch that returns to preview.
+The picamera2 preview pipeline is configured with ``FrameDurationLimits`` so
+the sensor/ISP run at the preview rate (default 1 fps), not libcamera's 30 fps
+default, and only two buffers — a 512 MB board cannot spare more.
+
+The MJPEG generator ALWAYS yields something each interval: when the camera is
+unavailable it serves mock frames at preview_fps. Because it never spins
+without yielding, a client disconnect lets Starlette drop the generator and
+free its threadpool worker; the stream can never pin a thread or hold up
+shutdown.
 
 Still images are stored under CAMERA_IMAGE_DIR (default: ./captures); transient
 preview frames are kept in RAM (and optionally tmpfs), never written to the SD
@@ -24,42 +35,112 @@ card. The image path returned by ``capture()`` is used by the vision service.
 from __future__ import annotations
 
 import datetime
+import glob
+import importlib.util
 import io
 import logging
 import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 logger = logging.getLogger(__name__)
 
 # MJPEG multipart boundary token.
 _BOUNDARY = "frame"
 
+BACKENDS = ("auto", "picamera2", "opencv", "mock")
+DEFAULT_VIDEO_DEVICES = ("/dev/video0", "/dev/video1", "/dev/video2", "/dev/video3")
+# Preview buffers: picamera2 defaults to 6 for video; 2 is enough at <= 5 fps.
+PREVIEW_BUFFER_COUNT = 2
+# Sensor frame-duration bounds accepted when translating preview_fps (us).
+_MIN_FRAME_US = 33_333          # 30 fps
+_MAX_FRAME_US = 2_000_000       # 0.5 fps
+
+
+def _importable(name: str) -> bool:
+    """True when ``import name`` would succeed — WITHOUT importing it."""
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError, AttributeError):
+        return False
+
+
+def frame_duration_us(fps: float) -> int:
+    """Translate a preview frame rate into a libcamera FrameDurationLimits value."""
+    fps = max(0.01, float(fps))
+    return int(max(_MIN_FRAME_US, min(_MAX_FRAME_US, round(1_000_000 / fps))))
+
 
 class CameraService:
     def __init__(
         self,
-        backend: str = "picamera2",
+        backend: str = "auto",
         image_dir: str = "./captures",
         resolution: tuple[int, int] = (1920, 1080),
         preview_resolution: tuple[int, int] = (640, 480),
         preview_fps: float = 1.0,
         frame_dir: str = "/run/incubator/frames",
+        *,
+        video_devices: "tuple[str, ...] | list[str] | None" = None,
+        importable: Callable[[str], bool] = _importable,
     ) -> None:
-        self.backend = backend
+        self.backend_requested = (backend or "auto").strip().lower()
         self.image_dir = Path(image_dir)
         self.resolution = resolution
         self.preview_resolution = preview_resolution
         self.preview_fps = max(0.2, float(preview_fps))
         self.frame_dir = Path(frame_dir)
+        self.video_devices = tuple(video_devices) if video_devices is not None else DEFAULT_VIDEO_DEVICES
+        self._importable = importable
         self._picam: Any = None
         self._still_config: Any = None
         self._cv_cap: Any = None
+        self._cv_device: str | int | None = None
         # Serialises all hardware access — a snapshot and the preview stream can
         # run concurrently (FastAPI sync endpoints run in a threadpool).
         self._lock = threading.Lock()
+        self._stream_failures = 0
+        self._warned_stream_fallback = False
+        self.active_streams = 0
+        self.backend = self._resolve_backend(self.backend_requested)
+        if self.backend_requested != self.backend:
+            logger.info("camera: backend %r resolved to %r", self.backend_requested, self.backend)
+
+    # ------------------------------------------------------------------
+    # Backend resolution
+    # ------------------------------------------------------------------
+
+    def _existing_video_devices(self) -> list[str]:
+        found = [d for d in self.video_devices if Path(d).exists()]
+        if not found and self.video_devices == DEFAULT_VIDEO_DEVICES:
+            found = sorted(glob.glob("/dev/video[0-9]*"))[:4]
+        return found
+
+    def _resolve_backend(self, requested: str) -> str:
+        if requested in ("picamera2", "opencv", "mock"):
+            return requested
+        if requested != "auto":
+            logger.warning("camera: unknown CAMERA_BACKEND=%r; choose one of %s — using auto", requested, ", ".join(BACKENDS))
+        if self._importable("picamera2"):
+            return "picamera2"
+        if self._importable("cv2") and self._existing_video_devices():
+            return "opencv"
+        return "mock"
+
+    @property
+    def backend_resolved(self) -> str:
+        return self.backend
+
+    def describe(self) -> dict[str, Any]:
+        return {
+            "backend": self.backend,
+            "backend_requested": self.backend_requested,
+            "device": self._cv_device,
+            "preview_fps": self.preview_fps,
+            "active_streams": self.active_streams,
+        }
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -125,6 +206,10 @@ class CameraService:
     # picamera2 (persistent session)
     # ------------------------------------------------------------------
 
+    def _preview_controls(self) -> dict[str, Any]:
+        us = frame_duration_us(self.preview_fps)
+        return {"FrameDurationLimits": (us, us)}
+
     def _ensure_picam(self) -> Any:
         """Lazily create + start a persistent preview session. Returns the cam."""
         if self._picam is not None:
@@ -133,9 +218,17 @@ class CameraService:
 
         cam = Picamera2()
         # Persistent low-res preview config — stays live for the MJPEG stream.
-        preview_config = cam.create_video_configuration(
-            main={"size": self.preview_resolution, "format": "RGB888"}
-        )
+        # Run the sensor at the preview rate (not libcamera's 30 fps default)
+        # with a small buffer pool; fall back to defaults if this libcamera
+        # build rejects the controls.
+        main = {"size": self.preview_resolution, "format": "RGB888"}
+        try:
+            preview_config = cam.create_video_configuration(
+                main=main, controls=self._preview_controls(), buffer_count=PREVIEW_BUFFER_COUNT,
+            )
+        except TypeError:
+            logger.info("camera: picamera2 rejected preview controls — using defaults")
+            preview_config = cam.create_video_configuration(main=main)
         cam.configure(preview_config)
         # Full-res still config used only for momentary mode switches.
         self._still_config = cam.create_still_configuration(main={"size": self.resolution})
@@ -159,18 +252,43 @@ class CameraService:
     # OpenCV (persistent capture device)
     # ------------------------------------------------------------------
 
+    def _open_cv_device(self, cv2: Any, device: "str | int") -> Any:
+        """Open ``device`` and return the capture only if it delivers a frame."""
+        cap = cv2.VideoCapture(device)
+        try:
+            if not cap.isOpened():
+                raise RuntimeError("not opened")
+            ok, _frame = cap.read()
+            if not ok:
+                raise RuntimeError("no frame")
+        except Exception:
+            try:
+                cap.release()
+            except Exception:  # noqa: BLE001
+                pass
+            return None
+        return cap
+
     def _ensure_cv(self) -> Any:
         import cv2  # type: ignore
 
         if self._cv_cap is not None and self._cv_cap.isOpened():
             return self._cv_cap
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            raise RuntimeError("No USB camera found")
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
-        self._cv_cap = cap
-        return cap
+        candidates: list[str | int] = list(self._existing_video_devices())
+        if not candidates:
+            candidates = [0]  # non-Linux / unusual layout: let OpenCV pick
+        for device in candidates:
+            cap = self._open_cv_device(cv2, device)
+            if cap is None:
+                logger.debug("camera: %s does not deliver frames — skipping", device)
+                continue
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
+            self._cv_cap = cap
+            self._cv_device = device
+            logger.info("camera: using %s via OpenCV", device)
+            return cap
+        raise RuntimeError(f"No USB camera found (tried {', '.join(str(c) for c in candidates)})")
 
     def _cv_frame(self) -> Any:
         import cv2  # type: ignore
@@ -230,23 +348,46 @@ class CameraService:
         y1 = max(y0 + 1, min(int(y) + int(h), ih))
         return self._encode_jpeg(img.crop((x0, y0, x1, y1)), quality=88)
 
-    def mjpeg_stream(self) -> Iterator[bytes]:
-        """Yield multipart/x-mixed-replace MJPEG chunks at ~preview_fps."""
+    @staticmethod
+    def _mjpeg_part(frame: bytes) -> bytes:
+        return (
+            b"--" + _BOUNDARY.encode() + b"\r\n"
+            b"Content-Type: image/jpeg\r\n"
+            b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n"
+            + frame + b"\r\n"
+        )
+
+    def mjpeg_stream(self, *, should_stop: Callable[[], bool] | None = None, sleep: Callable[[float], None] = time.sleep) -> Iterator[bytes]:
+        """Yield multipart/x-mixed-replace MJPEG chunks at ~preview_fps.
+
+        A frame is yielded EVERY interval: when the camera fails (missing
+        picamera2, unplugged webcam) a mock frame is served instead, so the
+        generator never spins without yielding and a disconnected client always
+        releases its worker thread at the next ``yield``. ``should_stop`` lets a
+        caller end the stream cooperatively (tests, shutdown).
+        """
         interval = 1.0 / self.preview_fps
-        while True:
-            try:
-                frame = self.preview_jpeg()
-            except Exception as exc:  # noqa: BLE001 — a dropped frame must not kill the stream
-                logger.debug("preview frame failed: %s", exc)
-                time.sleep(interval)
-                continue
-            yield (
-                b"--" + _BOUNDARY.encode() + b"\r\n"
-                b"Content-Type: image/jpeg\r\n"
-                b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n"
-                + frame + b"\r\n"
-            )
-            time.sleep(interval)
+        mock_frame: bytes | None = None
+        self.active_streams += 1
+        try:
+            while not (should_stop and should_stop()):
+                try:
+                    frame = self.preview_jpeg()
+                    self._stream_failures = 0
+                except Exception as exc:  # noqa: BLE001 — a dropped frame must not kill the stream
+                    self._stream_failures += 1
+                    if not self._warned_stream_fallback:
+                        self._warned_stream_fallback = True
+                        logger.warning("camera: preview unavailable (%s) — streaming placeholder frames", exc)
+                    else:
+                        logger.debug("preview frame failed: %s", exc)
+                    if mock_frame is None:
+                        mock_frame = self._mock_jpeg(self.preview_resolution)
+                    frame = mock_frame
+                yield self._mjpeg_part(frame)
+                sleep(interval)
+        finally:
+            self.active_streams = max(0, self.active_streams - 1)
 
     @property
     def boundary(self) -> str:
@@ -278,6 +419,13 @@ class CameraService:
             result["mock"] = True
         return result
 
+    def available(self) -> bool:
+        """Cheap probe: can this backend deliver a preview frame right now?"""
+        try:
+            return bool(self.preview_jpeg())
+        except Exception:  # noqa: BLE001
+            return False
+
     def cleanup(self) -> None:
         with self._lock:
             if self._picam is not None:
@@ -297,3 +445,4 @@ class CameraService:
                 except Exception:  # noqa: BLE001
                     pass
                 self._cv_cap = None
+                self._cv_device = None

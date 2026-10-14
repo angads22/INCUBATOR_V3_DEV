@@ -1,0 +1,18 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!--
+  Installed by install.sh as /etc/avahi/services/incubator.service.
+  Advertises the web app over mDNS/DNS-SD so phones, laptops and the setup
+  wizard can find the incubator on the home network without knowing its IP:
+  the device answers at http://<hostname>.local:8000 and shows up in any
+  Bonjour/"network services" browser as "Incubator on <hostname>".
+-->
+<service-group>
+  <name replace-wildcards="yes">Incubator on %h</name>
+  <service>
+    <type>_http._tcp</type>
+    <port>8000</port>
+    <txt-record>path=/</txt-record>
+    <txt-record>product=incubator</txt-record>
+  </service>
+</service-group>

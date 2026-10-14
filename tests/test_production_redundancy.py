@@ -195,8 +195,14 @@ def test_boot_safe_gpio_directives_are_installed_and_gated():
     active-LOW relay board reads as ON — i.e. the heater blasting from
     power-on until the app starts (worse in a crash loop).
     """
-    init = open("init_pi.sh").read()
+    init = open("install.sh").read()
     assert "gpio=12,13,17,27=op,dh" in init      # active-LOW relays → OFF (high)
     assert "gpio=22,23,24,25=op,dl" in init      # turner/candle/buzzer → OFF (low)
+    # Non-Pi boards have no firmware hook: a systemd unit drives the lines OFF
+    # before the control daemon and web app start.
+    assert "incubator-gpio-safe.service" in init
+    unit = open("deploy/incubator-gpio-safe.service").read()
+    assert "--safe-outputs" in unit
+    assert "Before=" in unit and "incubator-control.service" in unit
     gate = open("build_image.sh").read()
     assert "gpio=12,13,17,27=op,dh" in gate      # zero-tolerance gate enforces it
