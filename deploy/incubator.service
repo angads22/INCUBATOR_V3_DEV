@@ -25,10 +25,12 @@ EnvironmentFile=/etc/incubator.env
 # Runtime dir for the control-state / command files and preview frames (tmpfs).
 # tmpfiles.d creates it at boot too; this covers a manual `systemctl start`.
 ExecStartPre=+/bin/mkdir -p /run/incubator
+# python -m uvicorn (not the venv console script): with --system-site-packages a
+# distro-provided uvicorn has no venv entry point, but the module always imports.
 # Single worker (512 MB-class boards), no per-request access log (SD-card
 # friendly, the journal is the log), short keep-alive so a phone that walks
 # away frees its socket quickly, proxy headers for a reverse proxy in front.
-ExecStart=__INSTALL_DIR__/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --no-access-log --timeout-keep-alive 5 --proxy-headers --log-level info
+ExecStart=__INSTALL_DIR__/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --no-access-log --timeout-keep-alive 5 --proxy-headers --log-level info
 Restart=always
 RestartSec=5
 # The web UI yields CPU to the control daemon (Nice=-5) on a busy board.

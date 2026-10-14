@@ -2,22 +2,29 @@
 # =============================================================================
 #  build_image.sh — Build a ready-to-flash Incubator v3 SD-card image.
 #
-#  This single script turns the official Raspberry Pi OS Lite (64-bit) image
-#  into a self-contained "appliance" image with the Incubator app, all of its
-#  dependencies, and the systemd service PRE-INSTALLED. The result is a single
-#  .img(.xz) you flash to a microSD card with Raspberry Pi Imager / balenaEtcher
-#  / dd. On first boot the Pi needs NO internet: it starts the incubator
-#  service, broadcasts a Wi-Fi setup hotspot, and walks you through Wi-Fi +
-#  account creation / login in the browser.
+#  This single script turns a stock Linux SBC image — by default the official
+#  Raspberry Pi OS Lite (64-bit) — into a self-contained "appliance" image with
+#  the Incubator app, all of its dependencies, and the systemd services
+#  PRE-INSTALLED. The result is a single .img(.xz) you flash to a microSD card
+#  with Raspberry Pi Imager / balenaEtcher / dd. On first boot the board needs
+#  NO internet: it starts the incubator service, broadcasts the open Wi-Fi
+#  setup hotspot, and walks you through Wi-Fi + account creation in the browser.
 #
 #  How it works (no pi-gen required):
-#    1. Download (or reuse) the stock Raspberry Pi OS Lite arm64 image.
-#    2. Loop-mount its boot + root partitions.
-#    3. Bind /dev,/proc,/sys and (on non-ARM hosts) register qemu-aarch64 so we
-#       can chroot into the arm64 root filesystem.
-#    4. Stage the app at /opt/incubator and run init_pi.sh in IMAGE_BUILD mode
-#       (apt deps, venv, pip wheels, env file, enable the service).
+#    1. Download (or reuse) the base image.
+#    2. Loop-mount its partitions (boot + root, or a single root partition).
+#    3. Bind /dev,/proc,/sys and (on non-ARM hosts) register qemu so we can
+#       chroot into the ARM root filesystem.
+#    4. Stage the app at /opt/incubator and run install.sh in IMAGE_BUILD mode
+#       (packages, venv, pip wheels, env file, enable the services).
 #    5. Enable SSH, unmount, and repack into dist/incubator-v3-<ver>-<date>.img.xz
+#
+#  Pi-specific steps (PARTUUID rewrite of cmdline.txt/fstab, config.txt
+#  overlays + boot-safe GPIO levels, userconf.txt) run only when the boot
+#  partition carries a cmdline.txt — i.e. the base really is a Raspberry Pi
+#  image. Point --base at a single-partition image (e.g. Armbian for an Orange
+#  Pi / Rock Pi / Banana Pi) and the same pipeline stages the app, runs
+#  install.sh and verifies the generic checks.
 #
 #  REQUIREMENTS (build host): Linux, root (sudo), ~6 GB free disk. On x86 hosts
 #  qemu-user-static is auto-installed on Debian/Ubuntu. Building on a Raspberry
@@ -31,11 +38,12 @@
 #                        Default: a PINNED, known-good Raspberry Pi OS Lite
 #                        (Bookworm, arm64) release — not "latest", which shifted
 #                        to a base that no longer boots the Pi Zero 2 W.
+#                        A single-partition (non-Pi) image is accepted too.
 #    --out <dir>         Output directory (default: ./dist).
-#    --hostname <name>   Pi hostname (default: incubator).
+#    --hostname <name>   Device hostname (default: incubator).
 #    --wifi-country <CC> Wi-Fi regulatory country, ISO 3166-1 alpha-2 (default:
-#                        US). Required for the radio to transmit — on Bookworm
-#                        the WLAN stays rfkill-blocked until a country is set.
+#                        US). Required for the radio to transmit — many kernels
+#                        keep the WLAN rfkill-blocked until a country is set.
 #    --user <name>       Create an OS login user for SSH (default: incubator
 #                        when --password is given).
 #    --password <pw>     Password for the SSH login user (enables SSH login).
@@ -129,7 +137,12 @@ VERSION="$(grep -oP 'VERSION\s*=\s*"\K[^"]+' "${REPO_DIR}/app/version.py" 2>/dev
 HOST_ARCH="$(uname -m)"
 WORK_DIR="${OUT_DIR}/.build"
 ROOT_MNT="${WORK_DIR}/rootfs"
+BOOT_MNT=""
 LOOP_DEV=""
+ROOT_PART=""        # e.g. /dev/loop0p2 (Pi) or /dev/loop0p1 (single-partition base)
+BOOT_PART=""        # e.g. /dev/loop0p1, or "" when the base has no boot partition
+ROOT_PART_NUM=2
+IS_PI_IMAGE=0       # 1 when the boot partition carries cmdline.txt (Raspberry Pi)
 RESOLV_BACKED_UP=0
 NEED_EMULATION=0   # set to 1 in ensure_tools when the host is not arm64
 
@@ -157,7 +170,7 @@ cleanup() {
     if [[ -n "${ROOT_MNT}" && -d "${ROOT_MNT}" ]]; then
         [[ "${RESOLV_BACKED_UP}" == "1" && -e "${ROOT_MNT}/etc/resolv.conf.incubator-bak" ]] && \
             mv -f "${ROOT_MNT}/etc/resolv.conf.incubator-bak" "${ROOT_MNT}/etc/resolv.conf" 2>/dev/null
-        rm -f "${ROOT_MNT}/usr/bin/qemu-aarch64-static" 2>/dev/null
+        rm -f "${ROOT_MNT}/usr/bin/qemu-aarch64-static" "${ROOT_MNT}/usr/bin/qemu-arm-static" 2>/dev/null
         # Flush page-cache writes (cmdline.txt/fstab edits) to the backing image
         # BEFORE unmounting + detaching the loop device, then unmount for real.
         sync
@@ -198,7 +211,7 @@ ensure_tools() {
             info "Installing host packages (util-linux rsync xz-utils openssl curl e2fsprogs cloud-guest-utils parted)"
             apt-get update -qq && apt-get install -y --no-install-recommends \
                 util-linux rsync xz-utils openssl curl ca-certificates \
-                e2fsprogs cloud-guest-utils parted >/dev/null
+                e2fsprogs cloud-guest-utils parted file >/dev/null
         else
             error "Missing tools: ${missing[*]}. Install them and re-run."
         fi
@@ -213,45 +226,66 @@ ensure_tools() {
             || warn "Could not install zerofree — free-space zeroing will be skipped (image compresses less)."
     fi
 
-    # Cross-arch emulation is only needed when the host is not arm64.
-    if [[ "$HOST_ARCH" == "aarch64" || "$HOST_ARCH" == "arm64" ]]; then
-        info "Native arm64 host — no emulation needed."
+    # Cross-arch emulation is only needed when the host is not ARM.
+    if [[ "$HOST_ARCH" == "aarch64" || "$HOST_ARCH" == "arm64" || "$HOST_ARCH" == armv* ]]; then
+        info "Native ARM host — no emulation needed."
         return
     fi
     NEED_EMULATION=1
+}
 
-    # If an arm64 binfmt handler is already registered (e.g. CI ran
-    # docker/setup-qemu-action, or qemu-user-static's binfmt service is up),
-    # nothing more to do — that registration survives into the chroot.
-    if ls /proc/sys/fs/binfmt_misc/qemu-aarch64* >/dev/null 2>&1; then
-        info "arm64 emulation already registered (host arch: ${HOST_ARCH})."
-        return
-    fi
-
-    # Otherwise try to install + register it ourselves.
-    if command -v apt-get >/dev/null 2>&1; then
-        info "Installing qemu-user-static for arm64 emulation..."
-        apt-get update -qq
-        apt-get install -y --no-install-recommends qemu-user-static binfmt-support >/dev/null \
-            || warn "qemu-user-static install reported an error; checking registration anyway."
-    fi
-    command -v update-binfmts >/dev/null 2>&1 && update-binfmts --enable qemu-aarch64 2>/dev/null || true
-    systemctl restart systemd-binfmt 2>/dev/null || true
-    # Last resort: register the handler directly via the kernel interface.
-    if ! ls /proc/sys/fs/binfmt_misc/qemu-aarch64* >/dev/null 2>&1; then
-        local qemu_bin; qemu_bin="$(command -v qemu-aarch64-static || true)"
-        if [[ -n "$qemu_bin" ]]; then
-            mountpoint -q /proc/sys/fs/binfmt_misc 2>/dev/null \
-                || mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
-            # ELF magic for aarch64, with the 'F' (fix-binary) flag so the
-            # interpreter is loaded once and stays valid inside the chroot.
-            printf ':qemu-aarch64:M::\\x7fELF\\x02\\x01\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\x00\\xb7\\x00:\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\x00\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xfe\\xff\\xff\\xff:%s:F' \
-                "$qemu_bin" > /proc/sys/fs/binfmt_misc/register 2>/dev/null || true
+# Register the qemu binfmt handler for the architecture the mounted root fs
+# actually uses (aarch64 for Pi OS 64-bit / most Armbian; arm for 32-bit
+# images). Called after mount_image so we can inspect the guest's /bin/sh.
+ensure_emulation() {
+    [[ "$NEED_EMULATION" == "1" ]] || return 0
+    local guest_arch="aarch64" qemu_name="qemu-aarch64" desc=""
+    if command -v file >/dev/null 2>&1; then
+        desc="$(file -bL "${ROOT_MNT}/bin/sh" 2>/dev/null || true)"
+        if [[ "$desc" == *"ARM aarch64"* ]]; then guest_arch="aarch64"; qemu_name="qemu-aarch64"
+        elif [[ "$desc" == *"ARM,"* || "$desc" == *"ARM EABI"* ]]; then guest_arch="arm"; qemu_name="qemu-arm"
+        elif [[ "$desc" == *"x86-64"* ]]; then info "x86-64 guest on an x86 host — no emulation needed."; NEED_EMULATION=0; return 0
         fi
     fi
-    ls /proc/sys/fs/binfmt_misc/qemu-aarch64* >/dev/null 2>&1 || error \
-        "arm64 emulation is not registered. In CI add a 'docker/setup-qemu-action' step before this; locally run: sudo apt-get install --reinstall qemu-user-static binfmt-support"
-    info "arm64 emulation ready (host arch: ${HOST_ARCH})."
+    info "Guest root fs is ${guest_arch}; need ${qemu_name} emulation (host: ${HOST_ARCH})."
+
+    # If a matching binfmt handler is already registered (e.g. CI ran
+    # docker/setup-qemu-action, or qemu-user-static's binfmt service is up),
+    # nothing more to do — that registration survives into the chroot.
+    if ls /proc/sys/fs/binfmt_misc/${qemu_name}* >/dev/null 2>&1; then
+        info "${guest_arch} emulation already registered."
+    else
+        # Otherwise try to install + register it ourselves.
+        if command -v apt-get >/dev/null 2>&1; then
+            info "Installing qemu-user-static for ${guest_arch} emulation..."
+            apt-get update -qq
+            apt-get install -y --no-install-recommends qemu-user-static binfmt-support >/dev/null \
+                || warn "qemu-user-static install reported an error; checking registration anyway."
+        fi
+        command -v update-binfmts >/dev/null 2>&1 && update-binfmts --enable "${qemu_name}" 2>/dev/null || true
+        systemctl restart systemd-binfmt 2>/dev/null || true
+        # Last resort: register the aarch64 handler directly via the kernel interface.
+        if [[ "$guest_arch" == "aarch64" ]] && ! ls /proc/sys/fs/binfmt_misc/qemu-aarch64* >/dev/null 2>&1; then
+            local qemu_bin; qemu_bin="$(command -v qemu-aarch64-static || true)"
+            if [[ -n "$qemu_bin" ]]; then
+                mountpoint -q /proc/sys/fs/binfmt_misc 2>/dev/null \
+                    || mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
+                # ELF magic for aarch64, with the 'F' (fix-binary) flag so the
+                # interpreter is loaded once and stays valid inside the chroot.
+                printf ':qemu-aarch64:M::\\x7fELF\\x02\\x01\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x02\\x00\\xb7\\x00:\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\x00\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xfe\\xff\\xff\\xff:%s:F' \
+                    "$qemu_bin" > /proc/sys/fs/binfmt_misc/register 2>/dev/null || true
+            fi
+        fi
+        ls /proc/sys/fs/binfmt_misc/${qemu_name}* >/dev/null 2>&1 || error \
+            "${guest_arch} emulation is not registered. In CI add a 'docker/setup-qemu-action' step before this; locally run: sudo apt-get install --reinstall qemu-user-static binfmt-support"
+        info "${guest_arch} emulation ready (host arch: ${HOST_ARCH})."
+    fi
+
+    # Copy the static emulator into the guest as a fallback. With the binfmt
+    # 'F' (fix-binary) flag the kernel already holds the interpreter open, so
+    # this is best-effort — a missing host binary must not abort the build.
+    local qemu_bin; qemu_bin="$(command -v "${qemu_name}-static" || true)"
+    [[ -n "$qemu_bin" ]] && cp "$qemu_bin" "${ROOT_MNT}/usr/bin/" 2>/dev/null || true
 }
 
 # ── Acquire + decompress the base image ──────────────────────────────────────
@@ -265,12 +299,17 @@ acquire_base() {
         info "Using local base image: ${archive}"
     else
         # Cache key tied to the pinned release so bumping the pin never reuses a
-        # stale (e.g. previously-"latest") base image.
-        archive="${CACHE_DIR}/raspios_lite_arm64_2024-11-19.img.xz"
+        # stale (e.g. previously-"latest") base image. A custom URL is cached by
+        # its file name.
+        if [[ "$src" == "$BASE_IMAGE_URL_DEFAULT" ]]; then
+            archive="${CACHE_DIR}/raspios_lite_arm64_2024-11-19.img.xz"
+        else
+            archive="${CACHE_DIR}/$(basename "$src")"
+        fi
         if [[ -f "$archive" ]]; then
             info "Using cached download: ${archive}"
         else
-            step "Downloading Raspberry Pi OS Lite (arm64, pinned Bookworm)..."
+            step "Downloading base image..."
             # Try the requested URL, then the pinned fallbacks (other CDN / dates)
             # so a single moved file never breaks the build.
             local urls=("$src")
@@ -288,9 +327,9 @@ acquire_base() {
                 warn "Download failed from ${u}"
             done
             [[ "$got" == "1" ]] || error "Could not download the base image (tried: ${urls[*]}). Pass --base <path|url>."
-            # A captive portal / error page would download as HTML, not xz — catch it.
-            if command -v file >/dev/null 2>&1 && ! file -bL "${archive}.part" | grep -qiE 'XZ|compress'; then
-                error "Downloaded file is not an xz image (got: $(file -bL "${archive}.part")) — mirror likely returned an error page."
+            # A captive portal / error page would download as HTML, not an image — catch it.
+            if command -v file >/dev/null 2>&1 && file -bL "${archive}.part" | grep -qiE 'HTML|text'; then
+                error "Downloaded file is not an image (got: $(file -bL "${archive}.part")) — mirror likely returned an error page."
             fi
             mv "${archive}.part" "$archive"
         fi
@@ -319,24 +358,42 @@ mount_image() {
 
     step "Loop-mounting image partitions..."
     LOOP_DEV="$(losetup -fP --show "$WORK_IMG")" || error "losetup failed"
-    [[ -e "${LOOP_DEV}p2" ]] || { sleep 1; partprobe "$LOOP_DEV" 2>/dev/null || true; }
-    [[ -e "${LOOP_DEV}p2" ]] || error "Root partition ${LOOP_DEV}p2 not found"
+    [[ -e "${LOOP_DEV}p1" ]] || { sleep 1; partprobe "$LOOP_DEV" 2>/dev/null || true; }
+    # Layout: Raspberry Pi (and Ubuntu-for-Pi) images have p1 = FAT boot, p2 =
+    # root. Armbian and most other SBC images have a single root partition.
+    if [[ -e "${LOOP_DEV}p2" ]]; then
+        BOOT_PART="${LOOP_DEV}p1"; ROOT_PART="${LOOP_DEV}p2"; ROOT_PART_NUM=2
+    elif [[ -e "${LOOP_DEV}p1" ]]; then
+        BOOT_PART=""; ROOT_PART="${LOOP_DEV}p1"; ROOT_PART_NUM=1
+        info "Single-partition base image (no separate boot partition)."
+    else
+        error "No partitions found on ${LOOP_DEV}"
+    fi
 
     if [[ "${GROW_MB:-0}" -gt 0 ]]; then
         step "Growing root partition + filesystem..."
-        growpart "$LOOP_DEV" 2 2>/dev/null || parted -s "$LOOP_DEV" resizepart 2 100% 2>/dev/null \
+        growpart "$LOOP_DEV" "$ROOT_PART_NUM" 2>/dev/null || parted -s "$LOOP_DEV" resizepart "$ROOT_PART_NUM" 100% 2>/dev/null \
             || warn "Could not grow partition table — install may run out of space."
         partprobe "$LOOP_DEV" 2>/dev/null || partx -u "$LOOP_DEV" 2>/dev/null || true
-        e2fsck -fy "${LOOP_DEV}p2" >/dev/null 2>&1 || true
-        resize2fs "${LOOP_DEV}p2" >/dev/null 2>&1 || warn "resize2fs failed — install may run out of space."
+        e2fsck -fy "$ROOT_PART" >/dev/null 2>&1 || true
+        resize2fs "$ROOT_PART" >/dev/null 2>&1 || warn "resize2fs failed — install may run out of space."
     fi
 
     mkdir -p "$ROOT_MNT"
-    mount "${LOOP_DEV}p2" "$ROOT_MNT" || error "Cannot mount root partition"
+    mount "$ROOT_PART" "$ROOT_MNT" || error "Cannot mount root partition"
 
-    # Bookworm mounts the FAT partition at /boot/firmware; older at /boot.
-    if [[ -d "${ROOT_MNT}/boot/firmware" ]]; then BOOT_MNT="${ROOT_MNT}/boot/firmware"; else BOOT_MNT="${ROOT_MNT}/boot"; fi
-    mount "${LOOP_DEV}p1" "$BOOT_MNT" || error "Cannot mount boot partition"
+    if [[ -n "$BOOT_PART" ]]; then
+        # Bookworm mounts the FAT partition at /boot/firmware; older at /boot.
+        if [[ -d "${ROOT_MNT}/boot/firmware" ]]; then BOOT_MNT="${ROOT_MNT}/boot/firmware"; else BOOT_MNT="${ROOT_MNT}/boot"; fi
+        mkdir -p "$BOOT_MNT"
+        mount "$BOOT_PART" "$BOOT_MNT" || error "Cannot mount boot partition"
+        if [[ -f "${BOOT_MNT}/cmdline.txt" ]]; then
+            IS_PI_IMAGE=1
+            info "Raspberry Pi image detected (cmdline.txt on the boot partition)."
+        else
+            info "Boot partition has no cmdline.txt — treating as a generic (non-Pi) image."
+        fi
+    fi
 
     step "Preparing chroot environment..."
     mount --bind /dev     "${ROOT_MNT}/dev"
@@ -350,13 +407,7 @@ mount_image() {
     rm -f "${ROOT_MNT}/etc/resolv.conf"
     cp /etc/resolv.conf "${ROOT_MNT}/etc/resolv.conf" 2>/dev/null || echo "nameserver 1.1.1.1" > "${ROOT_MNT}/etc/resolv.conf"
 
-    # Copy the static emulator into the guest as a fallback. With the binfmt
-    # 'F' (fix-binary) flag the kernel already holds the interpreter open, so
-    # this is best-effort — a missing host binary must not abort the build.
-    if [[ "$NEED_EMULATION" == "1" ]]; then
-        local qemu_bin; qemu_bin="$(command -v qemu-aarch64-static || true)"
-        [[ -n "$qemu_bin" ]] && cp "$qemu_bin" "${ROOT_MNT}/usr/bin/" 2>/dev/null || true
-    fi
+    ensure_emulation
 }
 
 # ── Stage app + run the installer in the chroot ──────────────────────────────
@@ -374,194 +425,261 @@ install_app() {
             echo -e "127.0.1.1\t${PI_HOSTNAME}" >> "${ROOT_MNT}/etc/hosts"
     fi
 
-    step "Installing dependencies + service inside image (this can take a while under emulation)..."
+    step "Installing dependencies + services inside image (this can take a while under emulation)..."
+    # INCUBATOR_IS_PI tells install.sh what the image is FOR: inside the chroot
+    # /proc/device-tree belongs to the build host, so it cannot detect the board.
     chroot "$ROOT_MNT" /usr/bin/env \
         INCUBATOR_IMAGE_BUILD=1 DEBIAN_FRONTEND=noninteractive \
+        INCUBATOR_IS_PI="${IS_PI_IMAGE}" \
         INCUBATOR_WIFI_COUNTRY="${WIFI_COUNTRY}" \
-        /bin/bash /opt/incubator/init_pi.sh /opt/incubator \
+        /bin/bash /opt/incubator/install.sh /opt/incubator \
         || error "In-image install failed (see output above)."
 }
 
 # ── Headless boot configuration ──────────────────────────────────────────────
 configure_boot() {
-    # Extract PARTUUIDs from the loop-mounted partitions and update boot config.
-    local root_partuuid boot_partuuid
-    root_partuuid="$(blkid -s PARTUUID -o value "${LOOP_DEV}p2")"
-    boot_partuuid="$(blkid -s PARTUUID -o value "${LOOP_DEV}p1")"
-    [[ -n "$root_partuuid" && -n "$boot_partuuid" ]] || error "Could not read PARTUUIDs"
-    info "Root PARTUUID: ${root_partuuid}, Boot PARTUUID: ${boot_partuuid}"
+    if [[ "$IS_PI_IMAGE" == "1" ]]; then
+        # Extract PARTUUIDs from the loop-mounted partitions and update boot config.
+        local root_partuuid boot_partuuid
+        root_partuuid="$(blkid -s PARTUUID -o value "$ROOT_PART")"
+        boot_partuuid="$(blkid -s PARTUUID -o value "$BOOT_PART")"
+        [[ -n "$root_partuuid" && -n "$boot_partuuid" ]] || error "Could not read PARTUUIDs"
+        info "Root PARTUUID: ${root_partuuid}, Boot PARTUUID: ${boot_partuuid}"
 
-    # Update kernel cmdline to use the real root PARTUUID (must stay ONE line).
-    sed -i "s|root=[^[:space:]]*|root=PARTUUID=${root_partuuid}|" "${BOOT_MNT}/cmdline.txt"
+        # Update kernel cmdline to use the real root PARTUUID (must stay ONE line).
+        sed -i "s|root=[^[:space:]]*|root=PARTUUID=${root_partuuid}|" "${BOOT_MNT}/cmdline.txt"
 
-    # Update fstab: point / and /boot[/firmware] at the real PARTUUIDs.
-    if [[ -f "${ROOT_MNT}/etc/fstab" ]]; then
-        sed -i -E \
-            -e "s#^[^[:space:]]+([[:space:]]+/boot(/firmware)?[[:space:]])#PARTUUID=${boot_partuuid}\1#" \
-            -e "s#^[^[:space:]]+([[:space:]]+/[[:space:]])#PARTUUID=${root_partuuid}\1#" \
-            "${ROOT_MNT}/etc/fstab"
+        # Update fstab: point / and /boot[/firmware] at the real PARTUUIDs.
+        if [[ -f "${ROOT_MNT}/etc/fstab" ]]; then
+            sed -i -E \
+                -e "s#^[^[:space:]]+([[:space:]]+/boot(/firmware)?[[:space:]])#PARTUUID=${boot_partuuid}\1#" \
+                -e "s#^[^[:space:]]+([[:space:]]+/[[:space:]])#PARTUUID=${root_partuuid}\1#" \
+                "${ROOT_MNT}/etc/fstab"
+        fi
+
+        # Guard: ensure cmdline.txt has a valid PARTUUID root= and no placeholders remain.
+        grep -q "root=PARTUUID=" "${BOOT_MNT}/cmdline.txt" || error "cmdline root= not a PARTUUID"
+        ! grep -qE "ROOTDEV|BOOTDEV" "${BOOT_MNT}/cmdline.txt" || error "placeholder left in cmdline"
+    else
+        info "Non-Pi image: leaving the bootloader config and fstab as shipped by the base image."
     fi
-
-    # Guard: ensure cmdline.txt has a valid PARTUUID root= and no placeholders remain.
-    grep -q "root=PARTUUID=" "${BOOT_MNT}/cmdline.txt" || error "cmdline root= not a PARTUUID"
-    ! grep -qE "ROOTDEV|BOOTDEV" "${BOOT_MNT}/cmdline.txt" || error "placeholder left in cmdline"
 
     if [[ "$ENABLE_SSH" == "1" ]]; then
         info "Enabling SSH server."
-        touch "${BOOT_MNT}/ssh"
-        chroot "$ROOT_MNT" systemctl enable ssh 2>/dev/null || true
+        [[ "$IS_PI_IMAGE" == "1" ]] && touch "${BOOT_MNT}/ssh"
+        chroot "$ROOT_MNT" systemctl enable ssh 2>/dev/null \
+            || chroot "$ROOT_MNT" systemctl enable sshd 2>/dev/null || true
     fi
     if [[ -n "$SSH_PASS" ]]; then
         local u="${SSH_USER:-incubator}"
         info "Creating OS login user '${u}' for SSH/console access."
         local hash; hash="$(echo "$SSH_PASS" | openssl passwd -6 -stdin)"
-        echo "${u}:${hash}" > "${BOOT_MNT}/userconf.txt"
+        if [[ "$IS_PI_IMAGE" == "1" ]]; then
+            # Raspberry Pi OS creates the user from this file on first boot.
+            echo "${u}:${hash}" > "${BOOT_MNT}/userconf.txt"
+        else
+            chroot "$ROOT_MNT" useradd -m -s /bin/bash -G sudo "$u" 2>/dev/null \
+                || chroot "$ROOT_MNT" useradd -m -s /bin/bash "$u" 2>/dev/null || true
+            echo "${u}:${hash}" | chroot "$ROOT_MNT" chpasswd -e 2>/dev/null \
+                || warn "Could not set the password for '${u}' in the generic image."
+        fi
     elif [[ -n "$SSH_USER" ]]; then
         warn "--user given without --password; skipping OS user creation."
     fi
 }
 
-# Verify the FINAL ARTIFACT (the real bytes on disk), not the page-cache view we
-# already released. Re-attach the written .img read-only and assert EVERY
-# property the appliance depends on — boot config, services wired, app staged,
-# open setup AP, per-device identity NOT pre-burned. Zero-tolerance gate: any
-# failure aborts the build, so a broken image can never publish. (Born from
-# build #12, which passed in-build guards yet shipped root=ROOTDEV because the
-# writes never flushed to the backing image.)
+# ── Verify the FINAL ARTIFACT ────────────────────────────────────────────────
+# Verify the real bytes on disk, not the page-cache view we already released.
+# Re-attach the written .img read-only and assert EVERY property the appliance
+# depends on — boot config, services wired, app staged, open setup AP,
+# per-device identity NOT pre-burned. Zero-tolerance gate: any failure aborts
+# the build, so a broken image can never publish. (Born from build #12, which
+# passed in-build guards yet shipped root=ROOTDEV because the writes never
+# flushed to the backing image.)
+VERIFY_OK=1
+vfail() { echo "::error title=build_image.sh::verify: $*"; echo -e "${RED}[VERIFY]${NC} $*" >&2; VERIFY_OK=0; }
+vpass() { echo "  [ok] $*"; }
+
+# Pi-only checks on the boot partition: boot-by-PARTUUID, the I2C/RTC overlay
+# and the boot-safe GPIO levels that keep the heater relay OFF during boot.
+verify_pi_boot() {
+    local b="$1"
+    grep -q "root=PARTUUID=" "$b/cmdline.txt"      && vpass "cmdline root=PARTUUID" || vfail "cmdline has no PARTUUID root="
+    ! grep -qE "ROOTDEV|BOOTDEV" "$b/cmdline.txt"  && vpass "cmdline has no placeholders" || vfail "cmdline still has ROOTDEV/BOOTDEV placeholder"
+    [[ "$(awk 'END{print NR}' "$b/cmdline.txt")" -le 1 ]] && vpass "cmdline is a single line" || vfail "cmdline.txt is not a single line"
+    # I2C bus + DS3231 RTC overlay baked (optional hardware; overlay no-ops if
+    # no chip is fitted, but the lines must be present so a fitted RTC binds).
+    if [[ -f "$b/config.txt" ]] && grep -qE '^[[:space:]]*dtparam=i2c_arm=on' "$b/config.txt"; then
+        vpass "I2C bus enabled in config.txt"
+    else
+        vfail "dtparam=i2c_arm=on missing from config.txt — RTC/INA219 bus would be off"
+    fi
+    if [[ -f "$b/config.txt" ]] && grep -qE '^[[:space:]]*dtoverlay=i2c-rtc,ds3231' "$b/config.txt"; then
+        vpass "DS3231 RTC overlay baked"
+    else
+        vfail "dtoverlay=i2c-rtc,ds3231 missing from config.txt — a fitted RTC would not bind"
+    fi
+    # Relays must be OFF from POWER-ON: firmware drives the pins to safe
+    # levels before the kernel, else the heater blasts during every boot.
+    if [[ -f "$b/config.txt" ]] && grep -q 'gpio=12,13,17,27=op,dh' "$b/config.txt" \
+       && grep -q 'gpio=22,23,24,25=op,dl' "$b/config.txt"; then
+        vpass "boot-safe GPIO states baked (relays off from power-on)"
+    else
+        vfail "gpio=...op,dh/op,dl lines missing from config.txt — heater relay would energize during boot"
+    fi
+    if [[ "$ENABLE_SSH" == "1" ]]; then
+        [[ -e "$b/ssh" || -e "$b/ssh.txt" ]] && vpass "ssh enable flag present" || vfail "ssh flag file missing from boot partition"
+    fi
+}
+
+# Pi-only checks on the root partition: fstab must boot by PARTUUID.
+verify_pi_root() {
+    local r="$1"
+    grep -q "PARTUUID=" "$r/etc/fstab"             && vpass "fstab uses PARTUUID" || vfail "fstab not using PARTUUID"
+    ! grep -qiE "ROOTDEV|BOOTDEV" "$r/etc/fstab"   && vpass "fstab has no placeholders" || vfail "fstab still has placeholder"
+    # Hardware watchdog: reboots a hard-hung kernel (Restart= can't). Always
+    # configured on a Pi (every Pi has /dev/watchdog).
+    if [[ -f "$r/etc/systemd/system.conf.d/10-incubator-watchdog.conf" ]] \
+       && grep -q "RuntimeWatchdogSec" "$r/etc/systemd/system.conf.d/10-incubator-watchdog.conf"; then
+        vpass "hardware watchdog armed"
+    else
+        vfail "hardware watchdog config missing — a hung system would never reboot"
+    fi
+}
+
+# Board-agnostic checks on the root partition.
+verify_generic() {
+    local r="$1" u
+
+    # Wi-Fi country baked (radio stays rfkill-blocked without it → no hotspot).
+    if [[ -f "$r/etc/systemd/system/incubator-wifi-country.service" ]] \
+       && grep -q "iw reg set [A-Z][A-Z]" "$r/etc/systemd/system/incubator-wifi-country.service"; then
+        vpass "wifi-country unit baked"
+    else
+        vfail "Wi-Fi regulatory country unit missing/incomplete (hotspot would stay rfkill-blocked)"
+    fi
+
+    # App staged at the version this build claims.
+    grep -q "VERSION = \"${VERSION}\"" "$r/opt/incubator/app/version.py" 2>/dev/null \
+        && vpass "app staged at version ${VERSION}" || vfail "staged app version != ${VERSION} (app/version.py mismatch or app missing)"
+    [[ -x "$r/opt/incubator/.venv/bin/python" ]]   && vpass "venv baked" || vfail "venv missing — service cannot start"
+    # uvicorn may live in the venv or (system-site-packages) in the distro python.
+    if [[ -n "$(find "$r/opt/incubator/.venv/lib" -maxdepth 3 -type d -name uvicorn 2>/dev/null | head -1)" ]] \
+       || [[ -n "$(find "$r/usr/lib" "$r/usr/local/lib" -maxdepth 3 -type d -name uvicorn 2>/dev/null | head -1)" ]]; then
+        vpass "uvicorn installed"
+    else
+        vfail "uvicorn not installed — service cannot start"
+    fi
+    [[ -d "$r/opt/incubator/.git" ]]               && vpass "git checkout present (OTA can update)" || vfail "/opt/incubator/.git missing — OTA cannot update"
+
+    # Env file: exists and the setup AP is OPEN (no baked Wi-Fi password).
+    if [[ -f "$r/etc/incubator.env" ]]; then
+        grep -q "^INCUBATOR_AP_PASSWORD=$" "$r/etc/incubator.env" \
+            && vpass "setup AP is open (no baked password)" || vfail "INCUBATOR_AP_PASSWORD is non-empty — setup network would be locked"
+        # Closed-loop temperature control must be ON out of the box, else a
+        # flashed unit would monitor + alarm but never actually hold temp.
+        grep -q "^CONTROL_DAEMON_ENABLED=true" "$r/etc/incubator.env" \
+            && vpass "auto thermostat enabled (control daemon on)" || vfail "CONTROL_DAEMON_ENABLED != true — unit would not regulate temperature automatically"
+        grep -q "^GPIO_BACKEND=" "$r/etc/incubator.env" \
+            && vpass "HAL defaults present in env" || vfail "GPIO_BACKEND missing from /etc/incubator.env"
+    else
+        vfail "/etc/incubator.env missing"
+    fi
+
+    # Installed units: present, fully templated, and enabled.
+    for u in incubator.service incubator-firstboot.service incubator-control.service incubator-ota.service; do
+        [[ -f "$r/etc/systemd/system/$u" ]] || { vfail "unit $u not installed"; continue; }
+        grep -qE "__INSTALL_DIR__|__DATA_DIR__" "$r/etc/systemd/system/$u" \
+            && vfail "unit $u still contains a template placeholder" || vpass "unit $u installed + templated"
+    done
+    for u in incubator.service incubator-firstboot.service incubator-control.service; do
+        [[ -L "$r/etc/systemd/system/multi-user.target.wants/$u" || -e "$r/etc/systemd/system/multi-user.target.wants/$u" ]] \
+            && vpass "$u enabled" || vfail "$u not enabled (no multi-user.target.wants symlink)"
+    done
+    [[ -L "$r/etc/systemd/system/timers.target.wants/incubator-ota.timer" || \
+       -e "$r/etc/systemd/system/timers.target.wants/incubator-ota.timer" ]] \
+        && vpass "OTA timer enabled" || vfail "incubator-ota.timer not enabled — image would never auto-update"
+    grep -q "SupplementaryGroups" "$r"/etc/systemd/system/incubator*.service 2>/dev/null \
+        && vfail "units still declare SupplementaryGroups (gpio group dependency)" || vpass "units have no gpio-group dependency"
+
+    # Per-device identity must be generated ON DEVICE, never pre-burned into
+    # the image — else every flashed unit shares one ID/hostname/SSID.
+    [[ ! -e "$r/etc/incubator-firstboot.done" ]] \
+        && vpass "firstboot not pre-burned" || vfail "firstboot done-marker baked into image (identity would never provision)"
+    [[ ! -e "$r/etc/incubator-device-id" ]] \
+        && vpass "device id not pre-burned" || vfail "device id baked into image (every unit would share one identity)"
+
+    # Networking stack the appliance depends on.
+    [[ -x "$r/usr/sbin/NetworkManager" || -x "$r/usr/bin/NetworkManager" ]] && vpass "NetworkManager present" || vfail "NetworkManager missing — no hotspot/Wi-Fi"
+    [[ -x "$r/usr/sbin/dnsmasq" || -x "$r/usr/bin/dnsmasq" ]] && vpass "dnsmasq present (hotspot DHCP/DNS)" || vfail "dnsmasq missing — hotspot clients would get no IP address"
+    [[ -e "$r/usr/sbin/avahi-daemon" || -e "$r/usr/bin/avahi-daemon" ]] && vpass "avahi present (.local works)" || vfail "avahi-daemon missing — <hostname>.local would not resolve"
+    [[ -L "$r/etc/systemd/system/multi-user.target.wants/avahi-daemon.service" || \
+       -L "$r/etc/systemd/system/sockets.target.wants/avahi-daemon.socket" || \
+       -L "$r/etc/systemd/system/dbus-org.freedesktop.Avahi.service" ]] \
+        && vpass "avahi enabled" || vfail "avahi-daemon not enabled"
+    [[ -L "$r/etc/systemd/system/multi-user.target.wants/NetworkManager.service" || \
+       -L "$r/etc/systemd/system/dbus-org.freedesktop.NetworkManager.service" ]] \
+        && vpass "NetworkManager enabled" || vfail "NetworkManager not enabled"
+    [[ -f "$r/etc/NetworkManager/conf.d/10-incubator.conf" ]] \
+        && vpass "NetworkManager drop-in present" || vfail "NetworkManager drop-in missing — Wi-Fi may stay unmanaged"
+    [[ -f "$r/etc/NetworkManager/dnsmasq-shared.d/090-incubator-captive.conf" ]] \
+        && vpass "captive DNS hijack conf present" || vfail "captive-portal DNS conf missing — setup page would not auto-open"
+    [[ -f "$r/etc/avahi/services/incubator.service" ]] \
+        && vpass "mDNS service advertisement present" || vfail "/etc/avahi/services/incubator.service missing"
+    [[ -f "$r/etc/tmpfiles.d/incubator.conf" ]] \
+        && vpass "tmpfiles runtime dir conf present" || vfail "/etc/tmpfiles.d/incubator.conf missing — /run/incubator would not exist at boot"
+
+    # App-level watchdog: a HUNG (not crashed) app/daemon must be restarted.
+    for u in incubator.service incubator-control.service; do
+        if grep -q "^Type=notify" "$r/etc/systemd/system/$u" 2>/dev/null \
+           && grep -q "^WatchdogSec=" "$r/etc/systemd/system/$u" 2>/dev/null; then
+            vpass "$u app watchdog armed (Type=notify + WatchdogSec)"
+        else
+            vfail "$u missing Type=notify/WatchdogSec — a hung service would never restart"
+        fi
+    done
+}
+
 verify_artifact() {
-    local img="$1" loop b r ok=1
+    local img="$1" loop b r boot_part root_part is_pi=0
     step "Verifying the final image (zero-tolerance gate)..."
-    fail() { echo "::error title=build_image.sh::verify: $*"; echo -e "${RED}[VERIFY]${NC} $*" >&2; ok=0; }
-    pass() { echo "  [ok] $*"; }
+    VERIFY_OK=1
 
     loop="$(losetup -fP --show "$img")" || error "verify: losetup failed on ${img}"
-    [[ -e "${loop}p2" ]] || { sleep 1; partprobe "$loop" 2>/dev/null || true; }
+    [[ -e "${loop}p1" ]] || { sleep 1; partprobe "$loop" 2>/dev/null || true; }
+    if [[ -e "${loop}p2" ]]; then boot_part="${loop}p1"; root_part="${loop}p2"; else boot_part=""; root_part="${loop}p1"; fi
     b="$(mktemp -d)"; r="$(mktemp -d)"
 
-    # ── Boot partition ──────────────────────────────────────────────────
-    if mount -o ro "${loop}p1" "$b" 2>/dev/null; then
-        grep -q "root=PARTUUID=" "$b/cmdline.txt"      && pass "cmdline root=PARTUUID" || fail "cmdline has no PARTUUID root="
-        ! grep -qE "ROOTDEV|BOOTDEV" "$b/cmdline.txt"  && pass "cmdline has no placeholders" || fail "cmdline still has ROOTDEV/BOOTDEV placeholder"
-        [[ "$(awk 'END{print NR}' "$b/cmdline.txt")" -le 1 ]] && pass "cmdline is a single line" || fail "cmdline.txt is not a single line"
-        # I2C bus + DS3231 RTC overlay baked (optional hardware; overlay no-ops if
-        # no chip is fitted, but the lines must be present so a fitted RTC binds).
-        if [[ -f "$b/config.txt" ]] && grep -qE '^[[:space:]]*dtparam=i2c_arm=on' "$b/config.txt"; then
-            pass "I2C bus enabled in config.txt"
+    # ── Boot partition (Pi images) ──────────────────────────────────────
+    if [[ -n "$boot_part" ]]; then
+        if mount -o ro "$boot_part" "$b" 2>/dev/null; then
+            if [[ -f "$b/cmdline.txt" ]]; then
+                is_pi=1
+                verify_pi_boot "$b"
+            else
+                vpass "generic image (no cmdline.txt) — Pi boot checks skipped"
+            fi
+            umount "$b" 2>/dev/null || umount -lf "$b" 2>/dev/null
         else
-            fail "dtparam=i2c_arm=on missing from config.txt — RTC/INA219 bus would be off"
+            vfail "cannot mount boot partition ${boot_part}"
         fi
-        if [[ -f "$b/config.txt" ]] && grep -qE '^[[:space:]]*dtoverlay=i2c-rtc,ds3231' "$b/config.txt"; then
-            pass "DS3231 RTC overlay baked"
-        else
-            fail "dtoverlay=i2c-rtc,ds3231 missing from config.txt — a fitted RTC would not bind"
-        fi
-        # Relays must be OFF from POWER-ON: firmware drives the pins to safe
-        # levels before the kernel, else the heater blasts during every boot.
-        if [[ -f "$b/config.txt" ]] && grep -q 'gpio=12,13,17,27=op,dh' "$b/config.txt" \
-           && grep -q 'gpio=22,23,24,25=op,dl' "$b/config.txt"; then
-            pass "boot-safe GPIO states baked (relays off from power-on)"
-        else
-            fail "gpio=...op,dh/op,dl lines missing from config.txt — heater relay would energize during boot"
-        fi
-        if [[ "$ENABLE_SSH" == "1" ]]; then
-            [[ -e "$b/ssh" || -e "$b/ssh.txt" ]] && pass "ssh enable flag present" || fail "ssh flag file missing from boot partition"
-        fi
-        umount "$b" 2>/dev/null || umount -lf "$b" 2>/dev/null
     else
-        fail "cannot mount boot partition ${loop}p1"
+        vpass "single-partition image — no boot partition checks"
     fi
 
     # ── Root partition ──────────────────────────────────────────────────
-    if mount -o ro "${loop}p2" "$r" 2>/dev/null; then
-        # Boot-by-PARTUUID persisted.
-        grep -q "PARTUUID=" "$r/etc/fstab"             && pass "fstab uses PARTUUID" || fail "fstab not using PARTUUID"
-        ! grep -qiE "ROOTDEV|BOOTDEV" "$r/etc/fstab"   && pass "fstab has no placeholders" || fail "fstab still has placeholder"
-
-        # Wi-Fi country baked (radio stays rfkill-blocked without it → no hotspot).
-        if [[ -f "$r/etc/systemd/system/incubator-wifi-country.service" ]] \
-           && grep -q "iw reg set [A-Z][A-Z]" "$r/etc/systemd/system/incubator-wifi-country.service"; then
-            pass "wifi-country unit baked"
-        else
-            fail "Wi-Fi regulatory country unit missing/incomplete (hotspot would stay rfkill-blocked)"
-        fi
-
-        # App staged at the version this build claims.
-        grep -q "VERSION = \"${VERSION}\"" "$r/opt/incubator/app/version.py" 2>/dev/null \
-            && pass "app staged at version ${VERSION}" || fail "staged app version != ${VERSION} (app/version.py mismatch or app missing)"
-        [[ -x "$r/opt/incubator/.venv/bin/uvicorn" ]]  && pass "venv + uvicorn baked" || fail "venv/uvicorn missing — service cannot start"
-        [[ -d "$r/opt/incubator/.git" ]]               && pass "git checkout present (OTA can update)" || fail "/opt/incubator/.git missing — OTA cannot update"
-
-        # Env file: exists and the setup AP is OPEN (no baked Wi-Fi password).
-        if [[ -f "$r/etc/incubator.env" ]]; then
-            grep -q "^INCUBATOR_AP_PASSWORD=$" "$r/etc/incubator.env" \
-                && pass "setup AP is open (no baked password)" || fail "INCUBATOR_AP_PASSWORD is non-empty — setup network would be locked"
-            # Closed-loop temperature control must be ON out of the box, else a
-            # flashed unit would monitor + alarm but never actually hold temp.
-            grep -q "^CONTROL_DAEMON_ENABLED=true" "$r/etc/incubator.env" \
-                && pass "auto thermostat enabled (control daemon on)" || fail "CONTROL_DAEMON_ENABLED != true — unit would not regulate temperature automatically"
-        else
-            fail "/etc/incubator.env missing"
-        fi
-
-        # Installed units: present, fully templated, and enabled.
-        local u
-        for u in incubator.service incubator-firstboot.service incubator-control.service incubator-ota.service; do
-            [[ -f "$r/etc/systemd/system/$u" ]] || { fail "unit $u not installed"; continue; }
-            grep -q "__INSTALL_DIR__" "$r/etc/systemd/system/$u" \
-                && fail "unit $u still contains __INSTALL_DIR__ placeholder" || pass "unit $u installed + templated"
-        done
-        for u in incubator.service incubator-firstboot.service incubator-control.service; do
-            [[ -L "$r/etc/systemd/system/multi-user.target.wants/$u" || -e "$r/etc/systemd/system/multi-user.target.wants/$u" ]] \
-                && pass "$u enabled" || fail "$u not enabled (no multi-user.target.wants symlink)"
-        done
-        [[ -L "$r/etc/systemd/system/timers.target.wants/incubator-ota.timer" || \
-           -e "$r/etc/systemd/system/timers.target.wants/incubator-ota.timer" ]] \
-            && pass "OTA timer enabled" || fail "incubator-ota.timer not enabled — image would never auto-update"
-
-        # Per-device identity must be generated ON DEVICE, never pre-burned into
-        # the image — else every flashed unit shares one ID/hostname/SSID.
-        [[ ! -e "$r/etc/incubator-firstboot.done" ]] \
-            && pass "firstboot not pre-burned" || fail "firstboot done-marker baked into image (identity would never provision)"
-        [[ ! -e "$r/etc/incubator-device-id" ]] \
-            && pass "device id not pre-burned" || fail "device id baked into image (every unit would share one identity)"
-
-        # Networking stack the appliance depends on.
-        [[ -x "$r/usr/sbin/NetworkManager" ]] && pass "NetworkManager present" || fail "NetworkManager missing — no hotspot/Wi-Fi"
-        [[ -e "$r/usr/sbin/avahi-daemon" ]]   && pass "avahi present (.local works)" || fail "avahi-daemon missing — <hostname>.local would not resolve"
-        [[ -L "$r/etc/systemd/system/multi-user.target.wants/avahi-daemon.service" || \
-           -L "$r/etc/systemd/system/sockets.target.wants/avahi-daemon.socket" || \
-           -L "$r/etc/systemd/system/dbus-org.freedesktop.Avahi.service" ]] \
-            && pass "avahi enabled" || fail "avahi-daemon not enabled"
-        [[ -f "$r/etc/NetworkManager/dnsmasq-shared.d/090-incubator-captive.conf" ]] \
-            && pass "captive DNS hijack conf present" || fail "captive-portal DNS conf missing — setup page would not auto-open"
-
-        # Hardware watchdog: reboots a hard-hung kernel (Restart= can't).
-        if [[ -f "$r/etc/systemd/system.conf.d/10-incubator-watchdog.conf" ]] \
-           && grep -q "RuntimeWatchdogSec" "$r/etc/systemd/system.conf.d/10-incubator-watchdog.conf"; then
-            pass "hardware watchdog armed"
-        else
-            fail "hardware watchdog config missing — a hung system would never reboot"
-        fi
-
-        # App-level watchdog: a HUNG (not crashed) app/daemon must be restarted.
-        for u in incubator.service incubator-control.service; do
-            if grep -q "^Type=notify" "$r/etc/systemd/system/$u" 2>/dev/null \
-               && grep -q "^WatchdogSec=" "$r/etc/systemd/system/$u" 2>/dev/null; then
-                pass "$u app watchdog armed (Type=notify + WatchdogSec)"
-            else
-                fail "$u missing Type=notify/WatchdogSec — a hung service would never restart"
-            fi
-        done
-
+    if mount -o ro "$root_part" "$r" 2>/dev/null; then
+        [[ "$is_pi" == "1" ]] && verify_pi_root "$r"
+        verify_generic "$r"
         umount "$r" 2>/dev/null || umount -lf "$r" 2>/dev/null
     else
-        fail "cannot mount root partition ${loop}p2"
+        vfail "cannot mount root partition ${root_part}"
     fi
 
     rmdir "$b" "$r" 2>/dev/null || true
     losetup -d "$loop" 2>/dev/null || true
-    [[ "$ok" == "1" ]] || error "Final artifact FAILED verification (see [VERIFY] lines / ::error annotations above)."
-    info "Verified: final image passed all ${VERSION} appliance checks."
+    [[ "$VERIFY_OK" == "1" ]] || error "Final artifact FAILED verification (see [VERIFY] lines / ::error annotations above)."
+    info "Verified: final image passed all ${VERSION} appliance checks ($( [[ "$is_pi" == "1" ]] && echo 'Pi + generic' || echo 'generic'))."
 }
 
 # Zero the ext4 free space so xz can compress it away. zerofree operates on the
@@ -570,14 +688,15 @@ verify_artifact() {
 # (FAT) partition is left as-is. Best-effort: a missing/failed zerofree just
 # yields a larger compressed image, never a broken one.
 shrink_freespace() {
-    local img="$1" loop
+    local img="$1" loop part
     command -v zerofree >/dev/null 2>&1 || { warn "zerofree not installed — skipping free-space zeroing (image compresses less)."; return 0; }
     step "Zeroing ext4 free space for better compression..."
     loop="$(losetup -fP --show "$img")" || { warn "shrink: losetup failed — skipping zeroing."; return 0; }
-    [[ -e "${loop}p2" ]] || { sleep 1; partprobe "$loop" 2>/dev/null || true; }
-    if [[ -e "${loop}p2" ]]; then
-        e2fsck -fy "${loop}p2" >/dev/null 2>&1 || true   # zerofree refuses an unclean fs
-        zerofree "${loop}p2" || warn "zerofree failed — image compresses less (continuing)."
+    [[ -e "${loop}p1" ]] || { sleep 1; partprobe "$loop" 2>/dev/null || true; }
+    part="${loop}p${ROOT_PART_NUM}"
+    if [[ -e "$part" ]]; then
+        e2fsck -fy "$part" >/dev/null 2>&1 || true   # zerofree refuses an unclean fs
+        zerofree "$part" || warn "zerofree failed — image compresses less (continuing)."
     else
         warn "shrink: root partition not found on ${loop} — skipping zeroing."
     fi
@@ -626,9 +745,9 @@ finalize() {
     echo "    • balenaEtcher         → select this file → flash"
     [[ "$COMPRESS" == "1" ]] && echo "    • dd:  xz -dc '${final}' | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync"
     echo ""
-    echo "  Then insert into the Pi and power on. On first boot the Pi broadcasts"
-    echo "  Wi-Fi 'Incubator-XXXX'. Join it, open http://10.42.0.1:8000, and the"
-    echo "  setup wizard handles Wi-Fi + account creation / login."
+    echo "  Then insert the card and power on. On first boot the device broadcasts the"
+    echo "  open Wi-Fi 'Incubator-XXXX'. Join it — the setup page opens by itself (or"
+    echo "  open http://10.42.0.1:8000): your Wi-Fi, then a name + optional login."
     echo ""
 }
 
