@@ -269,6 +269,7 @@ Highlights:
 | `VISION_BACKEND`, `VISION_TFLITE_MODEL`, `VISION_API_URL` | `auto`… | vision model source |
 | `OTA_ENABLED` | `true` | automatic updates from GitHub Releases |
 | `INCUBATOR_REQUIRE_LOGIN` | `false` | login is enforced automatically once an account exists |
+| `GPIO_MOCK`, `INCUBATOR_WIFI_MOCK`, `INCUBATOR_NMCLI_BIN` | `false`, `false`, *(blank)* | dev-laptop knobs: mock GPIO, simulate Wi-Fi without NetworkManager, nmcli path override |
 | `MQTT_*` | disabled | fleet telemetry bus |
 
 Temperature/humidity **targets** are set in the web app (Settings), not in the

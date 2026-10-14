@@ -55,7 +55,9 @@ def test_app_uses_lifespan_not_on_event():
 
     assert main.app.router.lifespan_context is not None
     assert not main.app.router.on_startup and not main.app.router.on_shutdown
-    assert main.feedback_service.last_event == "boot"      # startup played the boot feedback
+    # Startup played the boot feedback first (other tests may have emitted
+    # events since, and the history is a rolling window).
+    assert main.feedback_service.first_event == "boot"
 
 
 def test_startup_created_indexes(client):

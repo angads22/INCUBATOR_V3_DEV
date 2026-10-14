@@ -438,6 +438,14 @@ install_app() {
         INCUBATOR_WIFI_COUNTRY="${WIFI_COUNTRY}" \
         /bin/bash /opt/incubator/install.sh /opt/incubator \
         || error "In-image install failed (see output above)."
+
+    # The thermostat runs as `python -m app.control`; prove the entry point
+    # imports with the baked venv (a missing module would crash-loop the unit
+    # on every flashed board and nothing would ever regulate temperature).
+    step "Checking the control daemon entry point inside the image..."
+    chroot "$ROOT_MNT" /usr/bin/env INCUBATOR_DB_URL=sqlite:///:memory: GPIO_MOCK=true \
+        /opt/incubator/.venv/bin/python -m app.control --check \
+        || error "python -m app.control --check failed inside the image (control daemon would crash-loop)."
 }
 
 # ── Headless boot configuration ──────────────────────────────────────────────

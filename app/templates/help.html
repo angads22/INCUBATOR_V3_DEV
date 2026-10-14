@@ -77,6 +77,7 @@
   <article class="card">
     <h3>Troubleshooting: sensor &amp; alarm</h3>
     <ul class="stack-list">
+      <li><strong>Heater keeps switching off ("heat runaway"):</strong> if the heater has run for 45&nbsp;minutes without warming the chamber by half a degree, the control loop assumes the sensor is misplaced or the heater failed and switches the heater <em>off</em> (fail-safe), raising an alert. Every 15&nbsp;minutes it checks again: if the chamber cooled while the heater was off, the sensor is clearly coupled to the heater and heating resumes. Seat the probe inside the chamber air flow, check the heater and relay, and see the Status page.</li>
       <li><strong>Sensor offline:</strong> check the sensor wiring{% if dht_pin is defined and dht_pin %} (data pin {{ dht_pin }}){% endif %} and that it is firmly seated. Home keeps showing the last good reading with its timestamp — never fake values — and the heater stays off while the sensor is in doubt.</li>
       <li><strong>Alarm sounding:</strong> the banner on Home says why. Press <strong>Silence alarm</strong> to quiet the buzzer — the alert stays visible until the cause clears.</li>
       <li><strong>Too many alerts:</strong> widen the alert tolerances in <strong>Settings</strong>, or untick "Alarm enabled" to disable the buzzer entirely (alerts still appear on screen).</li>

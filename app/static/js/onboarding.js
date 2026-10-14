@@ -44,7 +44,14 @@
 
   // Mirrors the device-side SSID rule so a name the incubator would reject
   // fails HERE, with a friendly message — not minutes later as a dead join.
-  const SSID_OK_RE = /^[\w\s\-\.@#!]{1,32}$/;
+  // Mirrors WiFiService.valid_ssid: any printable characters (no control
+  // chars), non-blank, at most 32 bytes of UTF-8. Names like "John's iPhone"
+  // or "Café (2.4G)" are fine; the device passes them to nmcli as argv.
+  const SSID_OK_RE = /^[^\u0000-\u001F\u007F-\u009F]{1,32}$/u;
+  function ssidOk(s) {
+    if (typeof s !== 'string' || !SSID_OK_RE.test(s) || !s.trim()) return false;
+    try { return new TextEncoder().encode(s).length <= 32; } catch { return s.length <= 32; }
+  }
 
   let currentStep = IN_SETUP ? 1 : 0;
   let selectedSsid = '';
@@ -315,7 +322,7 @@
     const msg = $('wifiStepMsg');
     const say = (t) => { if (msg) msg.textContent = t; return false; };
     if (!selectedSsid) return say('Pick your Wi-Fi from the list, or type its name.');
-    if (!SSID_OK_RE.test(selectedSsid)) {
+    if (!ssidOk(selectedSsid)) {
       return say("That network name has characters the incubator can't use — double-check the spelling.");
     }
     const pw = ($('wifiPassword') || {}).value || '';

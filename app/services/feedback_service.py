@@ -71,6 +71,9 @@ class FeedbackService:
         self._thread: threading.Thread | None = None
         self._closed = False
         self.last_event: str | None = None
+        # The very first event (normally "boot") is kept separately because
+        # ``events`` is a rolling window of the last 50.
+        self.first_event: str | None = None
         self.events: list[str] = []
 
     # -- public -----------------------------------------------------------
@@ -100,6 +103,8 @@ class FeedbackService:
             return
         if self._closed:
             return
+        if self.first_event is None:
+            self.first_event = name
         self.last_event = name
         self.events.append(name)
         if len(self.events) > 50:

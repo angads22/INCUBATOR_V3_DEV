@@ -11,7 +11,7 @@ The minor part is exactly two digits, so a bump that would overflow it
 instead of producing a string ``parse_version`` rejects.
 """
 
-VERSION = "1.99"
+VERSION = "2.00"
 
 
 def parse_version(version: str) -> tuple[int, int, int]:

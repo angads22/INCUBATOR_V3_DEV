@@ -441,7 +441,7 @@ def status_page(
         "sensors": sensor_status,
         "alarms": alarms,
         "alarms_tone": alarms_tone,
-        "gpio_mock": settings.gpio_mock,
+        "gpio_mock": bool(getattr(_gpio_service, "is_mock", settings.gpio_mock)),
         "setup_mode": "on" if setup_mode else "off",
         "vision_backend": settings.vision_backend,
         "camera_backend": settings.camera_backend,
@@ -1272,8 +1272,16 @@ class PasswordResetPayload(BaseModel):
     new_password: str = Field(min_length=8)
 
 
+def _current_ap_ssid(db: Session) -> str:
+    """The setup-network name this device broadcasts (prefix-XXXX)."""
+    config = db.scalar(select(DeviceConfig).limit(1))
+    if _onboarding_service and config and config.device_id:
+        return _onboarding_service.ap_ssid(config.device_id)
+    return f"{settings.ap_ssid_prefix}-XXXX"
+
+
 @router.get("/reset-password", response_class=HTMLResponse)
-def reset_password_page(request: Request):
+def reset_password_page(request: Request, db: Session = Depends(get_db)):
     return _render(
         request=request,
         name="reset_password.html",
@@ -1281,6 +1289,10 @@ def reset_password_page(request: Request):
             "version": settings.app_version,
             "setup_mode": _setup_mode_on(),
             "hold_seconds": int(settings.setup_button_hold_seconds),
+            # The reset page tells the operator which setup Wi-Fi to join and
+            # where to reopen it from there.
+            "ap_ssid": _current_ap_ssid(db),
+            "ap_ip": settings.ap_ip,
         },
     )
 

@@ -67,7 +67,7 @@ class Settings:
     wifi_country: str = field(default_factory=lambda: os.getenv("INCUBATOR_WIFI_COUNTRY", "US").strip().upper())
 
     # --- Camera ---
-    camera_backend: str = field(default_factory=lambda: os.getenv("CAMERA_BACKEND", "picamera2"))  # picamera2 | opencv | mock
+    camera_backend: str = field(default_factory=lambda: os.getenv("CAMERA_BACKEND", "auto"))  # auto | picamera2 | opencv | mock
     camera_image_dir: str = field(default_factory=lambda: os.getenv("CAMERA_IMAGE_DIR", "./captures"))
     camera_resolution_w: int = field(default_factory=lambda: int(os.getenv("CAMERA_RES_W", "1920")))
     camera_resolution_h: int = field(default_factory=lambda: int(os.getenv("CAMERA_RES_H", "1080")))

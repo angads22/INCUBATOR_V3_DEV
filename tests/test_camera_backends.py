@@ -234,7 +234,10 @@ def test_stream_stops_when_asked_and_releases_thread(tmp_path):
     stop.set()
     t.join(2.0)
     assert not t.is_alive() and len(got) >= 2
-    assert threading.active_count() == before
+    # The stream must not leave a worker of its own behind. (Other app threads
+    # — LED, watchdog, timers — come and go independently, so compare names,
+    # not the global count.)
+    assert not any("mjpeg" in th.name.lower() or "stream" in th.name.lower() for th in threading.enumerate())
     assert cam.active_streams == 0
 
 
