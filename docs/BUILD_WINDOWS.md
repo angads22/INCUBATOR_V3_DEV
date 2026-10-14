@@ -11,15 +11,19 @@ Let GitHub build the image for you and download the result.
 
 1. Push this repo to GitHub (it already is, if you're reading this there).
 2. Go to the **Actions** tab → **Build SD image** → **Run workflow**.
-   - Optionally set a hostname (default `incubator`).
+   - Optionally set a hostname (default `incubator`) and the Wi-Fi country
+     (default `US`).
 3. Wait for it to finish (~10–25 min — it builds on a **native ARM64** runner,
    so the app + dependencies install at full speed with no emulation).
-4. Open the completed run → **Artifacts** → download **`incubator-sd-image`**
-   (a `.zip`, ~1 GB). The run summary also prints the exact image size.
-5. Flash it **without unzipping** (see **Flashing** below) — Raspberry Pi Imager
-   and balenaEtcher both open the `.zip` and write the `.img` inside directly.
-   (If you'd rather, unzip first to get the raw
-   `incubator-v3-<version>-<date>.img` and flash that — same result.)
+4. Open the repository's **Releases** page. The workflow publishes a release
+   tagged `img-<version>-<date>` whose assets are
+   **`incubator-v3-<version>-<date>.img.xz`** and `SHA256SUMS.txt`. Download
+   the `.img.xz` (a few hundred MB). Release assets support resumable
+   downloads, so a dropped connection picks up where it left off.
+5. Flash it **as is** (see **Flashing** below) — Raspberry Pi Imager and
+   balenaEtcher read `.img.xz` directly; do not decompress or unzip it.
+   (The run also keeps a short-lived workflow artifact copy, but the release
+   asset is the recommended download.)
 
 This uses the `.github/workflows/build-image.yml` workflow.
 
@@ -36,8 +40,8 @@ WSL2 runs a real Linux kernel, so the script works there.
 2. Open the **Ubuntu** terminal and build:
    ```bash
    sudo apt update && sudo apt install -y git
-   git clone https://github.com/angads22/incubator_v3_dev
-   cd incubator_v3_dev
+   git clone https://github.com/angads22/INCUBATOR_V3_DEV
+   cd INCUBATOR_V3_DEV
    sudo ./build_image.sh
    ```
    The script auto-installs the rest (`qemu-user-static`, etc.).
@@ -65,28 +69,29 @@ then follow the same steps as Option 2 inside the VM. Move the finished
 ## Flashing the image (Windows)
 
 Use **Raspberry Pi Imager** (recommended) or **balenaEtcher**. Both read the
-downloaded `.zip` (or a raw `.img`) directly — you do **not** unzip it, and you
-do **not** copy the file onto the card. The tool *writes* the image to the card.
+`.img.xz` directly — you do **not** decompress it, and you do **not** copy the
+file onto the card. The tool *writes* the image to the card.
 
 > **"Image is too large" even on a big card?** That message is almost never
-> about your card's capacity (the image is only ~4.7 GB; it auto-expands to fill
-> the card on first boot). It usually means either (a) you tried to *copy* the
-> file onto the card in File Explorer — FAT32 rejects files over 4 GB; use a
-> flashing tool instead — or (b) an old Imager version. **Update to the latest
-> Raspberry Pi Imager** and use **Write**.
+> about your card's capacity (the image expands to fill the card on first
+> boot). It usually means either (a) you tried to *copy* the file onto the card
+> in File Explorer — FAT32 rejects files over 4 GB; use a flashing tool instead
+> — or (b) an old Imager version. **Update to the latest Raspberry Pi Imager**
+> and use **Write**.
 
 **Raspberry Pi Imager**
 1. Install/update from <https://www.raspberrypi.com/software/> (use the newest).
-2. *Choose OS* → scroll down → **Use custom** → pick the downloaded `.zip`
-   (or the `.img` if you unzipped it).
+2. *Choose OS* → scroll down → **Use custom** → pick the downloaded `.img.xz`.
 3. *Choose Storage* → your microSD card. Check it shows the card's real size
    (e.g. ~32 GB); if it shows tiny, try another reader or wipe the card first.
 4. **Write**. (Skip the OS-customisation prompt — this image self-configures.)
 
 **balenaEtcher**
 1. Install from <https://etcher.balena.io/>.
-2. *Flash from file* → the `.zip` (or `.img`) → select the SD card → **Flash**.
+2. *Flash from file* → the `.img.xz` → select the SD card → **Flash**.
 
-Then insert the card into the Pi and power on. It broadcasts the
-**`Incubator-XXXX`** Wi-Fi hotspot; join it and open
-**http://10.42.0.1:8000** to finish Wi-Fi setup and create your account.
+Then insert the card into the Pi and power on. After a minute it beeps once
+(ready), then twice: it is broadcasting the open **`Incubator-XXXX`** Wi-Fi.
+Join it on your phone — the setup page opens by itself (or open
+**http://10.42.0.1:8000**): pick your Wi-Fi, name the incubator, optionally
+create a login, and the page finds the incubator on your network for you.

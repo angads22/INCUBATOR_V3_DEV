@@ -1,45 +1,39 @@
 #!/bin/bash
-# Hook 10 — Clone the incubator app and create the Python virtualenv.
+# Hook 10 — Clone the incubator app and run its installer in image-build mode.
 # Runs inside the image chroot during the bdebstrap customize phase.
+#
+# Everything the appliance needs (venv, /etc/incubator.env, systemd units,
+# NetworkManager/avahi/captive-DNS config, hardware watchdog, config.txt
+# overlays + boot-safe GPIO levels, OTA git checkout) is done by install.sh —
+# the same script used by build_image.sh and by `curl | sudo bash` installs —
+# so this hook never duplicates unit files or scripts.
 set -euo pipefail
 
 INSTALL_DIR="/opt/incubator"
-DATA_DIR="/var/incubator"
-REPO="${INCUBATOR_APP_REPO:-https://github.com/angads22/incubator_v3_dev.git}"
+REPO="${INCUBATOR_APP_REPO:-https://github.com/angads22/INCUBATOR_V3_DEV.git}"
 GIT_REF="${INCUBATOR_APP_GIT_REF:-main}"
+WIFI_COUNTRY="${INCUBATOR_WIFI_COUNTRY:-US}"
+HOSTNAME_BASE="${INCUBATOR_HOSTNAME:-incubator}"
 
 echo "[incubator] Cloning ${REPO}@${GIT_REF} → ${INSTALL_DIR}"
 git clone --depth 1 --branch "${GIT_REF}" "${REPO}" "${INSTALL_DIR}"
-
-# Record the baked-in git ref so the OTA agent knows the baseline
 git -C "${INSTALL_DIR}" rev-parse HEAD > "${INSTALL_DIR}/.git-sha"
-echo "${GIT_REF}" > "${INSTALL_DIR}/.git-ref"
 
-# Persistent data directories (survive rootfs upgrades if mounted separately)
-mkdir -p \
-    "${DATA_DIR}/captures" \
-    "${DATA_DIR}/models/vision" \
-    "${DATA_DIR}/models/llm" \
-    "${DATA_DIR}/db"
+# Baked-in base hostname; firstboot.sh appends the short device ID on the
+# device so several units on one network never clash.
+echo "${HOSTNAME_BASE}" > /etc/hostname
+if grep -qE '^127\.0\.1\.1' /etc/hosts; then
+    sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t${HOSTNAME_BASE}/" /etc/hosts
+else
+    printf '127.0.1.1\t%s\n' "${HOSTNAME_BASE}" >> /etc/hosts
+fi
 
-# Symlink database into persistent storage
-ln -sf "${DATA_DIR}/db" "${INSTALL_DIR}/database"
+echo "[incubator] Running install.sh (image-build mode)"
+INCUBATOR_IMAGE_BUILD=1 INCUBATOR_IS_PI=1 INCUBATOR_WIFI_COUNTRY="${WIFI_COUNTRY}" \
+    DEBIAN_FRONTEND=noninteractive \
+    bash "${INSTALL_DIR}/install.sh" "${INSTALL_DIR}"
 
-echo "[incubator] Creating Python virtualenv..."
-python3 -m venv --system-site-packages "${INSTALL_DIR}/.venv"
+# Headless appliance: no login prompt on the (absent) console.
+systemctl disable getty@tty1.service 2>/dev/null || true
 
-echo "[incubator] Installing Python dependencies (pi extras)..."
-"${INSTALL_DIR}/.venv/bin/pip" install --upgrade pip --quiet
-"${INSTALL_DIR}/.venv/bin/pip" install \
-    --extra-index-url https://www.piwheels.org/simple \
-    -e "${INSTALL_DIR}[pi]" \
-    --quiet
-
-# TFLite is optional — skip if unavailable for this platform
-"${INSTALL_DIR}/.venv/bin/pip" install \
-    --extra-index-url https://www.piwheels.org/simple \
-    tflite-runtime numpy \
-    --quiet 2>/dev/null \
-    || echo "[incubator] TFLite unavailable — vision will use API/mock backend"
-
-echo "[incubator] App installed at ${INSTALL_DIR}"
+echo "[incubator] App installed at ${INSTALL_DIR} (hostname=${HOSTNAME_BASE})"

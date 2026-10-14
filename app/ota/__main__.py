@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import platform
 import subprocess
 import sys
 import time
@@ -24,6 +25,53 @@ INSTALL_DIR = os.getenv("INCUBATOR_INSTALL_DIR", "/opt/incubator")
 GITHUB_LATEST = "https://api.github.com/repos/angads22/INCUBATOR_V3_DEV/releases/latest"
 HEALTH_URL = "http://127.0.0.1:8000/health"
 WEB_SERVICE = "incubator.service"  # NOT incubator-control.service
+PIWHEELS_INDEX = "https://www.piwheels.org/simple"
+
+
+def _read_text(path: str) -> str:
+    try:
+        with open(path, "rb") as fh:
+            return fh.read().replace(b"\x00", b"").decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
+def _is_raspberry_pi(model_path: str = "/proc/device-tree/model") -> bool:
+    return "Raspberry Pi" in _read_text(model_path)
+
+
+def _is_debian_family(os_release_path: str = "/etc/os-release") -> bool:
+    text = _read_text(os_release_path).lower()
+    for line in text.splitlines():
+        if line.startswith(("id=", "id_like=")):
+            value = line.split("=", 1)[1].strip().strip('"')
+            if any(tok in value.split() for tok in ("debian", "raspbian", "ubuntu")):
+                return True
+    return False
+
+
+def _use_piwheels(machine: str | None = None, os_release_path: str = "/etc/os-release") -> bool:
+    """piwheels only serves ARM wheels built against Raspberry Pi OS / Debian —
+    the same rule install.sh applies."""
+    arch = machine or platform.machine()
+    return arch in {"armv6l", "armv7l", "aarch64"} and _is_debian_family(os_release_path)
+
+
+def _pip_extras(model_path: str = "/proc/device-tree/model") -> str:
+    """`[hardware]` (libgpiod + smbus2) everywhere; the legacy `[pi]` extras
+    (RPi.GPIO, adafruit-dht) only on a Raspberry Pi."""
+    extras = ["hardware"]
+    if _is_raspberry_pi(model_path):
+        extras.append("pi")
+    return ",".join(extras)
+
+
+def _pip_install_cmd(install_dir: str = INSTALL_DIR) -> list[str]:
+    cmd = [f"{install_dir}/.venv/bin/pip", "install"]
+    if _use_piwheels():
+        cmd += ["--extra-index-url", PIWHEELS_INDEX]
+    cmd += ["-e", f"{install_dir}[{_pip_extras()}]", "--quiet"]
+    return cmd
 
 
 def _get_latest() -> dict | None:
@@ -61,11 +109,14 @@ def _apply_ref(ref: str) -> None:
     ).returncode == 0
     if not checked_out:
         subprocess.run(["git", "-C", INSTALL_DIR, "checkout", "--force", "FETCH_HEAD"], check=False)
-    subprocess.run(
-        [f"{INSTALL_DIR}/.venv/bin/pip", "install", "--extra-index-url",
-         "https://www.piwheels.org/simple", "-e", f"{INSTALL_DIR}[pi]", "--quiet"],
-        check=False,
-    )
+    # Dependencies: core app + hardware extras (+ Pi legacy extras on a Pi). If
+    # an optional extra fails to build on this board, fall back to the core
+    # install so the update is never left half-applied.
+    if subprocess.run(_pip_install_cmd(), check=False).returncode != 0:
+        logger.warning("OTA: pip install with extras failed — retrying core install only")
+        cmd = _pip_install_cmd()
+        cmd[-2] = INSTALL_DIR  # "-e <dir>" without extras
+        subprocess.run(cmd, check=False)
 
 
 def _restart_web() -> None:

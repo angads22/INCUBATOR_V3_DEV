@@ -61,9 +61,13 @@ variables:
   # build time.  Set to "main" for the latest or a semver tag for a release.
   INCUBATOR_APP_GIT_REF: main
 
-  # Remote repository URL.  The firstboot and OTA scripts use this to pull
-  # updates.  Replace with your internal mirror for air-gapped environments.
-  INCUBATOR_APP_REPO: https://github.com/angads22/incubator_v3_dev.git
+  # Remote repository URL.  The hook clones it and the OTA agent pulls
+  # release tags from it.  Replace with your internal mirror for air-gapped environments.
+  INCUBATOR_APP_REPO: https://github.com/angads22/INCUBATOR_V3_DEV.git
+
+  # Wi-Fi regulatory country baked into the image (the radio stays
+  # rfkill-blocked on Bookworm until a country is set).
+  INCUBATOR_WIFI_COUNTRY: US
 
   # Root filesystem size.  2 GB base + headroom for captures, models, logs.
   ROOTFS_SIZE: 4G
