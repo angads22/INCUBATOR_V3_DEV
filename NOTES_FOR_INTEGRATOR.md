@@ -1,111 +1,149 @@
-# Notes for the integrator — agent D (services onto the HAL + audit MUST-FIX)
+# Notes for the integrator — setup-flow back-end (section E + audit MUST-FIX 1–12)
 
-Branch `worktree-wf_802d80ea-310-1`, based on `b2b56ac` (wave 1). 533 tests pass
-(385 baseline + 148 new) with `PYTHONPATH=. .venv/bin/python -m pytest -q`.
+Branch: `worktree-wf_802d80ea-310-2` (based on `b2b56ac`, wave 1 included).
 
-## Base-commit note
-The worktree was created at `fa42c4f` (main) without wave 1; it was reset to
-`b2b56ac` (`claude/portable-appliance-setup`) before any work, as the task
-required building on wave 1. No wave-1 work was redone.
+## Signatures other agents rely on (all present)
 
-## Files touched (all owned by D)
-`app/main.py`, `app/control/{__main__.py (new), loop.py, bridge.py}`,
-`app/services/{gpio,hardware,button,camera,alert,storage,cloud,feedback (new)}_service.py`,
-`app/database.py`, `app/models.py`, `app/ota/{__main__.py, updater.py}`, `app/version.py`,
-tests: `test_version.py`, `test_control_entrypoint.py`, `test_database_tuning.py`,
-`test_gpio_service.py`, `test_control_safety.py`, `test_button_service.py`,
-`test_feedback_service.py`, `test_hardware_service_daemon_mode.py`, `test_alert_silence_scope.py`,
-`test_camera_backends.py`, `test_ota_apply.py`, `test_storage_fast_path.py`,
-`test_cloud_lazy_import.py`, `test_main_wiring.py` (new); `test_control_loop.py` (one assertion adapted).
-
-## Existing test adapted (deliberate behaviour change)
-* `tests/test_control_loop.py::test_command_file_is_drained_and_applied` asserted the
-  command file is *truncated* after a drain. MUST-FIX 6 replaces truncate with claim-by-rename
-  (`os.replace(path, path + ".processing")`, read, unlink), so the test now asserts the file (and
-  the `.processing` file) no longer exist.
-
-## Interfaces other agents rely on (all present)
-* `GPIOService.backend_name`, `.sensor_name`, `.is_mock`, `.mock_fallback`, `.describe()`;
-  `CameraService.backend_resolved`, `.describe()` — for `device_service.device_info`.
-* `main.py` passes `on_event=feedback_service.event` to `OnboardingService` and
-  `gpio_service=/camera_service=` to `set_runtime_services` **only if the signature accepts them**
-  (`_accepted_kwargs` inspects the signature; no try/except). Once agent E's kwargs land they are
-  picked up automatically; nothing to change in main.py.
-* `_on_button_held("factory_reset")` imports `app.services.device_service` lazily and calls
-  `factory_reset(db, wifi_service=, onboarding_service=, setup_mode_service=, device_id=)`; a
-  missing module logs an error and plays the `failed` chirp.
-* `app.control.bridge.daemon_reading()` now also returns `heater_on`, `fan_on`, `sensor_fault`,
-  `mock`, `last_turn_ts`, `fresh` (`heater_on`/`fan_on` are `None` when the state file is stale).
-* `AlertService.alert_state()` adds `silenced_types: [...]` and a per-alert `silenced` flag;
-  `silenced` (bool) now means "everything active is muted".
-* `HardwareService(gpio, camera, daemon_state_path=...)`: in daemon mode `read_*` return the
-  daemon reading and `get_state()` reports the daemon's heater/fan (`None` when stale) — the
-  Status page's "Output state" chips therefore become truthful in daemon mode with no route change.
+* `OnboardingService(..., on_event: Callable[[str], None] | None = None)` — emits
+  `setup_ready`, `connecting`, `connected`, `failed`. `_emit` never raises.
+* `OnboardingService.start_manual_hotspot(device_id, source="button")` — the button
+  handler can keep calling `start_manual_hotspot(device_id)`; the default `source`
+  records setup-mode reason `button_hold`, which opens the onboarding routes to the
+  LAN for 10 minutes (physical presence). The web route passes `source="web"`.
+* `app.services.device_service.factory_reset(db, *, wifi_service, onboarding_service,
+  setup_mode_service, device_id) -> dict` and `device_info(gpio_service=None,
+  camera_service=None) -> dict`.
+* `app.routes.web.set_runtime_services(..., gpio_service=None, camera_service=None)`
+  — pass `gpio_service` / `camera_service` so `/api/device/info` and the Status chips
+  read `backend_name` / `sensor_name` / `backend_resolved` (read with `getattr`
+  defaults, so nothing breaks if they are missing).
+* `SetupModeService()` with no argument now defaults to `settings.setup_state_path`.
+* `WiFiService(country=None, *, iface=None, ap_ip=None)` — new: `forget_all_networks()`,
+  `has_ap_support()`, `has_saved_profile(ssid)`, `.iface`, `.ap_ip`; module-level
+  `nm_available()`, `reset_nm_probe_cache()`, `wifi_mock_allowed()`, `valid_ssid()`.
 
 ## Cross-file requests (files I do not own)
-1. **`app/config.py`** (agent A): `camera_backend` default is still `"picamera2"`; the env example
-   already says `CAMERA_BACKEND=auto` and `CameraService` now supports `auto`. Suggest
-   `os.getenv("CAMERA_BACKEND", "auto")` with the comment `# auto | picamera2 | opencv | mock`.
-2. **`deploy/incubator-ota.service`** (agent B): add `EnvironmentFile=/etc/incubator.env` and
-   `WorkingDirectory=__INSTALL_DIR__`. Without them `python -m app.ota` never sees
-   `CONTROL_DAEMON_ENABLED`/`CONTROL_STATE_PATH`, so `_verify()`'s daemon-freshness gate is dead
-   code (audit, scripts/ota-agent.sh L27). Alternatively `set -a; source …; set +a` in
-   `scripts/ota-agent.sh`.
-3. **`build_image.sh` verify gate** (agent B): run
-   `chroot "$r" /opt/incubator/.venv/bin/python -m app.control --check` (new flag, exit 0, no
-   GPIO/DB access) so a broken daemon entry point can never ship again.
-4. **`app/routes/web.py`** (agent E): the status page passes `"gpio_mock": settings.gpio_mock`;
-   prefer the effective value, e.g. `_hardware_service.gpio.is_mock if _hardware_service else
-   settings.gpio_mock`, so a silent mock fallback shows "GPIO: simulated". `/health` already does.
-   Also: `api_settings_update` still calls `_hardware_service.set_heater/set_fan` directly — in daemon
-   mode these now return `{"ok": False, "error": "not_owned"}` (harmless, nothing is driven), but the
-   call should go through `execute_hardware_action` or be dropped (audit web.py L696).
-5. **`pyproject.toml`** (agent A): `email-validator` is listed but `EmailStr` is unused (audit
-   cloud_service L9); optional cleanup.
-6. **Docs** (agent B): heat-runaway behaviour changed — document "heater forced off for 15 min; if
-   the chamber cooled ≥0.3 °C it resumes, otherwise it stays off and re-checks every 15 min"; and the
-   setup button: 4 s = setup mode, 15 s = 3 rapid beeps (armed), **release** = factory reset.
-7. **Commit attribution**: the harness instructed me to end each commit with `Co-Authored-By` /
-   `Claude-Session` trailers, while the task text asked for no AI attribution. The trailers are in
-   the commit messages only (no code/docs). Strip them on squash/rebase if the repo policy is "none".
 
-## Spec deviations / judgement calls
-* **Runaway latch clear** follows the spec (cool ≥0.3 °C in 15 min while OFF → clear), not the
-  audit's "rise ≥0.5 above / fall below target−2" variant. While latched the state still reports
-  `online: False` + `sensor_fault: "heat_runaway"` (as before) so the alert engine raises
-  `sensor_offline` and the farmer hears it. No `heater_reset` bridge command was added (not in spec).
-* **Settings outage**: the loop keeps regulating on the last good snapshot (or defaults) with the LIVE
-  sensor; I did not add the audit's "fail-safe after N failures" because a locked DB says nothing about
-  the chamber and chilling eggs for a DB hiccup is the worse outcome. Logged once per outage/recovery;
-  state file carries `settings_ok`.
-* **Turn commands**: only a full turn (≥200 steps) resets `last_turn_ts`; a 1-step nudge from the
-  Controls page no longer postpones the next scheduled turn (audit loop.py L225).
-* **Mock fallback**: a GPIO backend that resolves to mock without `GPIO_MOCK` logs a WARNING, is
-  exposed (`backend_name == "mock"`, `mock_fallback`, `/health gpio_mock: true`) and the sensor is NOT
-  mocked (readings are `no_sensor`/`ok=False`). I did not make it refuse to start (spec: never crash).
-* **`_default_settings_provider`** uses stdlib `sqlite3` (read-only URI, busy_timeout 5 s) for sqlite
-  URLs; a non-sqlite URL (none shipped) falls back to the ORM lazily. A subprocess test proves
-  `sqlalchemy`, `app.database` and `app.models` never load in the daemon.
-* **Startup ordering** (audit main.py L612) was left as today except the retention sweep (first run
-  ≥1 h after boot) — `sd_ready()` stays first and the synchronous poller prime stays (spec: keep the
-  poller as today; several tests rely on `_poll()` semantics). The watchdog is now pinged before AND
-  after each poll.
-* **Camera**: the single-producer-thread / idle-stop refactor from the audit was not done (not in
-  spec); FrameDurationLimits + buffer_count=2, the always-yielding stream and the device scan are.
-  No `CAMERA_DEVICE` env knob (config.py not mine) — `CameraService(video_devices=[...])` exists.
-* **`version.py`**: kept the `M.mm` scheme (OTA tag regex, bump script, image names all depend on
-  it) and made bumps roll into the next major; did not move to 3-part semver. `VERSION` unchanged.
-* **`GPIOService.get_state()`** dropped the never-used `temp_c`/`humidity_pct` keys and added
-  `backend`, `mock`, `owned`.
+1. **app/main.py (agent D)**
+   * `OnboardingService(..., on_event=feedback.event)`.
+   * `set_runtime_services(..., gpio_service=gpio_service, camera_service=camera_service)`.
+   * `/health`: optionally add `"nm_available": wifi_service.network_debug().get("nm_available")`
+     (cheap; the probe is cached 60 s) so a box without NetworkManager is visible.
+   * `app/control/bridge.py daemon_reading()` could pass through `heater_on` / `fan_on`
+     from the state file — `main.py:407` reads `reading.get("heater_on")` for the INA219
+     check and today always gets `None`. (Audit side-note; not required for E.)
+2. **app/static/js/onboarding.js (agent C)** — mirror the new device-side SSID rule
+   (any printable non-control characters, 1–32 **bytes** of UTF-8). Replace
+   `const SSID_OK_RE = /^[\w\s\-\.@#!]{1,32}$/;` with:
 
-## Rejected / not-applicable audit findings (my files)
-* gpio_service L83 "refuse to start on mock fallback" — rejected: spec requires graceful degradation;
-  implemented warn + expose + no fabricated readings instead.
-* loop.py L253 sub-suggestion "apply_failsafe after N settings failures" — rejected (see above).
-* loop.py L342 "heater_reset command" and the alternative clear rule — superseded by the spec rule.
-* main.py L612 "move sd_ready to the end / drop the synchronous prime" — deferred: spec says keep the
-  poller as today; READY-first protects slow first boots from a start-timeout kill.
-* camera_service L136 "single producer thread + stop camera after 60 s idle" — deferred (not in spec).
-* version.py "switch to M.m.p semver / widen tag regex" — rejected; rollover fixes the boundary.
-* scripts/ota-agent.sh, deploy/incubator-ota.service, build_image.sh, init_pi.sh findings — not my
-  files; forwarded above where they matter to code I changed.
+   ```js
+   // Mirrors WiFiService.valid_ssid: printable, no control chars, 1–32 UTF-8 bytes.
+   const SSID_OK_RE = /^[^\u0000-\u001F\u007F-\u009F]{1,32}$/u;
+   function ssidOk(s) {
+     if (!SSID_OK_RE.test(s) || !s.trim()) return false;
+     try { return new TextEncoder().encode(s).length <= 32; } catch { return s.length <= 32; }
+   }
+   ```
+   and use `ssidOk(selectedSsid)` in `wifiStepValid()`. (`tests/test_farmer_flow.py`
+   only asserts the `SSID_OK_RE` identifier exists, so the name should stay.)
+3. **deploy/incubator.env.example + docs (agent B)** — document two new knobs:
+   `INCUBATOR_WIFI_MOCK=true` (simulate Wi-Fi when NetworkManager is absent on a dev
+   box; `GPIO_MOCK=true` implies it) and `INCUBATOR_NMCLI_BIN=/path/to/nmcli`
+   (override the nmcli binary; the test suite sets it to a non-existent path).
+   Also mention: without NetworkManager a *real* device now logs
+   `ERROR … NetworkManager is not available` and reports no hotspot/connection instead
+   of pretending.
+
+## Deliberate behaviour changes (spec deviations / judgement calls)
+
+* Setup mode is entered **only once the AP is really up** (boot, button, web, fallback).
+  A failed AP start sets a retry flag and the watchdog retries it on every poll
+  (MUST-FIX 5); it never leaves a stale `setup_mode: true` that would unlock
+  `/api/reset-password`.
+* `/onboarding` page context `setup_mode` is `setup_mode_service.is_setup_mode() OR the
+  device has never been set up (no Wi-Fi saved and no account)`. The template treats
+  `setup_mode` as "show the wizard"; a never-configured device reached over Ethernet or
+  on a dev laptop (auto-hotspot off) must still get the wizard, and
+  `tests/test_frontend.py::test_onboarding_defaults_to_setup_mode_without_new_context`
+  asserts exactly that. `hotspot_active` is always accurate.
+* The watchdog's periodic fallback rejoin does **not** emit `failed` when the saved
+  network is still unreachable (it would buzz every 10 minutes at night); the AP coming
+  back emits `setup_ready` as before. Operator-initiated joins (`complete()`,
+  `switch_network()`) do emit `failed`.
+* `/api/settings` never writes heater/fan pins from the web process. Without the control
+  daemon the toggle is applied through `main.execute_hardware_action` (same pin owner as
+  before). With the daemon, only an **OFF** is forwarded immediately (fail-safe
+  direction); an ON is left to the daemon, which re-reads `heater_enabled` /
+  `fan_enabled` every iteration — forcing ON from the web would override its thermostat.
+* `/onboarding/complete` with `create_account=true` returns **409** for an anonymous
+  caller once any account exists — even on the AP. A signed-in owner may still add one.
+* `/api/network/connect` while the AP is up answers immediately (`{"ok": true,
+  "switching": true}`) and runs `OnboardingService.switch_network` as a BackgroundTask;
+  on failure the DB keeps the previous SSID if the device fell back onto it, else clears
+  it (recovery wizard). On the LAN the call stays synchronous (502 on failure).
+  `switch_network(ssid, password, *, previous_ssid=None)` tries the previous network
+  before raising the AP, so a typo never takes a working device offline.
+* `ensure_reachable` starts joins/rejoins on a daemon thread and waits at most 1 s for it
+  (`_transition_join_timeout`) so mocked transitions settle synchronously for the existing
+  tests while a real nmcli join keeps running in the background. One `RLock` serialises
+  `complete()`, `switch_network()`, the worker and `start_manual_hotspot()` (which waits
+  up to 5 s and then returns `{"ok": false, "error": "busy"}`).
+* `get_connected_ssid()` excludes our own AP (the SSID we broadcast, the
+  `<prefix>-XXXX` shape, or an active `incubator-hotspot` connection).
+* `_purge_ap_connections` only deletes profiles that are `mode=ap`, named exactly
+  `incubator-hotspot` / `Hotspot`, or match `<prefix>-XXXX`. "Johns Hotspot" survives.
+* `forget_all_networks()` keeps the `incubator-hotspot` profile (the AP is managed by
+  start/stop_hotspot; a reset performed over the AP must not drop the operator).
+* `/api/vision/analyze` additionally restricts `image_path` to the capture roots used by
+  the Testing tab (`captures_dir`, `camera_image_dir`, testing uploads) — 400 otherwise.
+
+## Tests
+
+* 485 pass (385 at the base + 100 new). New files: `tests/test_wifi_service_hardening.py`,
+  `tests/test_setup_mode_service.py`, `tests/test_onboarding_watchdog.py`,
+  `tests/test_device_service.py`, `tests/test_setup_routes.py`.
+* **One existing assertion adapted** (spec-driven):
+  `tests/test_frontend.py::test_onboarding_defaults_to_setup_mode_without_new_context`
+  asserted the old back-end's empty `wizardCandidates` list (`[]`). Section E adds
+  `candidate_urls` to the `/onboarding` context, so the test now checks the tag exists
+  and carries a `.local:8000` URL. Everything else is untouched.
+* `tests/conftest.py` now sets `INCUBATOR_NMCLI_BIN=/nonexistent/nmcli` and a
+  per-process `INCUBATOR_SETUP_STATE_PATH`, resets the NetworkManager probe cache per
+  test and clears AP/setup-mode state after each test. The suite no longer depends on
+  nmcli being absent from PATH and can never touch a host's real Wi-Fi.
+
+## Commit trailers
+
+The harness running this session requires `Co-Authored-By` / `Claude-Session` trailers
+on every commit. The project's own rule is "no AI attribution in commits"; strip the
+trailers when squashing/merging if that rule stands (`git commit --amend` or
+`git filter-branch --msg-filter`).
+
+## Audit findings rejected / not applicable (one line each)
+
+* **web.py L271** (dashboard CTAs lead to a wizard that raises the AP) — front-end
+  feature outside E; the wizard now needs an explicit "Start setup mode" tap (and a login
+  once an account exists), and the "Start Setup" tile is hidden once setup is complete.
+* **web.py L514** (make `/api/reset-password` require the AP subnet + auto-expire) — not
+  changed: `tests/test_password_reset.py` unlocks reset with an arbitrary setup-mode
+  reason; the exploit chain is closed by gating `/onboarding/start` and by never entering
+  setup mode unless the AP is actually up.
+* **wifi_service.py L30** ("no leading/trailing whitespace" in SSIDs) — such SSIDs are
+  legal and reach nmcli as argv; only control characters, blank names and >32 bytes are
+  rejected.
+* **wifi_service.py L244** (write the dnsmasq hijack config from the app) — installer
+  territory (agent B); the app now pins `ipv4.addresses` to `settings.ap_ip` so every
+  printed URL and the captive responder agree with NetworkManager.
+* **onboarding_service.py L112** (bounded wait for the Wi-Fi device in `boot()` +
+  `nm-online` ExecStartPre) — a startup wait would delay READY and the UI; the watchdog
+  retries the AP every poll instead; the unit file belongs to agent B.
+* **web.py L356** (relabel dashboard chips "Heater enabled / Heating now") — templates
+  are agent C's; `live.heater`/`live.fan` now carry the daemon's real output state in
+  daemon mode and `live.heater_enabled`/`fan_enabled` are provided for a future relabel.
+* **conftest.py L9** (monkeypatch `WiFiService._nmcli` in conftest) — kept the real
+  `WiFiService` exercised over HTTP with nmcli pointed at a non-existent binary and the
+  explicit mock path: same isolation, more coverage.
+* **wifi_service.py L295** ("filter only the exact SSID we broadcast" in scans) —
+  partially: the `<prefix>-XXXX` shape and the broadcast SSID are hidden
+  (`tests/test_wifi_scan.py` requires "Incubator-A3F2" hidden with no AP running);
+  "IncubatorHome" / "Johns Hotspot" are now offered.

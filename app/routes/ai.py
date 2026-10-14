@@ -32,17 +32,18 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from fastapi import APIRouter, Cookie, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Cookie, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from ..auth import get_user_id_from_session, has_any_user
 from ..config import settings
 from ..database import get_db
 from ..models import ModelResult
 from ..services.llm_service import LLMService
 from ..services.vision_service import VisionService
+from ._auth import require_api_user
+from .testing import _resolve_allowed
 
 if TYPE_CHECKING:
     from ..services.hardware_service import HardwareService
@@ -53,9 +54,9 @@ router = APIRouter()
 
 
 def _require_user(db: Session, session_token: str | None) -> None:
-    """Gate model management once an operator account exists (mirrors web routes)."""
-    if (settings.require_login or has_any_user(db)) and not get_user_id_from_session(db, session_token):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    """Every endpoint here drives hardware, reads files or runs inference —
+    all gated once an operator account exists (same rule as the web routes)."""
+    require_api_user(db, session_token)
 
 # Populated at startup via set_runtime_services in web.py
 _vision_service: VisionService = VisionService()  # default mock — replaced at startup
@@ -113,20 +114,37 @@ class ExplainStatusRequest(BaseModel):
 # ------------------------------------------------------------------
 
 @router.post("/api/vision/analyze")
-def analyze_vision(payload: VisionAnalyzeRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
-    """Analyze an image that has already been captured and saved to disk."""
+def analyze_vision(
+    payload: VisionAnalyzeRequest,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict[str, Any]:
+    """Analyze an image that has already been captured and saved to disk.
+
+    ``image_path`` must point at a saved capture (captures dir / camera image
+    dir / testing uploads) — never an arbitrary file on the device.
+    """
+    _require_user(db, session_token)
+    resolved = _resolve_allowed(payload.image_path)
+    if resolved is None:
+        raise HTTPException(status_code=400, detail="image_path must be a saved capture on this device")
+    image_path = str(resolved)
     result = (
-        _vision_service.classify_image(payload.image_path)
+        _vision_service.classify_image(image_path)
         if payload.mode == "classify"
-        else _vision_service.analyze_egg_image(payload.image_path)
+        else _vision_service.analyze_egg_image(image_path)
     )
     if result.get("ok") and payload.egg_id and payload.mode != "classify":
-        _persist_result(db, payload.egg_id, payload.image_path, result)
+        _persist_result(db, payload.egg_id, image_path, result)
     return {"endpoint": "vision.analyze", **result}
 
 
 @router.post("/api/vision/candle")
-def candle_and_analyze(payload: CandleRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
+def candle_and_analyze(
+    payload: CandleRequest,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict[str, Any]:
     """
     Full candling workflow:
       1. Turn candle LED on
@@ -137,6 +155,7 @@ def candle_and_analyze(payload: CandleRequest, db: Session = Depends(get_db)) ->
 
     VISION MODEL HOOK — this is the primary automated candling entry point.
     """
+    _require_user(db, session_token)
     if _hardware_service is None:
         return {"ok": False, "error": "Hardware service not available", "endpoint": "vision.candle"}
 
@@ -302,13 +321,23 @@ async def vision_install_model(
 # ------------------------------------------------------------------
 
 @router.post("/api/ai/chat")
-def ai_chat(payload: AIChatRequest) -> dict[str, Any]:
+def ai_chat(
+    payload: AIChatRequest,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict[str, Any]:
+    _require_user(db, session_token)
     result = llm_service.answer_help_question(payload.question, payload.device_state)
     return {"endpoint": "ai.chat", **result}
 
 
 @router.post("/api/ai/explain-status")
-def explain_status(payload: ExplainStatusRequest) -> dict[str, Any]:
+def explain_status(
+    payload: ExplainStatusRequest,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias=settings.session_cookie_name),
+) -> dict[str, Any]:
+    _require_user(db, session_token)
     result = llm_service.explain_status(payload.device_state)
     return {"endpoint": "ai.explain_status", **result}
 

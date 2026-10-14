@@ -12,15 +12,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from ..auth import get_user_id_from_session, has_any_user
 from ..config import settings
 from ..database import get_db
 from ..models import GrowthObservation
+from ._auth import require_api_user as _require_api_user
 
 if TYPE_CHECKING:
     from ..services.growth_service import GrowthService
@@ -36,11 +36,6 @@ def set_growth_services(growth, hardware) -> None:
     global _growth_service, _hardware_service
     _growth_service = growth
     _hardware_service = hardware
-
-
-def _require_api_user(db: Session, session_token: str | None) -> None:
-    if (settings.require_login or has_any_user(db)) and not get_user_id_from_session(db, session_token):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
 
 def _growth() -> "GrowthService":

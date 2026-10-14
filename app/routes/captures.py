@@ -19,15 +19,15 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from ..auth import get_user_id_from_session, has_any_user
 from ..config import settings
 from ..database import get_db
 from ..models import EggPhoto
+from ._auth import require_api_user as _require_api_user
 
 if TYPE_CHECKING:
     from ..services.camera_service import CameraService
@@ -46,11 +46,6 @@ def set_capture_services(storage, camera) -> None:
     global _storage_service, _camera_service
     _storage_service = storage
     _camera_service = camera
-
-
-def _require_api_user(db: Session, session_token: str | None) -> None:
-    if (settings.require_login or has_any_user(db)) and not get_user_id_from_session(db, session_token):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
 
 def _storage() -> "StorageService":

@@ -115,7 +115,8 @@ def test_onboarding_defaults_to_setup_mode_without_new_context(client):
     assert 'data-in-setup="1"' in html
     assert 'class="wizard-step active" data-step="1"' in html
     assert 'data-step="3"' in html and 'data-step="4"' not in html
-    assert 'id="wizardCandidates">[]</script>' in html
+    # The back-end now serves durable discovery URLs; the tag must exist either way.
+    assert 'id="wizardCandidates">' in html and ".local:8000" in html
     assert 'data-ping-path="/api/setup/ping"' in html
     assert "Step 1 of 2" in html and "Finish up" in html
     assert 'id="connectSteps"' in html and 'id="finishFound"' in html and 'id="finishFailed"' in html
