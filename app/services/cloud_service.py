@@ -6,9 +6,11 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
-
 from ..config import settings
+
+# httpx (and its ~40 transitive modules) is imported lazily inside the request
+# helpers: cloud sync is off by default and the web app's cold start on a
+# 1 GHz core should not pay for it.
 
 log = logging.getLogger(__name__)
 
@@ -66,8 +68,15 @@ class CloudService:
             "Content-Type": "application/json",
         }
 
+    @staticmethod
+    def _http() -> Any:
+        import httpx  # lazy: only when a cloud call is actually made
+
+        return httpx
+
     def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         url = f"{self._api_base}{path}"
+        httpx = self._http()
         try:
             resp = httpx.get(url, headers=self._headers(), params=params, timeout=_REQUEST_TIMEOUT)
             resp.raise_for_status()
@@ -81,6 +90,7 @@ class CloudService:
 
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         url = f"{self._api_base}{path}"
+        httpx = self._http()
         try:
             resp = httpx.post(url, headers=self._headers(), json=body, timeout=_REQUEST_TIMEOUT)
             resp.raise_for_status()
