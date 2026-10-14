@@ -177,6 +177,9 @@ class OnboardingService:
         self._manual_idle_timeout = 600.0
         # Saved SSID whose NetworkManager profile turned out to be gone (log once).
         self._missing_profile_logged: str | None = None
+        # Last known home-network link state, so the watchdog can play the
+        # 'connected' feedback exactly once when a normal boot joins Wi-Fi.
+        self._link_up: bool | None = None
         # One transition (AP flip / join / rejoin) at a time, across the poller
         # thread, request threads, background tasks and the button thread.
         self._lock = threading.RLock()
@@ -202,6 +205,10 @@ class OnboardingService:
 
     def _emit(self, name: str) -> None:
         """Hand a feedback event to LEDs/buzzer. Never raises, never blocks setup."""
+        if name == "connected":
+            self._link_up = True
+        elif name in ("setup_ready", "failed"):
+            self._link_up = False
         if self._on_event is None:
             return
         try:
@@ -358,6 +365,7 @@ class OnboardingService:
             self._emit("connected")
         else:
             logger.info("Device already configured (ssid=%s) — waiting for Wi-Fi", config.wifi_ssid)
+        self._link_up = bool(connected)
 
     def start_manual_hotspot(self, device_id: str, source: str = "button") -> dict:
         """Raise the setup AP. ``source``: "button" (physical hold — the default,
@@ -571,7 +579,14 @@ class OnboardingService:
         if self._connected_ssid():
             self._offline_polls = 0
             self._fallback_active = False
+            if not self._link_up:
+                # First poll that sees the home network up — a normal boot
+                # joins Wi-Fi seconds after the app started, long after
+                # boot()'s check — plays the chime and settles the LED.
+                self._link_up = True
+                self._emit("connected")
             return
+        self._link_up = False
 
         self._offline_polls += 1
         if self._offline_polls >= self._offline_polls_threshold:

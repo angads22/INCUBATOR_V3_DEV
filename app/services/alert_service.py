@@ -39,6 +39,7 @@ ALERT_MESSAGES = {
     "sensor_faulty": "Sensor readings are not trustworthy (frozen or impossible values) — heating has been stopped as a precaution",
     "heater_cutoff": "Heater is ON but no current is flowing — the thermal cutoff may have tripped or the heater is disconnected",
     "heater_stuck": "Current is flowing to the heater while it is commanded OFF — the relay may be stuck closed",
+    "output_fault": "The control loop cannot drive a relay line (heater/fan GPIO unavailable) — check the wiring and the control service log",
 }
 
 
@@ -131,6 +132,13 @@ class AlertService:
         """
         events: list[dict[str, str]] = []
         with self._lock:
+            # The control daemon reports outputs it could not drive (a relay
+            # line that failed to request). That is an alarm in its own right:
+            # the thermostat may be "on" while nothing is heating.
+            if str(reading.get("output_fault") or ""):
+                events += self._raise("output_fault")
+            else:
+                events += self._clear("output_fault")
             # A reading can claim ok=True and still be untrustworthy: a DHT22
             # that latches returns the same value forever, and a glitched read
             # can be physically impossible. The control daemon already refuses

@@ -62,7 +62,7 @@
         <strong>{{ ap_ssid | default('Incubator') }}</strong> for a few minutes. This page stops responding while it does — that's expected.</p>
       <ol class="stack-list">
         <li>Tap <strong>Start setup mode</strong> below (or hold the setup button on the device for 4&nbsp;seconds).</li>
-        <li>On your phone, join the Wi-Fi network <strong>{{ ap_ssid | default('Incubator') }}</strong>{% if ap_password %} (password <code>{{ ap_password }}</code>){% else %} — it's open, no password{% endif %}.</li>
+        <li>On your phone, join the Wi-Fi network <strong>{{ ap_ssid | default('Incubator') }}</strong>{% if ap_password %} (password <code>{{ ap_password }}</code>){% elif ap_secured | default(false) %} (it asks for the setup-network password you chose in Settings){% else %} — it's open, no password{% endif %}.</li>
         <li>The setup page opens by itself. Pick the new Wi-Fi and you're done.</li>
       </ol>
       <div class="button-row" style="margin-top:14px">
@@ -116,6 +116,7 @@
       <label>Name your incubator
         <input id="deviceName" type="text" placeholder="e.g. Coop Incubator 1" value="{{ device_name or 'My Incubator' }}" maxlength="60" autocomplete="off" />
       </label>
+      {% if not (has_account | default(false)) %}
       <label class="toggle-row" for="createAccountCheck">
         <input type="checkbox" id="createAccountCheck" />
         <span><strong>Protect with a login</strong> <span class="badge-optional">Recommended</span><br />
@@ -126,6 +127,9 @@
         <label>Email<input id="acctEmail" type="email" autocomplete="email" autocapitalize="none" /></label>
         <label>Password<input id="acctPassword" type="password" autocomplete="new-password" placeholder="At least 8 characters" /></label>
       </div>
+      {% else %}
+      <p class="muted hint">This incubator already has a login — it stays as it is.</p>
+      {% endif %}
       <p id="accountMsg" class="hint" aria-live="polite"></p>
       <div class="wizard-nav">
         <button class="btn btn-ghost" type="button" data-prev>Back</button>

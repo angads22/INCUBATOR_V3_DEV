@@ -533,8 +533,8 @@ verify_pi_boot() {
     fi
     # Relays must be OFF from POWER-ON: firmware drives the pins to safe
     # levels before the kernel, else the heater blasts during every boot.
-    if [[ -f "$b/config.txt" ]] && grep -q 'gpio=12,13,17,27=op,dh' "$b/config.txt" \
-       && grep -q 'gpio=22,23,24,25=op,dl' "$b/config.txt"; then
+    if [[ -f "$b/config.txt" ]] && grep -q 'gpio=12,13,17,27=op,dh,pu' "$b/config.txt" \
+       && grep -q 'gpio=22,23,24,25=op,dl,pd' "$b/config.txt"; then
         vpass "boot-safe GPIO states baked (relays off from power-on)"
     else
         vfail "gpio=...op,dh/op,dl lines missing from config.txt — heater relay would energize during boot"
@@ -562,6 +562,7 @@ verify_pi_root() {
 # Board-agnostic checks on the root partition.
 verify_generic() {
     local r="$1" u
+    local is_pi="${2:-0}"
 
     # Wi-Fi country baked (radio stays rfkill-blocked without it → no hotspot).
     if [[ -f "$r/etc/systemd/system/incubator-wifi-country.service" ]] \
@@ -604,10 +605,21 @@ verify_generic() {
         grep -qE "__INSTALL_DIR__|__DATA_DIR__" "$r/etc/systemd/system/$u" \
             && vfail "unit $u still contains a template placeholder" || vpass "unit $u installed + templated"
     done
-    for u in incubator.service incubator-firstboot.service incubator-control.service incubator-gpio-safe.service; do
+    for u in incubator.service incubator-firstboot.service incubator-control.service; do
         [[ -L "$r/etc/systemd/system/multi-user.target.wants/$u" || -e "$r/etc/systemd/system/multi-user.target.wants/$u" ]] \
             && vpass "$u enabled" || vfail "$u not enabled (no multi-user.target.wants symlink)"
     done
+    # gpio-safe: ON for boards without a firmware GPIO default, OFF on a Pi
+    # (there the config.txt gpio= lines hold the levels, and a released gpiod
+    # line would revert the pin to input).
+    if [[ "$is_pi" == "1" ]]; then
+        [[ ! -e "$r/etc/systemd/system/multi-user.target.wants/incubator-gpio-safe.service" ]] \
+            && vpass "gpio-safe unit disabled on the Pi (firmware holds the levels)" \
+            || vfail "incubator-gpio-safe.service is enabled on a Pi image — releasing the lines would undo the firmware's safe levels"
+    else
+        [[ -L "$r/etc/systemd/system/multi-user.target.wants/incubator-gpio-safe.service" || -e "$r/etc/systemd/system/multi-user.target.wants/incubator-gpio-safe.service" ]] \
+            && vpass "gpio-safe unit enabled" || vfail "incubator-gpio-safe.service not enabled — relay lines would float during boot"
+    fi
     # The control daemon entry point must exist, else the thermostat crash-loops.
     [[ -f "$r/opt/incubator/app/control/__main__.py" ]] \
         && vpass "control daemon entry point present (python -m app.control)" \
@@ -692,7 +704,7 @@ verify_artifact() {
     # ── Root partition ──────────────────────────────────────────────────
     if mount -o ro "$root_part" "$r" 2>/dev/null; then
         [[ "$is_pi" == "1" ]] && verify_pi_root "$r"
-        verify_generic "$r"
+        verify_generic "$r" "$is_pi"
         umount "$r" 2>/dev/null || umount -lf "$r" 2>/dev/null
     else
         vfail "cannot mount root partition ${root_part}"

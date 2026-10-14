@@ -68,7 +68,7 @@ def daemon_reading(path: str, *, stale_after: float = 120.0, now: float | None =
     if not state:
         return {
             "ok": False, "temperature_c": None, "humidity_pct": None, "source": "control-daemon",
-            "heater_on": None, "fan_on": None, "sensor_fault": "", "mock": False, "fresh": False,
+            "heater_on": None, "fan_on": None, "sensor_fault": "", "output_fault": "", "mock": False, "fresh": False,
         }
     fresh = (now - float(state.get("ts", 0))) <= stale_after
     return {
@@ -79,6 +79,7 @@ def daemon_reading(path: str, *, stale_after: float = 120.0, now: float | None =
         "heater_on": bool(state.get("heater_on")) if fresh else None,
         "fan_on": bool(state.get("fan_on")) if fresh else None,
         "sensor_fault": str(state.get("sensor_fault") or ""),
+        "output_fault": str(state.get("output_fault") or ""),
         "mock": bool(state.get("mock", False)),
         "last_turn_ts": state.get("last_turn_ts"),
         "fresh": fresh,

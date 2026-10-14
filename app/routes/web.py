@@ -571,6 +571,21 @@ def _onboarding_open(db: Session) -> bool:
     return False
 
 
+def _physical_setup_session() -> bool:
+    """Setup mode entered by something that proves physical presence.
+
+    The watchdog's fallback AP (router down for two minutes) and a signed-in
+    owner's /onboarding/start also put the device in setup mode, but neither
+    proves anyone is standing at it — so neither may unlock a password reset.
+    """
+    svc = _setup_mode_service
+    if not (svc and svc.is_setup_mode()):
+        return False
+    reason_fn = getattr(svc, "reason", None)
+    reason = reason_fn() if callable(reason_fn) else str(svc.status().get("reason") or "")
+    return reason in PHYSICAL_REASONS
+
+
 def _onboarding_allowed(db: Session, session_token: str | None) -> bool:
     return _onboarding_open(db) or bool(get_user_id_from_session(db, session_token))
 
@@ -647,6 +662,9 @@ def onboarding_page(
             # revealed to a client that is already on the AP (it needed the key
             # to get here) — never to the home LAN.
             "ap_password": effective_ap_password(db) if hotspot_active else "",
+            # Tell a LAN visitor that the setup network will ask for a password
+            # without revealing it.
+            "ap_secured": bool(effective_ap_password(db)),
             "ap_ssid_prefix": settings.ap_ssid_prefix,
             "ap_ssid": ap_ssid,
             "retry_mode": retry_mode,
@@ -696,7 +714,7 @@ def api_debug_network(
     so a field tech can see exactly how many APs exist and which are locked.
     """
     in_setup = _setup_mode_on()
-    if not in_setup:
+    if not _physical_setup_session():
         _require_api_user(db, session_token)
     info = _wifi_service.network_debug() if _wifi_service else {"nmcli": False}
     return {"ok": True, "setup_mode": in_setup, "hotspot_active": _hotspot_active(), **info}
@@ -718,7 +736,7 @@ def onboarding_wifi_scan(
     return {"ok": False, "networks": []}
 
 
-def _complete_with_recovery(ssid: str, password: str) -> None:
+def _complete_with_recovery(ssid: str, password: str, previous_ssid: str = "") -> None:
     """Run the AP→client switch and undo the config if the join fails.
 
     The wizard saves wifi_ssid BEFORE the join attempt (the response must go
@@ -728,13 +746,30 @@ def _complete_with_recovery(ssid: str, password: str) -> None:
     logic truthful; OnboardingService.complete() additionally re-raises the AP
     immediately so recovery doesn't even need a power cycle.
     """
-    connected = _onboarding_service.complete(ssid, password) if _onboarding_service else False
+    if not _onboarding_service:
+        connected = False
+    elif previous_ssid and previous_ssid != ssid and hasattr(_onboarding_service, "switch_network"):
+        # Changing the Wi-Fi of a device that already had one: a typo must not
+        # take it offline — switch_network falls back to the previous network
+        # before it ever raises the setup AP.
+        connected = _onboarding_service.switch_network(ssid, password, previous_ssid=previous_ssid)
+    else:
+        connected = _onboarding_service.complete(ssid, password)
     if ssid and not connected:
+        back_on_previous = ""
+        if previous_ssid and previous_ssid != ssid and _wifi_service:
+            try:
+                if _wifi_service.get_connected_ssid() == previous_ssid:
+                    back_on_previous = previous_ssid
+            except Exception:  # noqa: BLE001
+                back_on_previous = ""
         db = next(get_db())
         try:
             config = db.scalar(select(DeviceConfig).limit(1))
             if config is not None and config.wifi_ssid == ssid:
-                config.wifi_ssid = None
+                # Keep the DB truthful: the previous network if we fell back
+                # onto it, else nothing (so boot() raises the setup AP).
+                config.wifi_ssid = back_on_previous or None
                 db.add(ActionLog(action="system.wifi_join_failed", payload=ssid))
                 db.commit()
         except Exception:  # noqa: BLE001 — recovery bookkeeping must never raise
@@ -785,6 +820,7 @@ def onboarding_complete(
         db.add(new_user)
         config.claimed = True
 
+    previous_ssid = config.wifi_ssid or ""
     config.device_name = payload.device_name
     config.wifi_ssid = payload.ssid or None
 
@@ -802,7 +838,7 @@ def onboarding_complete(
     # A background task runs once the response is on the wire.
     if _onboarding_service:
         background_tasks.add_task(
-            _complete_with_recovery, payload.ssid or "", payload.wifi_password or ""
+            _complete_with_recovery, payload.ssid or "", payload.wifi_password or "", previous_ssid
         )
     elif _setup_mode_service:
         _setup_mode_service.exit_setup_mode()
@@ -1306,7 +1342,7 @@ def api_reset_password(payload: PasswordResetPayload, db: Session = Depends(get_
     /onboarding/start — that is the proof of presence. The response is
     identical whether or not the account exists, to avoid account enumeration.
     """
-    if not (_setup_mode_service and _setup_mode_service.is_setup_mode()):
+    if not _physical_setup_session():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Password reset requires setup mode. Hold the device's setup button, then try again.",

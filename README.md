@@ -108,8 +108,10 @@ Or from a checkout: `sudo bash install.sh`. The installer:
 * installs and enables the systemd services (web app, control loop,
   first-boot provisioning, OTA timer), the hardware watchdog, mDNS and the
   captive-portal DNS for the setup hotspot;
-* on a Pi, adds the I²C/RTC overlay and the **boot-safe GPIO levels** to
-  `config.txt` so the heater relay is OFF from the moment power is applied;
+* on a Pi, adds the I²C/RTC overlay and the **boot-safe GPIO levels and
+  pulls** to `config.txt` so the heater relay is OFF from the moment power is
+  applied — and stays OFF even when a process releases the line (a daemon
+  restart turns the pin back into an input; the pull-up keeps the relay off);
   on every other board an early-boot unit (`incubator-gpio-safe`) drives the
   relay lines OFF before anything else starts;
 * applies SD-card-friendly tuning (`--no-tuning` to skip);

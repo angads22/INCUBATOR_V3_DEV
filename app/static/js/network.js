@@ -118,7 +118,9 @@
         signal: controller ? controller.signal : undefined,
       });
       const data = await res.json().catch(() => null);
-      if (res.ok && data && data.ok) {
+      if (res.ok && data && data.ok && data.switching) {
+        say(`Switching to “${selectedSsid}”… join that network on your phone and reload this page in a minute. If the join fails, the incubator falls back to its previous network (or its own setup Wi-Fi).`);
+      } else if (res.ok && data && data.ok) {
         say(`Connected to “${selectedSsid}”.`);
         loadStatus();
       } else {

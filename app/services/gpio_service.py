@@ -101,6 +101,7 @@ class GPIOService:
         sensor_i2c_bus: int = 1,
         sensor_i2c_addr: int = 0,
         sensor_iio_device: str = "",
+        request_button: bool = True,
     ) -> None:
         self.dht_pin = dht_pin
         self.heater_pin = heater_pin
@@ -140,6 +141,9 @@ class GPIOService:
         self.mock_fallback = False
 
         self._sensor_spec = sensor
+        # Only the process that hosts SetupButtonService may request the button
+        # line: gpiod lines are exclusive, and the control daemon never reads it.
+        self._request_button = bool(request_button)
         self._sensor_backend = sensor_backend or "auto"
         self._sensor_i2c_bus = sensor_i2c_bus
         self._sensor_i2c_addr = sensor_i2c_addr
@@ -295,13 +299,15 @@ class GPIOService:
                 except Exception as exc:  # noqa: BLE001 — one bad pin must not take the rest down
                     logger.error("GPIO: could not request output %s (%r): %s", name, self._pins[name], exc)
                     self._lines[name] = None
-            try:
-                self._button_line = self._backend.request_input(
-                    parse_pin(self.setup_button_pin), pull="up", consumer="incubator-button",
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.error("GPIO: could not request setup button input (%r): %s", self.setup_button_pin, exc)
-                self._button_line = None
+            self._button_line = None
+            if self._request_button:
+                try:
+                    self._button_line = self._backend.request_input(
+                        parse_pin(self.setup_button_pin), pull="up", consumer="incubator-button",
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("GPIO: could not request setup button input (%r): %s", self.setup_button_pin, exc)
+                    self._button_line = None
 
             self._sensor = self._build_sensor()
             self._initialized = True
@@ -413,7 +419,10 @@ class GPIOService:
                         "humidity_pct": last.get("humidity_pct"),
                         "sensor": last.get("sensor", getattr(sensor, "name", "sensor")),
                     }
-                    if out["temperature_c"] is None or out["humidity_pct"] is None:
+                    # Temperature is what the thermostat needs; a temperature-only
+                    # sensor (BMP280, DS18B20 via IIO) is a valid reading with
+                    # humidity unknown — never a failure.
+                    if out["temperature_c"] is None:
                         last = {"ok": False, "error": "incomplete reading"}
                     else:
                         return out

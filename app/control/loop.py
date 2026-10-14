@@ -285,6 +285,9 @@ class ControlDaemon:
         self._heat_start_ts: float | None = None
         self._heat_start_temp: float | None = None
         self._runaway_latched = False
+        # Names of outputs whose last write failed (line not requested / backend
+        # error); published so the alert engine can tell the operator.
+        self._output_fault = ""
         self._runaway_latch_ts: float | None = None
         self._runaway_latch_temp: float | None = None
         self._load_persisted()
@@ -380,6 +383,14 @@ class ControlDaemon:
         if sensor_fault:
             # Same treatment as a dead sensor: we do not know the temperature.
             temp = hum = None
+        # A heating stretch that began without a valid reading (manual ON while
+        # the sensor was failing) adopts the first good temperature as its
+        # anti-runaway baseline instead of running unguarded.
+        if (
+            self._heater_on and self._heat_start_ts is not None
+            and self._heat_start_temp is None and temp is not None
+        ):
+            self._heat_start_temp = temp
 
         target_t = clamp_target(
             self._f(settings, "target_temp_c", 37.5),
@@ -464,8 +475,23 @@ class ControlDaemon:
         # (or a glitch, or a restart of the other process) can never leave a
         # relay in a state the daemon does not know about for longer than one
         # interval.
-        self._gpio.set_heater(self._heater_on)
-        self._gpio.set_fan(self._fan_on)
+        heater_res = self._gpio.set_heater(self._heater_on) or {}
+        fan_res = self._gpio.set_fan(self._fan_on) or {}
+        # A write that did not land (line never requested — EBUSY, bad pin —
+        # or a backend error) means the published state would be fiction.
+        # Record it so the alert engine can raise it instead of trusting it.
+        output_fault = ",".join(
+            name for name, res in (("heater", heater_res), ("fan", fan_res)) if not res.get("ok")
+        )
+        if output_fault != self._output_fault:
+            if output_fault:
+                logger.error(
+                    "Control outputs could not be driven: %s (%s) — check the GPIO lines / wiring",
+                    output_fault, heater_res.get("error") or fan_res.get("error") or "unknown",
+                )
+            else:
+                logger.info("Control outputs are driven again")
+            self._output_fault = output_fault
 
         # Egg turning on schedule.
         turned = False
@@ -493,6 +519,7 @@ class ControlDaemon:
             "sensor_fault": sensor_fault,
             "mock": is_mock,
             "settings_ok": not self._settings_failing,
+            "output_fault": self._output_fault,
         }
         self._publish_state(state)
         return state
@@ -691,6 +718,7 @@ def build_daemon() -> ControlDaemon:
         chip=settings.gpio_chip,
         sensor="auto",
         owned_outputs=DAEMON_OUTPUTS,
+        request_button=False,   # the web app's SetupButtonService owns the button line
         sensor_backend=settings.sensor_backend,
         sensor_i2c_bus=settings.sensor_i2c_bus,
         sensor_i2c_addr=settings.sensor_i2c_addr,

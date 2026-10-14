@@ -7,8 +7,9 @@ as immutable for a year, because the URL changes whenever the version does;
 anything else is cached for an hour.
 
 ``add_web_middleware`` adds gzip for text responses (HTML, CSS, JS, JSON)
-above 1 KiB. Images, fonts and the camera stream are excluded by Starlette's
-defaults, so a Pi Zero never spends CPU re-compressing a JPEG.
+above 1 KiB. Images and fonts are excluded by Starlette's defaults; the MJPEG
+camera stream (multipart/x-mixed-replace) is excluded explicitly, so a Pi Zero
+never spends CPU re-compressing JPEG frames.
 
 Both are wired into ``app.main`` (mount + middleware); this module itself has
 no dependency on the rest of the app so it can be unit-tested in isolation.
@@ -59,9 +60,22 @@ class CachedStaticFiles(StaticFiles):
         return response
 
 
+STREAM_CONTENT_TYPES = ("multipart/x-mixed-replace",)
+
+
 def add_web_middleware(app: Any) -> Any:
     """Attach the response middleware the web front-end relies on (gzip)."""
-    app.add_middleware(GZipMiddleware, minimum_size=GZIP_MINIMUM_SIZE, compresslevel=GZIP_LEVEL)
+    try:
+        from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES  # type: ignore
+
+        excluded = tuple(DEFAULT_EXCLUDED_CONTENT_TYPES) + STREAM_CONTENT_TYPES
+        app.add_middleware(
+            GZipMiddleware, minimum_size=GZIP_MINIMUM_SIZE, compresslevel=GZIP_LEVEL,
+            exclude_content_types=excluded,
+        )
+    except (ImportError, TypeError):
+        # Older Starlette without content-type exclusion: plain gzip middleware.
+        app.add_middleware(GZipMiddleware, minimum_size=GZIP_MINIMUM_SIZE, compresslevel=GZIP_LEVEL)
     return app
 
 

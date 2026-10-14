@@ -620,7 +620,15 @@ install_units() {
     enable_unit incubator.service
     enable_unit incubator-firstboot.service
     enable_unit incubator-control.service
-    enable_unit incubator-gpio-safe.service
+    if [[ "$IS_PI" == "1" ]]; then
+        # The Pi firmware holds the OFF levels from power-on (config.txt gpio=
+        # lines, with pulls). Driving-then-releasing the lines from userspace
+        # would turn them back into inputs, so the unit stays OFF on a Pi.
+        systemctl disable incubator-gpio-safe.service 2>/dev/null || true
+        rm -f /etc/systemd/system/multi-user.target.wants/incubator-gpio-safe.service
+    else
+        enable_unit incubator-gpio-safe.service
+    fi
     enable_unit incubator-ota.timer
 }
 
@@ -673,9 +681,17 @@ pi_boot_safety_lines() {
     #   12,13,17,27 (lock/door/heater/fan relays, active-LOW) → output HIGH
     #   22,23,24,25 (turner step/dir, candle, buzzer)         → output LOW
     # GPIO4 (DHT22) and GPIO18 (setup button) stay untouched as inputs.
-    grep -qE '^[[:space:]]*gpio=12,13,17,27=op,dh' "$BOOT_CONFIG" || echo 'gpio=12,13,17,27=op,dh' >> "$BOOT_CONFIG"
-    grep -qE '^[[:space:]]*gpio=22,23,24,25=op,dl' "$BOOT_CONFIG" || echo 'gpio=22,23,24,25=op,dl' >> "$BOOT_CONFIG"
-    info "  I2C/RTC overlay + boot-safe GPIO levels written."
+    # The PULLS matter as much as the levels: when a process releases a gpiod
+    # line (daemon restart, crash, the web app stopping) the BCM pinctrl driver
+    # turns the pin back into an INPUT, and only the pull then decides what the
+    # relay sees. pu on the active-LOW relays and pd on the active-HIGH lines
+    # keep everything OFF in that state too. Existing lines without a pull are
+    # upgraded in place.
+    sed -i -E 's/^([[:space:]]*gpio=12,13,17,27=op,dh)[[:space:]]*$/\1,pu/' "$BOOT_CONFIG"
+    sed -i -E 's/^([[:space:]]*gpio=22,23,24,25=op,dl)[[:space:]]*$/\1,pd/' "$BOOT_CONFIG"
+    grep -qE '^[[:space:]]*gpio=12,13,17,27=op,dh,pu' "$BOOT_CONFIG" || echo 'gpio=12,13,17,27=op,dh,pu' >> "$BOOT_CONFIG"
+    grep -qE '^[[:space:]]*gpio=22,23,24,25=op,dl,pd' "$BOOT_CONFIG" || echo 'gpio=22,23,24,25=op,dl,pd' >> "$BOOT_CONFIG"
+    info "  I2C/RTC overlay + boot-safe GPIO levels (with pulls) written."
 }
 
 # ── Tuning ───────────────────────────────────────────────────────────────────
@@ -771,8 +787,14 @@ init_ota_checkout() {
         git -C "${INSTALL_DIR}" -c user.email=build@incubator -c user.name=incubator-build \
             commit -qm "Image base v${app_version}" || true
     fi
-    git -C "${INSTALL_DIR}" remote add origin "${REPO_URL}.git" 2>/dev/null \
-        || git -C "${INSTALL_DIR}" remote set-url origin "${REPO_URL}.git"
+    # Honour a mirror (INCUBATOR_APP_REPO, as rpi-image-gen passes it) and never
+    # overwrite an origin somebody pointed elsewhere on purpose.
+    local ota_repo="${INCUBATOR_APP_REPO:-}"
+    if ! git -C "${INSTALL_DIR}" remote get-url origin >/dev/null 2>&1; then
+        git -C "${INSTALL_DIR}" remote add origin "${ota_repo:-${REPO_URL}.git}"
+    elif [[ -n "${ota_repo}" ]]; then
+        git -C "${INSTALL_DIR}" remote set-url origin "${ota_repo}"
+    fi
     echo "${app_version}" > "${INSTALL_DIR}/.git-ref"
 }
 
@@ -788,7 +810,10 @@ print_feedback_table() {
     echo "    factory reset armed 15 s ... 3 rapid beeps, 1 long on release, LED fast blink"
 }
 print_summary() {
-    local ip host; ip="$(hostname -I 2>/dev/null | awk '{print $1}')"; host="$(hostname 2>/dev/null || echo incubator)"
+    local ip host
+    # busybox/Alpine hostname has no -I; never let the summary abort the installer.
+    ip="$( (hostname -I 2>/dev/null || ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1) | awk '{print $1}' || true)"
+    host="$(hostname 2>/dev/null || echo incubator)"
     echo ""
     echo -e "${GREEN}═══════════════════════════════════════════════════${NC}"
     echo -e "${GREEN}  Incubator v3 — setup complete on ${BOARD_MODEL}${NC}"
@@ -850,6 +875,15 @@ fi
 
 step "Starting services..."
 systemctl daemon-reload
+# A live install must provision the device identity BEFORE the app first runs,
+# or the app mints a random device id that the next boot's firstboot then
+# contradicts (hostname / setup-network name mismatch). The unit is gated on
+# the done-marker, so this is a no-op on a re-run.
+if [[ ! -e /etc/incubator-firstboot.done ]]; then
+    systemctl start incubator-firstboot.service 2>/dev/null \
+        || bash "${INSTALL_DIR}/scripts/firstboot.sh" \
+        || warn "First-boot provisioning failed — the app will mint a device id itself."
+fi
 systemctl restart incubator-wifi-country.service 2>/dev/null || true
 systemctl restart "${SERVICE_NAME}-control.service" 2>/dev/null || true
 systemctl restart "${SERVICE_NAME}.service"

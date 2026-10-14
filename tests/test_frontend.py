@@ -162,7 +162,7 @@ def test_onboarding_js_probes_cross_origin_and_detects_hotspot_return():
     assert "AbortController" in js
     assert "/api/setup/ping" in js
     assert "hotspot_active" in js
-    assert "180000" in js            # manual fallback after 180 s
+    assert "240000" in js            # manual fallback after 240 s (longer than the worst-case failed join)
     assert "25000" in js             # AP-return grace window
     assert "window.open(appUrl" in js
 

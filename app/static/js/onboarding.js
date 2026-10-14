@@ -39,7 +39,10 @@
   const AP_RETURN_GRACE_MS = 25000;
   const SWITCH_DONE_MS = 15000;
   const REJOIN_DONE_MS = 25000;
-  const DISCOVERY_TIMEOUT_MS = 180000;
+  // Longer than the device's worst-case failed-join path (grace + nmcli
+  // association + profile fallback ≈ 2.5 min), so a returning setup AP is
+  // still reported as a failed join rather than as 'could not confirm'.
+  const DISCOVERY_TIMEOUT_MS = 240000;
   const AUTO_OPEN_SECONDS = 5;
 
   // Mirrors the device-side SSID rule so a name the incubator would reject

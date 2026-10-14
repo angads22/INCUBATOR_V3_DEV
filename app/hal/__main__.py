@@ -1,7 +1,8 @@
 """``python -m app.hal`` — print what the HAL detects, as JSON. Never raises.
 
 ``python -m app.hal --safe-outputs`` instead drives every relay/actuator line
-to its OFF level (used by incubator-gpio-safe.service at boot).
+to its OFF level (used by incubator-gpio-safe.service at boot on boards other
+than the Raspberry Pi, whose firmware already does this; ``--force`` overrides).
 
 Useful when porting to a new board: shows the board model, which GPIO backend
 would be used and the gpiochips it sees, the sensor found (with one reading),
@@ -101,7 +102,7 @@ def _app_settings() -> Any:
         return None
 
 
-def safe_outputs(settings: Any = None) -> dict[str, Any]:
+def safe_outputs(settings: Any = None, *, force: bool = False) -> dict[str, Any]:
     """Drive every relay/actuator line to its OFF level, then release it.
 
     Run by ``incubator-gpio-safe.service`` early in boot on boards without a
@@ -116,6 +117,24 @@ def safe_outputs(settings: Any = None) -> dict[str, Any]:
         settings = _app_settings()
     if settings is None:
         return {"backend": None, "error": "app settings unavailable", "lines": {}}
+
+    # On a Raspberry Pi the firmware already drove these lines to their OFF
+    # levels (and pulls) before the kernel booted — the config.txt gpio= lines
+    # install.sh writes. Releasing a libgpiod line on the BCM pinctrl driver
+    # reverts the pin to an INPUT, so driving-then-releasing here would UNDO
+    # that guarantee for the few seconds until the daemon starts. Skip.
+    if not force:
+        try:
+            from .board import detect_board
+
+            board = detect_board()
+        except Exception:  # noqa: BLE001
+            board = None
+        if board is not None and getattr(board, "is_raspberry_pi", False):
+            return {
+                "backend": None, "ok": True, "skipped": "raspberry-pi", "lines": {},
+                "reason": "firmware gpio= lines already hold the OFF levels; a released gpiod line would revert to input",
+            }
 
     active_low = bool(getattr(settings, "gpio_relay_active_low", True))
     relay_off = bool(active_low)   # de-energised relay = HIGH when active-LOW
@@ -181,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.DEBUG if verbose else logging.WARNING, stream=sys.stderr)
     try:
         if "--safe-outputs" in argv:
-            report = safe_outputs()
+            report = safe_outputs(force="--force" in argv)
         else:
             report = build_report()
     except Exception as exc:  # pragma: no cover - both builders already guard each part
