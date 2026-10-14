@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Life Loop mark on a cream rounded square (see templates/partials/nav.html) -->
+  <rect width="100" height="100" rx="22" fill="#efe7d6"/>
+  <g transform="translate(50 50) scale(3.75) translate(-12 -12)" fill="none">
+    <circle cx="12" cy="12" r="8" stroke="#c2702a" stroke-width="2.4" stroke-linecap="round"
+            stroke-dasharray="37 13" transform="rotate(-90 12 12)"/>
+    <circle cx="12" cy="4" r="2.4" fill="#c2702a"/>
+  </g>
+</svg>

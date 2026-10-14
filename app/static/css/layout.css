@@ -35,14 +35,15 @@ body {
   gap: 16px;
   align-items: center;
   padding: 13px clamp(16px, 4vw, 28px);
+  padding-top: calc(13px + env(safe-area-inset-top, 0px));
   border-bottom: 1px solid var(--line);
   background: rgba(251, 247, 239, 0.82);
   backdrop-filter: blur(14px) saturate(120%);
   -webkit-backdrop-filter: blur(14px) saturate(120%);
 }
 
-/* Brand lockup (logo mark + wordmark) */
-.brand-lockup { display: flex; align-items: center; gap: 12px; min-width: 0; }
+/* Brand lockup (logo mark + wordmark) — a link home, styled as plain text */
+.brand-lockup { display: flex; align-items: center; gap: 12px; min-width: 0; text-decoration: none; color: inherit; }
 .brand-text { display: grid; gap: 1px; min-width: 0; }
 
 .nav-links { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
@@ -59,6 +60,9 @@ body {
 
 .app-main { padding-top: 26px; padding-bottom: 48px; }
 
+/* ── Mobile bottom tab bar (hidden on wide screens) ─────────── */
+.tabbar { display: none; }
+
 /* ── Grids ───────────────────────────────────────────────────── */
 .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; }
 .panel-group { display: grid; gap: 18px; align-content: start; }
@@ -67,7 +71,49 @@ body {
 .two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
 
 @media (max-width: 980px) { .dashboard-grid { grid-template-columns: 1fr; } }
+
 @media (max-width: 620px) {
   .container { padding: 16px; }
   .topbar { flex-wrap: wrap; gap: 10px; }
+  .brand-text .eyebrow { display: none; }
+
+  /* Primary navigation moves to a thumb-reachable bottom bar. */
+  .nav-links { display: none; }
+  body { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+  .tabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--line);
+    background: rgba(251, 247, 239, 0.94);
+    backdrop-filter: blur(14px) saturate(120%);
+    -webkit-backdrop-filter: blur(14px) saturate(120%);
+  }
+  .tabbar a {
+    display: grid;
+    justify-items: center;
+    align-content: center;
+    gap: 2px;
+    min-height: 44px;
+    padding: 5px 4px;
+    border-radius: var(--radius-sm);
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tabbar a svg { width: 22px; height: 22px; display: block; }
+  .tabbar a.active { color: var(--accent-ink); background: var(--accent-soft); }
+  .tabbar a:active { background: var(--panel-2); }
+
+  /* Keep the update popup clear of the tab bar. */
+  .update-popup { bottom: calc(86px + env(safe-area-inset-bottom, 0px)); }
 }

@@ -1,17 +1,44 @@
 {% extends 'base.html' %}
+{% block title %}Set up your incubator · Life Loop{% endblock %}
 {% block content %}
-{% with eyebrow='Device Setup', title='Incubator Setup Wizard', subtitle='Follow the steps to connect and configure your device.' %}{% include 'partials/section_header.html' %}{% endwith %}
+{#
+  Smart-vacuum style setup. Server context available today: ap_ssid, ap_ip,
+  ap_password, retry_mode, retry_ssid, device_name, version. Newer back-ends
+  also pass hotspot_active, setup_mode, has_account, hostname, candidate_urls
+  and ping_path — every one of them is defaulted here so the page renders
+  either way.
+
+  Panes (data-step):
+    0  Not in setup mode  — "Change Wi-Fi / run setup again" card
+    1  Step 1 of 2        — pick Wi-Fi (+ password only when needed)
+    2  Step 2 of 2        — name + optional login, big Connect button
+    3  Connecting         — checklist, device discovery, found / failed / manual
+#}
+{% set _hotspot = hotspot_active if hotspot_active is defined else none %}
+{% set _setup_mode = setup_mode | default(false) %}
+{% set in_setup = (retry_mode | default(false)) or (_hotspot is none) or _hotspot or _setup_mode %}
+{% set ping_path_v = ping_path | default('/api/setup/ping') %}
+{% set candidates_v = candidate_urls | default([]) %}
+
+{% with eyebrow='Device setup', title=('Set up your incubator' if in_setup else 'Change Wi-Fi'), subtitle=('Two quick steps — your incubator finds its way onto your Wi-Fi and opens itself.' if in_setup else 'Run setup again to move the incubator to a different Wi-Fi network.') %}{% include 'partials/section_header.html' %}{% endwith %}
 
 <div class="wizard-wrap" id="wizardWrap"
      data-retry="{{ '1' if retry_mode else '' }}"
      data-retry-ssid="{{ retry_ssid or '' }}"
-     data-device-name="{{ device_name or '' }}">
+     data-device-name="{{ device_name or '' }}"
+     data-in-setup="{{ '1' if in_setup else '' }}"
+     data-ap-ssid="{{ ap_ssid | default('Incubator') }}"
+     data-ap-ip="{{ ap_ip | default('10.42.0.1') }}"
+     data-hostname="{{ hostname | default('') }}"
+     data-has-account="{{ '1' if has_account | default(false) else '' }}"
+     data-ping-path="{{ ping_path_v }}">
+  <script type="application/json" id="wizardCandidates">{{ candidates_v | tojson }}</script>
 
   {% if retry_mode %}
   <!-- Recovery mode: the last Wi-Fi join failed, the setup network came back,
        and the phone landed here again. Say what happened in plain words and
        ask ONLY for the Wi-Fi — the incubator already has its name and login. -->
-  <article class="card" style="border:2px solid var(--accent);margin-bottom:14px">
+  <article class="card wizard-notice" id="retryNotice">
     <strong>⚠️ Let's fix the Wi-Fi</strong>
     <p class="muted" style="margin:6px 0 0">
       Your incubator couldn't join
@@ -22,130 +49,142 @@
   </article>
   {% endif %}
 
-  <div class="wizard-progress" aria-hidden="true">
-    <div class="wizard-progress-track"><div class="wizard-progress-fill" id="wizardProgressFill"></div></div>
-    <p class="wizard-step-label" id="wizardStepLabel">Step 1 of 6 · Welcome</p>
+  <div class="wizard-progress" id="wizardProgress" aria-hidden="true"{% if not in_setup %} hidden{% endif %}>
+    <div class="wizard-progress-track"><div class="wizard-progress-fill" id="wizardProgressFill" style="width:50%"></div></div>
+    <p class="wizard-step-label" id="wizardStepLabel">Step 1 of 2 · Wi-Fi</p>
   </div>
 
-  <!-- Step 0: Welcome -->
-  <div class="wizard-step active" data-step="0">
+  <!-- Pane 0: not in setup mode (reached from the profile menu on the home network) -->
+  <div class="wizard-step{% if not in_setup %} active{% endif %}" data-step="0">
     <article class="card">
-      <h3>Let's set up your incubator</h3>
-      <p>This takes about two minutes. We'll connect your incubator to your Wi-Fi and get it ready. No technical know-how needed — just follow along.</p>
-      <p class="muted">You're already connected to your incubator's own Wi-Fi (<strong>{{ ap_ssid }}</strong>{% if ap_password %}, password <code>{{ ap_password }}</code>{% else %} — it's open, no password{% endif %}) and this page opened by itself. If you ever need to get back here, hold the <strong>setup button</strong> on the device for 4&nbsp;seconds and reconnect to that network.</p>
-      <p class="muted" style="font-size:0.9em">See other <strong>Incubator&hellip;</strong> networks that ask for a password? Those are leftovers your phone remembers from earlier — you can safely <em>Forget</em> them in your Wi-Fi settings. This incubator's network is the open one named <strong>{{ ap_ssid }}</strong>.</p>
-      <div class="button-row">
-        <button class="btn btn-primary" id="beginSetupBtn" type="button">Start</button>
+      <h3>Change Wi-Fi / run setup again</h3>
+      <p>To move to a different Wi-Fi network, your incubator switches to its own setup Wi-Fi
+        <strong>{{ ap_ssid | default('Incubator') }}</strong> for a few minutes. This page stops responding while it does — that's expected.</p>
+      <ol class="stack-list">
+        <li>Tap <strong>Start setup mode</strong> below (or hold the setup button on the device for 4&nbsp;seconds).</li>
+        <li>On your phone, join the Wi-Fi network <strong>{{ ap_ssid | default('Incubator') }}</strong>{% if ap_password %} (password <code>{{ ap_password }}</code>){% else %} — it's open, no password{% endif %}.</li>
+        <li>The setup page opens by itself. Pick the new Wi-Fi and you're done.</li>
+      </ol>
+      <div class="button-row" style="margin-top:14px">
+        <a class="btn btn-ghost" href="/">Back</a>
+        <button class="btn btn-primary" id="startSetupModeBtn" type="button">Start setup mode</button>
       </div>
       <p id="setupStartMsg" class="hint"></p>
+      <div id="setupStartedNote" class="wizard-notice" hidden>
+        <p style="margin:0"><strong>Now join the Wi-Fi network &ldquo;{{ ap_ssid | default('Incubator') }}&rdquo; on your phone</strong> — the setup page opens by itself.</p>
+        <p class="muted hint">Reaching the incubator another way (for example over an Ethernet cable)?
+          <a href="#" id="continueHereLink">Continue the setup on this page</a>.</p>
+      </div>
     </article>
   </div>
 
-  <!-- Step 1: Wi-Fi — network AND password on one screen. The password field
-       appears only when it's needed (locked network picked, or name typed by
-       hand), so an open network is a single tap. -->
-  <div class="wizard-step" data-step="1">
+  <!-- Pane 1 / Step 1: Wi-Fi — network AND password on one screen. The password
+       field appears only when it's needed (locked network picked, or name typed
+       by hand), so an open network is a single tap. -->
+  <div class="wizard-step{% if in_setup %} active{% endif %}" data-step="1">
     <article class="card">
-      <h3>Connect to your Wi-Fi</h3>
+      <h3><span class="step-num" aria-hidden="true">1</span>Connect to your Wi-Fi</h3>
       <p class="muted">Pick your home or barn Wi-Fi so the incubator can stay online.</p>
-      <p id="wifiScanMsg" class="hint">Looking for nearby Wi-Fi&hellip;</p>
-      <div id="wifiList" class="wifi-list"></div>
+      <div class="wifi-toolbar">
+        <p id="wifiScanMsg" class="hint" aria-live="polite">Looking for nearby Wi-Fi&hellip;</p>
+        <button class="btn btn-ghost btn-small" id="wifiRefreshBtn" type="button">Refresh</button>
+      </div>
+      <div id="wifiList" class="wifi-list" role="listbox" aria-label="Nearby Wi-Fi networks"></div>
       <label class="manual-ssid">Don't see your Wi-Fi? Type its name here
-        <input id="manualSsid" type="text" placeholder="Your Wi-Fi name" autocomplete="off" />
+        <input id="manualSsid" type="text" placeholder="Your Wi-Fi name" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" />
       </label>
       <div id="wifiPasswordWrap" hidden>
         <label>Password for <strong id="selectedSsidLabel">&mdash;</strong>
-          <input id="wifiPassword" type="password" placeholder="Your Wi-Fi password" autocomplete="off" />
+          <input id="wifiPassword" type="password" placeholder="Your Wi-Fi password" autocomplete="off" autocapitalize="none" />
         </label>
+        <label class="check-label"><input type="checkbox" id="wifiShowPassword" /> Show password</label>
         <p class="muted hint" style="margin-top:2px">If this network has no password, leave it blank.</p>
       </div>
-      <p id="wifiStepMsg" class="hint"></p>
+      <p id="wifiStepMsg" class="hint" aria-live="polite"></p>
       <div class="wizard-nav">
-        <button class="btn btn-ghost" type="button" data-prev>Back</button>
-        <button class="btn btn-primary" type="button" data-next id="wifiNextBtn" disabled>Next</button>
+        <span></span>
+        <button class="btn btn-primary" type="button" data-next id="wifiNextBtn" disabled>{{ 'Connect' if retry_mode else 'Next' }}</button>
       </div>
+      <p class="muted hint small-print">You're on the incubator's own setup Wi-Fi (<strong>{{ ap_ssid | default('Incubator') }}</strong>{% if ap_password %}, password <code>{{ ap_password }}</code>{% endif %}). To get back here later, hold the <strong>setup button</strong> on the device for 4&nbsp;seconds and join that network again. Other <em>Incubator&hellip;</em> networks your phone remembers from earlier can safely be forgotten.</p>
     </article>
   </div>
 
-  <!-- Step 2: Account Creation (optional) -->
+  <!-- Pane 2 / Step 2: name + optional login -->
   <div class="wizard-step" data-step="2">
     <article class="card">
-      <h3>Create a login <span class="badge-optional">Optional</span></h3>
-      <p class="muted">A login keeps others from changing your incubator's settings. You can skip this now and add one later from the menu in the top-right.</p>
-      <label><input type="checkbox" id="createAccountCheck" /> Create a login now</label>
-      <div id="accountFields" class="account-fields">
-        <label>Username<input id="acctUsername" type="text" autocomplete="username" /></label>
-        <label>Email<input id="acctEmail" type="email" autocomplete="email" /></label>
-        <label>Password<input id="acctPassword" type="password" autocomplete="new-password" /></label>
-      </div>
-      <div class="wizard-nav">
-        <button class="btn btn-ghost" type="button" data-prev>Back</button>
-        <button class="btn btn-primary" type="button" data-next>Next</button>
-      </div>
-    </article>
-  </div>
-
-  <!-- Step 3: Device Naming -->
-  <div class="wizard-step" data-step="3">
-    <article class="card">
-      <h3>Name Your Device</h3>
-      <p class="muted">Give your incubator a friendly name.</p>
-      <label>Device Name
-        <input id="deviceName" type="text" placeholder="e.g. Coop Incubator 1" value="My Incubator" />
+      <h3><span class="step-num" aria-hidden="true">2</span>Finish up</h3>
+      <label>Name your incubator
+        <input id="deviceName" type="text" placeholder="e.g. Coop Incubator 1" value="{{ device_name or 'My Incubator' }}" maxlength="60" autocomplete="off" />
       </label>
+      <label class="toggle-row" for="createAccountCheck">
+        <input type="checkbox" id="createAccountCheck" />
+        <span><strong>Protect with a login</strong> <span class="badge-optional">Recommended</span><br />
+          <small class="muted">Stops anyone else on your Wi-Fi from changing settings. You can add one later from the menu.</small></span>
+      </label>
+      <div id="accountFields" class="account-fields">
+        <label>Username<input id="acctUsername" type="text" autocomplete="username" autocapitalize="none" /></label>
+        <label>Email<input id="acctEmail" type="email" autocomplete="email" autocapitalize="none" /></label>
+        <label>Password<input id="acctPassword" type="password" autocomplete="new-password" placeholder="At least 8 characters" /></label>
+      </div>
+      <p id="accountMsg" class="hint" aria-live="polite"></p>
       <div class="wizard-nav">
         <button class="btn btn-ghost" type="button" data-prev>Back</button>
-        <button class="btn btn-primary" type="button" data-next>Next</button>
+        <button class="btn btn-primary btn-big" type="button" id="finishSetupBtn">Connect</button>
       </div>
     </article>
   </div>
 
-  <!-- Step 4: Quick Tour -->
-  <div class="wizard-step" data-step="4">
-    <article class="card">
-      <h3>Quick Tour</h3>
-      <ul class="stack-list">
-        <li><strong>Home:</strong> Live temperature, humidity, quick actions, and system status at a glance.</li>
-        <li><strong>Status:</strong> Hardware link health, sensor state, alarms, and setup mode indicator.</li>
-        <li><strong>Help:</strong> Operating tips and guidance for common tasks.</li>
-      </ul>
-      <p class="muted tour-hint">Use the <strong>profile bubble</strong> (&#9679; top-right) anytime to access settings, network configuration, and account management.</p>
-      <div class="wizard-nav">
-        <button class="btn btn-ghost" type="button" data-prev>Back</button>
-        <button class="btn btn-primary" type="button" id="finishSetupBtn">Finish Setup</button>
-      </div>
-    </article>
-  </div>
-
-  <!-- Step 5: Completing -->
-  <div class="wizard-step" data-step="5">
+  <!-- Pane 3: Connecting — staged checklist, then found / failed / manual -->
+  <div class="wizard-step" data-step="3">
     <article class="card wizard-finish">
-      <h3 id="finishTitle">Saving setup&hellip;</h3>
-      <p id="finishMsg" class="muted">Please wait while your device saves configuration and reconnects.</p>
-      <p id="finishResult" class="hint"></p>
+      <h3 id="finishTitle">Connecting your incubator&hellip;</h3>
+      <p id="finishMsg" class="muted">Keep this page open — we'll find your incubator on your Wi-Fi and open it for you. This usually takes under a minute.</p>
+      <ol class="connect-steps" id="connectSteps" aria-live="polite">
+        <li data-stage="saved" data-state="done"><span class="stage-icon" aria-hidden="true"></span><span class="stage-text">Saved</span></li>
+        <li data-stage="switching" data-state="active"><span class="stage-icon" aria-hidden="true"></span><span class="stage-text">Switching to <strong class="home-ssid">your Wi-Fi</strong> <small class="muted">(the setup Wi-Fi turns off in a few seconds)</small></span></li>
+        <li data-stage="rejoin" data-state="todo"><span class="stage-icon" aria-hidden="true"></span><span class="stage-text">Your phone should rejoin <strong class="home-ssid">your Wi-Fi</strong> by itself</span></li>
+        <li data-stage="looking" data-state="todo"><span class="stage-icon" aria-hidden="true"></span><span class="stage-text">Looking for your incubator&hellip;</span></li>
+      </ol>
+      <p id="finishResult" class="hint" aria-live="polite"></p>
 
-      <!-- Shown once setup succeeds: get the user off the setup hotspot and
-           onto their incubator's real address, with bookmark guidance. -->
-      <div id="finishNext" hidden>
-        <p id="finishOpenNote" class="hint" style="text-align:center;font-weight:600"></p>
-        <a id="finishLink" href="/" class="btn btn-primary" style="display:block;text-align:center;margin:10px 0">Open my incubator now</a>
-
-        <div class="card" style="margin-top:14px;border:2px solid var(--accent)">
-          <strong>📌 How to reach your incubator from now on</strong>
-          <ol class="stack-list" style="margin:10px 0;padding-left:22px">
-            <li><strong>Reconnect your phone to your home Wi-Fi</strong> <strong id="finishHomeSsid"></strong> — the <em>{{ ap_ssid }}</em> setup network is about to disappear.</li>
-            <li><strong>Open your browser</strong> (Safari or Chrome).</li>
-            <li><strong>Type this address into the address bar</strong> — tap it below to select it:</li>
-          </ol>
-          <p style="text-align:center;margin:10px 0"><code id="finishUrl" style="font-size:1.15rem;padding:8px 12px;display:inline-block;-webkit-user-select:all;user-select:all"></code></p>
-          <div class="button-row" style="justify-content:center">
-            <button type="button" id="finishCopyBtn" class="btn btn-secondary">Copy address</button>
-          </div>
-          <p id="finishCopyMsg" class="hint" style="text-align:center"></p>
-          <p class="muted" style="margin:8px 0 0">Once it loads, <strong>bookmark it</strong> or use your browser menu to <strong>Add to Home Screen</strong> — then your incubator is one tap away, just like an app.</p>
-          <p class="muted" style="margin:8px 0 0;font-size:0.9em"><strong>Android tip:</strong> if that address won't load, some Android phones can't use <em>.local</em> names — open your Wi-Fi router's app or device list, find <em>your incubator's name</em>, and use its IP address (like <code>http://192.168.1.23:8000</code>) instead.</p>
-          <p class="muted" style="margin:8px 0 0;font-size:0.9em"><strong>Safety net:</strong> if the address doesn't work after a couple of minutes, the Wi-Fi join probably failed — your incubator will automatically turn its <em>{{ ap_ssid }}</em> setup network back on. Reconnect to it and we'll fix the Wi-Fi together; everything else stays saved.</p>
+      <!-- Found: auto-open countdown (cancellable) -->
+      <div id="finishFound" hidden>
+        <p class="found-title">Found it! 🎉</p>
+        <p class="muted" style="margin:0 0 10px">Your incubator is on your Wi-Fi at</p>
+        <p><code id="finishFoundUrl" class="found-url"></code></p>
+        <a id="finishLink" href="/" class="btn btn-primary btn-big" style="display:block;text-align:center;margin:12px 0 8px">Open my incubator</a>
+        <p id="finishCountdown" class="hint" style="text-align:center"></p>
+        <div class="button-row" style="justify-content:center">
+          <button type="button" id="finishStayBtn" class="btn btn-ghost btn-small">Stay on this page</button>
         </div>
+        <p id="finishIpNote" class="muted hint" hidden></p>
+        <p class="muted hint">Once it loads, use your browser menu to <strong>Add to Home Screen</strong> — then your incubator is one tap away, just like an app.</p>
+      </div>
+
+      <!-- Failed: the setup Wi-Fi came back -->
+      <div id="finishFailed" hidden>
+        <p class="found-title">Couldn't join <strong class="home-ssid">your Wi-Fi</strong></p>
+        <p class="muted">Usually that's the password. Reconnect your phone to <strong>{{ ap_ssid | default('Incubator') }}</strong> — the setup page opens again and we'll ask only for the Wi-Fi.</p>
+        <a href="/onboarding" class="btn btn-primary" style="display:block;text-align:center;margin-top:10px">Try again</a>
+      </div>
+
+      <!-- Manual fallback: nothing answered within the search window -->
+      <div id="finishManual" hidden>
+        <p class="found-title">Couldn't find it automatically</p>
+        <p class="muted">That's usually just the phone being slow to switch networks. Here's how to open your incubator by hand:</p>
+        <ol class="stack-list" style="margin:10px 0;padding-left:22px;text-align:left">
+          <li><strong>Reconnect your phone to your home Wi-Fi</strong> <strong id="finishHomeSsid"></strong> — the <em>{{ ap_ssid | default('Incubator') }}</em> setup network switches itself off.</li>
+          <li><strong>Open your browser</strong> (Safari or Chrome).</li>
+          <li><strong>Type this address into the address bar</strong> — tap it to select it:</li>
+        </ol>
+        <p style="text-align:center;margin:10px 0"><code id="finishUrl" class="found-url"></code></p>
+        <div class="button-row" style="justify-content:center">
+          <button type="button" id="finishCopyBtn" class="btn btn-secondary">Copy address</button>
+        </div>
+        <p id="finishCopyMsg" class="hint" style="text-align:center"></p>
+        <ul class="address-list" id="finishAddressList" aria-label="Other addresses to try"></ul>
+        <p class="muted" style="margin:8px 0 0;font-size:0.9em"><strong>Android tip:</strong> some Android phones can't open <em>.local</em> names — open your Wi-Fi router's app or device list, find <em>your incubator's name</em>, and use its IP address (like <code>http://192.168.1.23:8000</code>) instead.</p>
+        <p class="muted" style="margin:8px 0 0;font-size:0.9em"><strong>Safety net:</strong> if the join failed, your incubator turns its <em>{{ ap_ssid | default('Incubator') }}</em> setup network back on by itself. Reconnect to it and we'll fix the Wi-Fi together; everything else stays saved.</p>
       </div>
     </article>
   </div>
@@ -153,5 +192,5 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script src="/static/js/onboarding.js"></script>
+<script src="/static/js/onboarding.js?v={{ version | default('') }}"></script>
 {% endblock %}

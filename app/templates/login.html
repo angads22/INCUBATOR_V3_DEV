@@ -53,6 +53,6 @@
 </section>
 {% endblock %}
 {% block scripts %}
-<script src="/static/js/login.js"></script>
-<script src="/static/js/identity.js"></script>
+<script src="/static/js/login.js?v={{ version | default('') }}"></script>
+<script src="/static/js/identity.js?v={{ version | default('') }}"></script>
 {% endblock %}

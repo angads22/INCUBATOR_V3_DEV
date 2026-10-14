@@ -1,5 +1,5 @@
 <header class="topbar">
-  <div class="brand-lockup">
+  <a class="brand-lockup" href="/" aria-label="Life Loop home">
     <span class="brand-mark" aria-hidden="true">
       <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.4"
@@ -11,11 +11,11 @@
       <h1 class="brand">Life Loop</h1>
       <p class="eyebrow">Incubation, full circle</p>
     </div>
-  </div>
-  <nav class="nav-links">
+  </a>
+  <nav class="nav-links" aria-label="Primary">
     <a href="/">Home</a>
+    <a href="/hardware">Controls</a>
     <a href="/status">Status</a>
-    <a href="/testing">Testing</a>
     <a href="/help">Help</a>
   </nav>
   <div class="header-controls">
@@ -28,19 +28,39 @@
       <span data-unit="C">°C</span><span data-unit="F">°F</span>
     </button>
     <div class="profile-wrap">
-      <button id="profileBtn" class="btn btn-ghost profile-btn" type="button" aria-haspopup="true" aria-expanded="false">
+      <button id="profileBtn" class="btn btn-ghost profile-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Menu">
         <span class="profile-icon">&#9679;</span>
         <span class="profile-caret">&#9660;</span>
       </button>
       <div id="profileMenu" class="profile-dropdown" hidden>
         <a href="/settings">Settings</a>
-        <a href="/settings#network">Network Settings</a>
-        <a href="/settings#device">Device Settings</a>
+        <a href="/settings#network">Network settings</a>
+        <a href="/testing">Vision lab</a>
         <hr class="menu-divider" />
-        <a href="/onboarding">Setup / Onboarding</a>
+        <a href="/onboarding">Setup / change Wi-Fi</a>
         <hr class="menu-divider" />
         <button id="logoutBtn" class="menu-item menu-logout" type="button">Logout</button>
       </div>
     </div>
   </div>
 </header>
+
+{# Mobile bottom tab bar (shown ≤620px by layout.css; the top nav links hide). 44px targets, safe-area aware. #}
+<nav class="tabbar" aria-label="Primary (mobile)">
+  <a href="/" aria-label="Home">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10.5V20h5v-5h4v5h5v-9.5"/></svg>
+    <span>Home</span>
+  </a>
+  <a href="/hardware" aria-label="Controls">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h9M18 7h2M4 17h4M13 17h7"/><circle cx="15.5" cy="7" r="2.5"/><circle cx="10.5" cy="17" r="2.5"/></svg>
+    <span>Controls</span>
+  </a>
+  <a href="/status" aria-label="Status">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>
+    <span>Status</span>
+  </a>
+  <a href="/help" aria-label="Help">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.6a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1 .9-1 1.7"/><path d="M12 17h.01"/></svg>
+    <span>Help</span>
+  </a>
+</nav>

@@ -38,14 +38,15 @@ def _fail_join(client, ssid="HomeNet"):
         main.wifi_service.connect_client = orig
 
 
-# ── Wizard structure: 6 steps, inline password ───────────────────────────────
+# ── Wizard structure: 2 numbered steps + a connecting screen, inline password ─
 
-def test_wizard_is_six_steps_with_inline_password(client):
+def test_wizard_is_two_steps_with_inline_password(client):
     html = client.get("/onboarding").text
-    assert 'data-step="5"' in html and 'data-step="6"' not in html
+    # Panes: 0 "not in setup mode", 1 Wi-Fi, 2 finish up, 3 connecting — no more.
+    assert 'data-step="3"' in html and 'data-step="4"' not in html
     # Password input lives INSIDE the Wi-Fi step card, revealed on demand.
     assert "wifiPasswordWrap" in html
-    assert "Step 1 of 6" in html
+    assert "Step 1 of 2" in html
 
 
 def test_fail_fast_checks_exist_in_wizard_js():
