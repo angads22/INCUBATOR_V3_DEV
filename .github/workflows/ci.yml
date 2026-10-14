@@ -70,6 +70,7 @@ jobs:
         run: |
           echo "CI_MARKER=keep" | sudo tee -a /etc/incubator.env >/dev/null
           sudo INCUBATOR_IMAGE_BUILD=1 ./install.sh /tmp/incubator-ci --no-tuning --skip-packages
-          grep -q '^CI_MARKER=keep' /etc/incubator.env
-          test "$(grep -c '^GPIO_BACKEND=' /etc/incubator.env)" = "1"
+          # /etc/incubator.env is root-only (0600): read it with sudo.
+          sudo grep -q '^CI_MARKER=keep' /etc/incubator.env
+          test "$(sudo grep -c '^GPIO_BACKEND=' /etc/incubator.env)" = "1"
           sudo scripts/verify_install.sh /tmp/incubator-ci
