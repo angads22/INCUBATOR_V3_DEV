@@ -145,7 +145,10 @@ class AlertService:
             # to act on these; the farmer needs to HEAR about it too, so an
             # integrity failure raises its own alarm rather than being silently
             # averaged into a healthy-looking history.
-            integrity_fault = self._integrity_fault(reading)
+            # The control daemon already decided a reading is untrustworthy
+            # (latched / implausible / heat runaway) and reports why; show the
+            # farmer THAT message, not a generic "sensor not responding".
+            integrity_fault = str(reading.get("sensor_fault") or "") or self._integrity_fault(reading)
             if integrity_fault:
                 self._range_counts.clear()
                 events += self._raise("sensor_faulty")

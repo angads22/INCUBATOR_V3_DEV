@@ -288,3 +288,12 @@ def test_gzip_skips_the_mjpeg_stream():
     with TestClient(app) as c:
         r = c.get("/s", headers={"Accept-Encoding": "gzip"})
         assert r.headers.get("content-encoding") is None
+
+
+def test_daemon_sensor_fault_is_shown_as_untrustworthy_not_offline():
+    alerts = AlertService(gpio=_svc())
+    reading = {"ok": False, "temperature_c": None, "humidity_pct": None, "source": "control-daemon",
+               "sensor_fault": "heat_runaway", "mock": False}
+    events = alerts.record_reading(reading, {"alarm_enabled": "false"})
+    types = {e["type"] for e in events}
+    assert "sensor_faulty" in types and "sensor_offline" not in types
