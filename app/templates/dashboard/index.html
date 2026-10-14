@@ -1,6 +1,13 @@
 {% extends 'base.html' %}
+{% block title %}Home · Life Loop Incubator{% endblock %}
 {% block content %}
-{% with eyebrow='Home', title='Incubator Home', subtitle='Local-first appliance dashboard for setup, health, and daily operation.' %}{% include 'partials/section_header.html' %}{% endwith %}
+{#
+  Display fallbacks: an older back-end still sends "Pi Zero Incubator" /
+  "PI-UNCLAIMED" for a fresh device; show the friendlier appliance defaults.
+#}
+{% set shown_device_name = home_summary.device_name if home_summary.device_name and home_summary.device_name != 'Pi Zero Incubator' else 'Incubator' %}
+{% set shown_device_id = home_summary.device_id if home_summary.device_id and home_summary.device_id != 'PI-UNCLAIMED' else 'unclaimed' %}
+{% with eyebrow='Home', title=shown_device_name, subtitle='Live readings, what to do next, and the controls you use every day.' %}{% include 'partials/section_header.html' %}{% endwith %}
 
 <div id="alertBanner" class="alert-banner"{% if not alerts.active %} hidden{% endif %}>
   <div>
@@ -9,6 +16,22 @@
   </div>
   <button id="alertSilenceBtn" class="btn btn-secondary" type="button"{% if not alerts.alarm_on %} hidden{% endif %}>Silence alarm</button>
 </div>
+
+{% if home_summary.setup_complete %}
+<!-- First-run welcome (dismissible, remembered per browser). Replaces the old
+     in-wizard "quick tour" so setup stays two steps. -->
+<article id="welcomeCard" class="card welcome-card" hidden>
+  <h3>Welcome to your incubator 🐣</h3>
+  <ul class="stack-list">
+    <li><strong>The ring</strong> on this page is the incubation day — set the day in Settings and it fills up as hatch day approaches. Temperature and humidity update live below it.</li>
+    <li><strong>Controls</strong> (bottom bar or top menu) has the lock, door, egg turner, candling light and alarm test. Actions that affect the eggs ask first.</li>
+    <li><strong>Finding this page again:</strong> {% if home_summary.access_url %}open <code>{{ home_summary.access_url }}</code>{% else %}use the address in Settings → Device{% endif %} from any phone or laptop on your Wi-Fi, and use <em>Add to Home Screen</em> to make it an app.</li>
+  </ul>
+  <div class="button-row">
+    <button id="welcomeDismissBtn" class="btn btn-primary" type="button">Got it</button>
+  </div>
+</article>
+{% endif %}
 
 {% if home_summary.access_url %}
 <div id="accessNotice" class="alert-banner" style="background:rgba(58,119,119,.12);border:1px solid var(--brand,#3a7)" hidden>
@@ -21,24 +44,6 @@
     <button id="accessDismissBtn" class="btn btn-ghost" type="button">Got it</button>
   </div>
 </div>
-<script>
-  (function () {
-    var n = document.getElementById('accessNotice');
-    if (!n) return;
-    if (localStorage.getItem('incubatorAccessNoticeDismissed') !== '1') n.removeAttribute('hidden');
-    var url = (document.getElementById('accessUrl') || {}).textContent || '';
-    var copy = document.getElementById('accessCopyBtn');
-    if (copy) copy.addEventListener('click', async function () {
-      try { await navigator.clipboard.writeText(url); copy.textContent = 'Copied!'; }
-      catch (e) { copy.textContent = url; }
-    });
-    var dismiss = document.getElementById('accessDismissBtn');
-    if (dismiss) dismiss.addEventListener('click', function () {
-      localStorage.setItem('incubatorAccessNoticeDismissed', '1');
-      n.setAttribute('hidden', '');
-    });
-  })();
-</script>
 {% endif %}
 
 <section class="dashboard-grid home-dashboard appliance-home">
@@ -49,8 +54,8 @@
     {% set days_left = (inc_total - inc_day) if inc_total > inc_day else 0 %}
     <article class="card home-hero">
       <p class="eyebrow">Device · Life loop</p>
-      <p class="device-name">{{ home_summary.device_name }}</p>
-      <p class="muted">Device ID: {{ home_summary.device_id }}</p>
+      <p class="device-name">{{ shown_device_name }}</p>
+      <p class="muted">Device ID: {{ shown_device_id }}</p>
 
       <div class="loop-ring" style="--pct: {{ inc_pct }}" role="img"
            aria-label="Incubation day {{ inc_day }} of {{ inc_total }}">
@@ -60,7 +65,7 @@
         </div>
       </div>
       <p class="loop-caption">
-        {% if inc_day == 0 %}Set the incubation day in Settings to start the loop.
+        {% if inc_day == 0 %}Set the incubation day in <a href="/settings">Settings</a> to start the loop.
         {% elif days_left > 0 %}{{ days_left }} day{{ 's' if days_left != 1 else '' }} to hatch.
         {% else %}Hatch window — keep the lockdown humidity high.{% endif %}
       </p>
@@ -76,8 +81,8 @@
       <p class="muted">{{ home_summary.state_detail }}</p>
       <div class="chip-row">
         {% with label=('Setup complete' if home_summary.setup_complete else 'Setup pending'), tone=('ok' if home_summary.setup_complete else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
-        {% with label=('Claimed' if home_summary.is_claimed else 'Using without account'), tone=('ok' if home_summary.is_claimed else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
-        {% with label=('Hotspot active' if home_summary.hotspot_active else ('Setup mode' if home_summary.setup_mode else 'Normal')), tone=('warn' if (home_summary.hotspot_active or home_summary.setup_mode) else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label=('Login protected' if home_summary.is_claimed else 'No login set'), tone=('ok' if home_summary.is_claimed else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label=('Setup Wi-Fi on' if home_summary.hotspot_active else ('Setup mode' if home_summary.setup_mode else 'Normal')), tone=('warn' if (home_summary.hotspot_active or home_summary.setup_mode) else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
       </div>
     </article>
 
@@ -88,8 +93,8 @@
       <a class="btn btn-primary next-step-btn" href="{{ next_step.cta_href }}">{{ next_step.cta_label }}</a>
     </article>
 
-    <article class="card">
-      <h3>Overview / incubator health</h3>
+    <article class="card home-metrics">
+      <h3>Right now</h3>
       <div class="metrics-grid compact-metrics">
         {% with label='Temperature', value=('%.1f°C'|format(sensor.temperature_c) if sensor.temperature_c is not none else '—'), hint='Target %.1f°C'|format(live.target_temp_c), value_id='liveTemp', temp_c=sensor.temperature_c %}{% include 'partials/metric_card.html' %}{% endwith %}
         {% with label='Humidity', value=('%.1f%%'|format(sensor.humidity_pct) if sensor.humidity_pct is not none else '—'), hint='Target %.1f%%'|format(live.target_humidity_pct), value_id='liveHum' %}{% include 'partials/metric_card.html' %}{% endwith %}
@@ -103,7 +108,7 @@
         {% with label=('Fan on' if live.fan else 'Fan off'), tone=('ok' if live.fan else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
         {% with label=('Turner on' if live.turner else 'Turner off'), tone=('ok' if live.turner else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
       </div>
-      <p class="muted">Live sensor data from DHT22. Readings update every {{ poll_interval }}s. <span id="updatedAgo"></span></p>
+      <p class="muted">Live readings update every {{ poll_interval }}s. <span id="updatedAgo"></span></p>
     </article>
   </div>
 
@@ -111,7 +116,7 @@
     {% if camera_stream_enabled %}
     <article class="card">
       <h3>Live camera</h3>
-      <img src="/api/camera/stream" alt="Live incubator camera preview"
+      <img src="/api/camera/stream" alt="Live incubator camera preview" loading="lazy"
            style="width:100%;border-radius:var(--radius-sm);border:1px solid var(--line);display:block" />
       <p class="muted hint">Low-resolution preview (~1 fps). Full-resolution stills via the camera API.</p>
     </article>
@@ -130,22 +135,22 @@
     </article>
 
     <article class="card">
-      <h3>Setup / onboarding status</h3>
+      <h3>Setup &amp; account</h3>
       <ul class="stack-list">
-        <li>Hotspot: <strong>{{ 'Active' if home_summary.hotspot_active else 'Off' }}</strong>{% if home_summary.hotspot_active %} — SSID: <code>{{ home_summary.ap_ssid }}</code>{% endif %}</li>
-        <li>Setup completion: <strong>{{ 'Complete' if home_summary.setup_complete else 'Pending' }}</strong></li>
-        <li>Account/claim state: <strong>{{ 'Claimed' if home_summary.is_claimed else 'Optional — not linked yet' }}</strong></li>
+        <li>Setup Wi-Fi: <strong>{{ 'On' if home_summary.hotspot_active else 'Off' }}</strong>{% if home_summary.hotspot_active %} — network <code>{{ home_summary.ap_ssid }}</code>{% endif %}</li>
+        <li>Setup: <strong>{{ 'Complete' if home_summary.setup_complete else 'Pending' }}</strong></li>
+        <li>Login: <strong>{{ 'Protected' if home_summary.is_claimed else 'Not set — anyone on your Wi-Fi can change settings' }}</strong></li>
       </ul>
-      <p class="muted">Local setup works through hotspot onboarding and does not require internet.</p>
+      <p class="muted">Setup works over the incubator's own Wi-Fi and needs no internet. Change Wi-Fi any time from the menu → <a href="/onboarding">Setup / change Wi-Fi</a>.</p>
     </article>
 
     <article class="card">
-      <h3>Network / connectivity</h3>
+      <h3>Network</h3>
       <p><strong>{{ home_summary.network_state }}</strong></p>
       <p class="muted">{{ home_summary.network_detail }}</p>
       <div class="chip-row">
         {% with label='Local-first', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
-        {% with label='Domain optional', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
+        {% with label='No cloud needed', tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
         {% with label='Vision: ' ~ vision_backend, tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}
       </div>
     </article>
@@ -159,7 +164,7 @@
         <li class="muted">No recent activity logged yet.</li>
         {% endfor %}
       </ul>
-      <p class="muted">Version {{ version }}</p>
+      <p class="muted">Version {{ version }} · updates install automatically</p>
     </article>
 
     <article class="card future-card">
@@ -174,11 +179,11 @@
       {% else %}
       <p class="muted">No AI insight available yet.</p>
       {% endif %}
-      <p class="muted hint">Connect a vision model via VISION_BACKEND for egg candling analysis.</p>
+      <p class="muted hint">Egg candling analysis lives in the <a href="/testing">Vision lab</a>.</p>
     </article>
   </div>
 </section>
 {% endblock %}
 {% block scripts %}
-<script src="/static/js/dashboard.js"></script>
+<script src="/static/js/dashboard.js?v={{ version | default('') }}"></script>
 {% endblock %}

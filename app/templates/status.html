@@ -1,9 +1,10 @@
 {% extends 'base.html' %}
+{% block title %}Status · Life Loop Incubator{% endblock %}
 {% block content %}
-{% with eyebrow='Operations', title='System Status', subtitle='Current hardware state, sensor readings, and safety posture.' %}{% include 'partials/section_header.html' %}{% endwith %}
+{% with eyebrow='Operations', title='System status', subtitle='Current hardware state, sensor readings, and safety posture.' %}{% include 'partials/section_header.html' %}{% endwith %}
 <section class="two-col">
   <article class="card">
-    <h3>Runtime Health</h3>
+    <h3>Runtime health</h3>
     <div class="chip-row">
       {% with label='Hardware: ' ~ health.hardware, tone=('ok' if health.hardware == 'online' else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
       {% with label='Sensors: ' ~ health.sensors, tone=('ok' if health.sensors == 'online' else 'warn') %}{% include 'partials/status_chip.html' %}{% endwith %}
@@ -11,27 +12,36 @@
       {% with label='Setup mode: ' ~ health.setup_mode, tone=('warn' if health.setup_mode == 'on' else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
       {% with label='GPIO: ' ~ ('mock' if health.gpio_mock else 'live'), tone=('warn' if health.gpio_mock else 'ok') %}{% include 'partials/status_chip.html' %}{% endwith %}
     </div>
+    {# Board / backend chips — only once the back-end reports them. #}
+    {% set board_label = (health.board.model if health.board is mapping and health.board.model is defined else health.board) if health.board is defined and health.board else '' %}
+    {% if board_label or (health.gpio_backend is defined and health.gpio_backend) or (health.sensor_backend is defined and health.sensor_backend) %}
+    <div class="chip-row" style="margin-top:8px">
+      {% if board_label %}{% with label='Board: ' ~ board_label, tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}{% endif %}
+      {% if health.gpio_backend is defined and health.gpio_backend %}{% with label='GPIO driver: ' ~ health.gpio_backend, tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}{% endif %}
+      {% if health.sensor_backend is defined and health.sensor_backend %}{% with label='Sensor: ' ~ health.sensor_backend, tone='info' %}{% include 'partials/status_chip.html' %}{% endwith %}{% endif %}
+    </div>
+    {% endif %}
     <p class="muted">Camera: <strong>{{ health.camera_backend }}</strong> &nbsp;|&nbsp; Vision: <strong>{{ health.vision_backend }}</strong></p>
-    <p class="muted">Version {{ version }}</p>
+    <p class="muted">Version {{ version }} — updates install automatically while online.</p>
   </article>
 
   <article class="card">
-    <h3>Live Sensor Reading</h3>
+    <h3>Live sensor reading</h3>
     {% if environment and environment.has_reading %}
     <div class="metrics-grid compact-metrics">
       {% with label='Temperature', value='%.2f°C'|format(environment.temperature_c), hint=('Simulated' if environment.mock else ('Live' if environment.online else 'Last known')), temp_c=environment.temperature_c %}{% include 'partials/metric_card.html' %}{% endwith %}
       {% with label='Humidity', value='%.1f%%'|format(environment.humidity_pct), hint=('Simulated' if environment.mock else ('Live' if environment.online else 'Last known')) %}{% include 'partials/metric_card.html' %}{% endwith %}
     </div>
     {% if not environment.online %}
-    <p class="muted">Sensor is offline — showing the last known reading{% if environment.read_at %} from {{ environment.read_at }}{% endif %}. Check the DHT22 sensor wiring (data pin GPIO{{ health.dht_pin }}).</p>
+    <p class="muted">Sensor is offline — showing the last known reading{% if environment.read_at %} from {{ environment.read_at }}{% endif %}. Check the sensor wiring{% if health.dht_pin %} (data pin {{ health.dht_pin }}){% endif %}.</p>
     {% endif %}
     {% else %}
-    <p class="muted">No sensor reading available yet. Check the DHT22 sensor wiring (data pin GPIO{{ health.dht_pin }}).</p>
+    <p class="muted">No sensor reading available yet. Check the sensor wiring{% if health.dht_pin %} (data pin {{ health.dht_pin }}){% endif %}.</p>
     {% endif %}
   </article>
 
   <article class="card">
-    <h3>Output State</h3>
+    <h3>Output state</h3>
     {% if hw_state %}
     <div class="chip-row">
       {% with label=('Heater ON' if hw_state.heater else 'Heater OFF'), tone=('ok' if hw_state.heater else 'info') %}{% include 'partials/status_chip.html' %}{% endwith %}
@@ -47,12 +57,12 @@
   </article>
 
   <article class="card">
-    <h3>Operator Guidance</h3>
+    <h3>Where to go next</h3>
     <ul class="stack-list">
-      <li>Use <a href="/hardware">Hardware</a> for immediate manual commands.</li>
-      <li>Use <a href="/settings">Settings</a> to adjust targets and toggles.</li>
-      <li>Use <strong>POST /api/vision/candle</strong> to trigger automated egg candling.</li>
-      <li>Review AI panel insights from the dashboard for advisory context.</li>
+      <li><a href="/hardware">Controls</a> — lock, door, egg turner, candling light, alarm test.</li>
+      <li><a href="/settings">Settings</a> — targets, alert tolerances, Wi-Fi, device info and factory reset.</li>
+      <li><a href="/testing">Vision lab</a> — candle eggs and track development with the camera.</li>
+      <li><a href="/help">Help</a> — what the lights and sounds mean, and troubleshooting.</li>
     </ul>
   </article>
 </section>

@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% block content %}
-{% with eyebrow='Testing', title='Vision Model Testing', subtitle='Run the local model on egg images, estimate how far along each egg is, and measure predicted vs actual.' %}{% include 'partials/section_header.html' %}{% endwith %}
+{% with eyebrow='Vision lab', title='Vision Model Testing', subtitle='Run the local model on egg images, estimate how far along each egg is, and measure predicted vs actual.' %}{% include 'partials/section_header.html' %}{% endwith %}
 
 <section class="two-col">
   <div class="panel-group">
@@ -119,7 +119,7 @@
 </section>
 {% endblock %}
 {% block scripts %}
-<script src="/static/js/testing.js"></script>
+<script src="/static/js/testing.js?v={{ version | default('') }}"></script>
 <script>
   // Development / growth tracking. Self-contained.
   (function () {

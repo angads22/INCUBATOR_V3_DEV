@@ -1,38 +1,49 @@
+// Shared page chrome: profile menu, API helpers, nav state, theme + unit
+// toggles, update popup. Every element lookup is guarded so this file never
+// throws on a page that lacks a given control (login, onboarding, ...).
+
 // ── Profile dropdown with animated open/close ────────────────────────
 const profileBtn  = document.getElementById('profileBtn');
 const profileMenu = document.getElementById('profileMenu');
 
 function openMenu() {
+  if (!profileMenu) return;
   profileMenu.hidden = false;
   // Double rAF: let browser paint the element before the transition fires
   requestAnimationFrame(() => requestAnimationFrame(() => {
     profileMenu.classList.add('open');
   }));
-  profileBtn.setAttribute('aria-expanded', 'true');
+  if (profileBtn) profileBtn.setAttribute('aria-expanded', 'true');
 }
 
 function closeMenu() {
+  if (!profileMenu) return;
   profileMenu.classList.remove('open');
   profileMenu.addEventListener('transitionend', () => {
     profileMenu.hidden = true;
   }, { once: true });
-  profileBtn.setAttribute('aria-expanded', 'false');
+  // Reduced-motion users get no transitionend; hide on a timer as a fallback.
+  setTimeout(() => { if (!profileMenu.classList.contains('open')) profileMenu.hidden = true; }, 260);
+  if (profileBtn) profileBtn.setAttribute('aria-expanded', 'false');
 }
 
-profileBtn?.addEventListener('click', () => {
-  profileMenu.classList.contains('open') ? closeMenu() : openMenu();
-});
-
-document.addEventListener('click', (e) => {
-  if (
-    profileMenu &&
-    profileMenu.classList.contains('open') &&
-    !profileBtn?.contains(e.target) &&
-    !profileMenu.contains(e.target)
-  ) {
-    closeMenu();
-  }
-});
+if (profileBtn && profileMenu) {
+  profileBtn.addEventListener('click', () => {
+    profileMenu.classList.contains('open') ? closeMenu() : openMenu();
+  });
+  document.addEventListener('click', (e) => {
+    if (
+      profileMenu.classList.contains('open') &&
+      !profileBtn.contains(e.target) &&
+      !profileMenu.contains(e.target)
+    ) {
+      closeMenu();
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && profileMenu.classList.contains('open')) closeMenu();
+  });
+}
 
 // ── Shared API helpers ────────────────────────────────────────────────
 // All page scripts use these instead of raw fetch so the user always sees
@@ -48,6 +59,9 @@ async function apiRequest(url, options = {}) {
   try { data = await res.json(); } catch { /* non-JSON response */ }
   if (res.status === 401) {
     return { ok: false, status: 401, data, message: 'Please log in to do that.' };
+  }
+  if (res.status === 404) {
+    return { ok: false, status: 404, data, message: 'This feature is not available on this software version.' };
   }
   if (!res.ok || (data && data.ok === false)) {
     const detail = data && (data.detail ?? data.error);
@@ -66,20 +80,54 @@ window.apiPost = (url, body) => apiRequest(url, {
   body: JSON.stringify(body ?? {}),
 });
 
-// ── Highlight the active nav link ─────────────────────────────────────
-const navPath = window.location.pathname;
-document.querySelectorAll('.nav-links a').forEach((a) => {
-  const href = a.getAttribute('href');
-  if (href === navPath || (href !== '/' && navPath.startsWith(href))) {
-    a.classList.add('active');
+// Copy helper shared by pages that show the device address. The app is served
+// over plain http, where navigator.clipboard is unavailable, so fall back to
+// the legacy execCommand path; resolves true/false, never throws.
+window.copyTextToClipboard = async (text) => {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* fall through to the legacy path */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, text.length);  // iOS Safari needs the range
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    ta.remove();
+    return !!ok;
+  } catch {
+    return false;
   }
-});
+};
+
+// ── Highlight the active nav link (top nav + mobile tab bar) ──────────
+(() => {
+  const navPath = window.location.pathname;
+  document.querySelectorAll('.nav-links a, .tabbar a').forEach((a) => {
+    const href = a.getAttribute('href');
+    if (!href) return;
+    if (href === navPath || (href !== '/' && navPath.startsWith(href))) {
+      a.classList.add('active');
+      a.setAttribute('aria-current', 'page');
+    }
+  });
+})();
 
 // ── Logout ────────────────────────────────────────────────────────────
 const logoutBtn = document.getElementById('logoutBtn');
 if (logoutBtn) {
   logoutBtn.addEventListener('click', async () => {
-    await fetch('/api/logout', { method: 'POST' });
+    try { await fetch('/api/logout', { method: 'POST' }); } catch { /* go to login anyway */ }
     window.location.href = '/login';
   });
 }
@@ -92,6 +140,10 @@ if (logoutBtn) {
   const UNIT_KEY = 'lifeloop-unit';
   const THEMES = ['clay', 'sage', 'harvest'];
   const root = document.documentElement;
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+  };
 
   // -- Accent theme --
   function applyTheme(name) {
@@ -101,17 +153,17 @@ if (logoutBtn) {
       dot.classList.toggle('active', dot.dataset.themeChoice === theme);
     });
   }
-  applyTheme(localStorage.getItem(THEME_KEY) || 'clay');
+  applyTheme(store.get(THEME_KEY) || 'clay');
   document.querySelectorAll('.theme-dot').forEach((dot) => {
     dot.addEventListener('click', () => {
       const choice = dot.dataset.themeChoice;
-      localStorage.setItem(THEME_KEY, choice);
+      store.set(THEME_KEY, choice);
       applyTheme(choice);
     });
   });
 
   // -- Temperature unit (°C / °F) --
-  const getUnit = () => (localStorage.getItem(UNIT_KEY) === 'F' ? 'F' : 'C');
+  const getUnit = () => (store.get(UNIT_KEY) === 'F' ? 'F' : 'C');
   const cToF = (c) => (c * 9) / 5 + 32;
 
   // Shared formatter so live-polling scripts render in the chosen unit too.
@@ -134,7 +186,7 @@ if (logoutBtn) {
   applyTempUnit();
 
   document.getElementById('unitToggle')?.addEventListener('click', () => {
-    localStorage.setItem(UNIT_KEY, getUnit() === 'F' ? 'C' : 'F');
+    store.set(UNIT_KEY, getUnit() === 'F' ? 'C' : 'F');
     applyTempUnit();
   });
 })();
@@ -148,26 +200,29 @@ if (logoutBtn) {
   const popup = document.getElementById('updatePopup');
   if (!popup) return;
   const KEY = 'lifeloop-update-dismissed';
+  const dismissed = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
 
   fetch('/api/update-check')
     .then((r) => r.json())
     .then((d) => {
       if (!d || !d.update_available || !d.latest) return;
-      if (localStorage.getItem(KEY) === d.latest) return;
+      if (dismissed() === d.latest) return;
 
-      document.getElementById('updateVersion').textContent = d.latest;
+      const ver = document.getElementById('updateVersion');
+      if (ver) ver.textContent = d.latest;
       const notes = document.getElementById('updateNotes');
-      if (d.notes) { notes.textContent = d.notes; notes.hidden = false; }
+      if (notes && d.notes) { notes.textContent = d.notes; notes.hidden = false; }
       const link = document.getElementById('updateLink');
-      if (d.url) link.href = d.url; else link.hidden = true;
+      if (link) { if (d.url) link.href = d.url; else link.hidden = true; }
 
       popup.hidden = false;
       requestAnimationFrame(() => requestAnimationFrame(() => popup.classList.add('show')));
 
       document.getElementById('updateDismiss')?.addEventListener('click', () => {
-        localStorage.setItem(KEY, d.latest);
+        try { localStorage.setItem(KEY, d.latest); } catch { /* ignore */ }
         popup.classList.remove('show');
         popup.addEventListener('transitionend', () => { popup.hidden = true; }, { once: true });
+        setTimeout(() => { popup.hidden = true; }, 320);
       });
     })
     .catch(() => { /* offline / unavailable — stay quiet */ });

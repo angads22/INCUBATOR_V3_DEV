@@ -1,7 +1,32 @@
 {% extends 'base.html' %}
+{% block title %}Settings · Life Loop Incubator{% endblock %}
 {% block content %}
-{% with eyebrow='Configuration', title='Incubator Settings', subtitle='Control defaults and safety preferences.' %}{% include 'partials/section_header.html' %}{% endwith %}
+{% with eyebrow='Configuration', title='Settings', subtitle='Targets, safety preferences, Wi-Fi, login and this device.' %}{% include 'partials/section_header.html' %}{% endwith %}
 <section class="panel-group">
+  <form id="settings-form" class="card form-panel">
+    <h3 id="controls">Incubation targets &amp; controls</h3>
+    <div class="form-grid">
+      <label>Target temp (°C, 20–42)<input type="number" step="0.1" min="20" max="42" name="target_temp_c" value="{{ settings.target_temp_c }}" inputmode="decimal" required></label>
+      <label>Target humidity (%, 0–100)<input type="number" step="0.1" min="0" max="100" name="target_humidity_pct" value="{{ settings.target_humidity_pct }}" inputmode="decimal" required></label>
+      <label>Alert tolerance — temp (±°C)<input type="number" step="0.1" min="0.1" max="10" name="alert_temp_tolerance_c" value="{{ settings.get('alert_temp_tolerance_c', '1.0') }}" inputmode="decimal" required></label>
+      <label>Alert tolerance — humidity (±%)<input type="number" step="0.5" min="1" max="50" name="alert_humidity_tolerance_pct" value="{{ settings.get('alert_humidity_tolerance_pct', '10') }}" inputmode="decimal" required></label>
+      <label>Incubation day (0–21)<input type="number" step="1" min="0" max="21" name="incubation_day" value="{{ settings.get('incubation_day', '0') }}" inputmode="numeric"></label>
+    </div>
+    <p class="muted">The incubation day drives the day-progress loop ring on Home (21-day cycle).</p>
+    <p class="muted">Readings outside target ± tolerance raise an alert and sound the buzzer (when the alarm is enabled).</p>
+    <div class="toggle-grid">
+      <label class="check-label"><input type="checkbox" name="heater_enabled" {% if settings.heater_enabled == 'true' %}checked{% endif %}> Heater enabled</label>
+      <label class="check-label"><input type="checkbox" name="fan_enabled" {% if settings.fan_enabled == 'true' %}checked{% endif %}> Fan enabled</label>
+      <label class="check-label"><input type="checkbox" name="turner_enabled" {% if settings.turner_enabled == 'true' %}checked{% endif %}> Turner enabled</label>
+      <label class="check-label"><input type="checkbox" name="alarm_enabled" {% if settings.alarm_enabled == 'true' %}checked{% endif %}> Alarm enabled</label>
+    </div>
+    <div class="button-row">
+      <button class="btn btn-primary" type="submit">Save settings</button>
+      <span class="muted">v{{ version }}</span>
+    </div>
+    <p id="settings-msg" class="hint" aria-live="polite"></p>
+  </form>
+
   <article id="network" class="card form-panel">
     <h3>Network</h3>
     <p id="network-status" class="muted">Checking connection…</p>
@@ -11,12 +36,12 @@
     <div id="network-wifi-list" class="wifi-list"></div>
     <div id="network-connect-form" hidden>
       <label>Wi-Fi password for <strong id="network-selected-ssid"></strong>
-        <input id="network-wifi-password" type="password" autocomplete="off">
+        <input id="network-wifi-password" type="password" autocomplete="off" autocapitalize="none">
       </label>
       <button id="wifi-connect-btn" class="btn btn-primary" type="button">Connect</button>
     </div>
-    <p id="network-msg" class="hint"></p>
-    <p class="muted">Switching networks can briefly drop this page — if it stops responding, join the new Wi-Fi and reload.</p>
+    <p id="network-msg" class="hint" aria-live="polite"></p>
+    <p class="muted">Switching networks can briefly drop this page — if it stops responding, join the new Wi-Fi and reload. Prefer the guided flow? Use <a href="/onboarding">Setup / change Wi-Fi</a> from the menu.</p>
   </article>
 
   <article id="setup-network" class="card form-panel">
@@ -28,8 +53,9 @@
     <div class="button-row">
       <button id="ap-password-save" class="btn btn-primary" type="button">Save</button>
     </div>
-    <p id="ap-password-msg" class="hint"></p>
+    <p id="ap-password-msg" class="hint" aria-live="polite"></p>
   </article>
+
   <article id="linked-accounts" class="card form-panel">
     <h3>Linked sign-in accounts</h3>
     <p class="muted">Link a Google or Apple account so you can sign in without a password. Your username &amp; password keep working either way.</p>
@@ -58,64 +84,73 @@
     <p class="muted" id="identityUnavailableNote" hidden>Provider sign-in isn't configured for this device.</p>
   </article>
 
-  <form id="settings-form" class="card form-panel">
-    <h3 id="device">Device Controls</h3>
-    <div class="form-grid">
-      <label>Target Temp (°C, 20–42)<input type="number" step="0.1" min="20" max="42" name="target_temp_c" value="{{ settings.target_temp_c }}" required></label>
-      <label>Target Humidity (%, 0–100)<input type="number" step="0.1" min="0" max="100" name="target_humidity_pct" value="{{ settings.target_humidity_pct }}" required></label>
-      <label>Alert tolerance — temp (±°C)<input type="number" step="0.1" min="0.1" max="10" name="alert_temp_tolerance_c" value="{{ settings.get('alert_temp_tolerance_c', '1.0') }}" required></label>
-      <label>Alert tolerance — humidity (±%)<input type="number" step="0.5" min="1" max="50" name="alert_humidity_tolerance_pct" value="{{ settings.get('alert_humidity_tolerance_pct', '10') }}" required></label>
-      <label>Incubation day (0–21)<input type="number" step="1" min="0" max="21" name="incubation_day" value="{{ settings.get('incubation_day', '0') }}"></label>
+  <article id="device" class="card form-panel">
+    <h3>Device</h3>
+    <p class="muted">What this incubator runs on, and how to reach it.</p>
+    <div class="chip-row device-chips" id="deviceInfoChips" aria-live="polite">
+      <span class="status-chip status-info">Loading…</span>
     </div>
-    <p class="muted">The incubation day drives the day-progress loop ring on the dashboard (21-day cycle).</p>
-    <p class="muted">Readings outside target ± tolerance raise an alert and sound the buzzer (when the alarm is enabled).</p>
-    <div class="toggle-grid">
-      <label><input type="checkbox" name="heater_enabled" {% if settings.heater_enabled == 'true' %}checked{% endif %}> Heater Enabled</label>
-      <label><input type="checkbox" name="fan_enabled" {% if settings.fan_enabled == 'true' %}checked{% endif %}> Fan Enabled</label>
-      <label><input type="checkbox" name="turner_enabled" {% if settings.turner_enabled == 'true' %}checked{% endif %}> Turner Enabled</label>
-      <label><input type="checkbox" name="alarm_enabled" {% if settings.alarm_enabled == 'true' %}checked{% endif %}> Alarm Enabled</label>
+    <ul class="stack-list" id="deviceAddressList" hidden></ul>
+    <p id="deviceInfoMsg" class="hint"></p>
+
+    <div class="button-row" style="flex-wrap:wrap;gap:10px;margin-top:6px">
+      <button id="restartSetupBtn" class="btn btn-secondary" type="button">Restart setup mode</button>
+      <button id="factoryResetBtn" class="btn btn-ghost" type="button" style="color:var(--danger);border-color:rgba(176,73,42,.4)">Factory reset…</button>
     </div>
-    <div class="button-row">
-      <button class="btn btn-primary" type="submit">Save Settings</button>
-      <span class="muted">v{{ version }}</span>
+    <p class="muted hint">Setup mode starts the incubator's own Wi-Fi so a phone can change the network. The setup button on the device does the same: hold 4&nbsp;s for setup mode, 15&nbsp;s for a factory reset.</p>
+    <p id="deviceActionMsg" class="hint" aria-live="polite"></p>
+
+    <div id="factoryResetConfirm" class="danger-zone" hidden>
+      <p style="margin:0"><strong>Factory reset wipes:</strong> the device name, every login, the saved Wi-Fi, linked accounts and all settings. Eggs are not affected — but the heater and fan return to their defaults. The incubator then restarts in setup mode.</p>
+      <label>Type <code>RESET</code> to confirm
+        <input id="factoryResetInput" type="text" autocomplete="off" autocapitalize="characters" placeholder="RESET" />
+      </label>
+      <div class="button-row">
+        <button id="factoryResetCancel" class="btn btn-ghost" type="button">Cancel</button>
+        <button id="factoryResetGo" class="btn btn-danger" type="button" disabled>Erase and restart setup</button>
+      </div>
     </div>
-    <p id="settings-msg" class="hint"></p>
-  </form>
+  </article>
 </section>
 {% endblock %}
 {% block scripts %}
-<script src="/static/js/settings.js"></script>
-<script src="/static/js/network.js"></script>
+<script src="/static/js/settings.js?v={{ version | default('') }}"></script>
+<script src="/static/js/network.js?v={{ version | default('') }}"></script>
 <script>document.body.dataset.identityIntent = 'link';</script>
-<script src="/static/js/identity.js"></script>
+<script src="/static/js/identity.js?v={{ version | default('') }}"></script>
 <script>
   // Setup-AP password (optional, post-setup). Self-contained to keep the
   // onboarding-recovery flow independent of the larger settings/network logic.
   (function () {
     var btn = document.getElementById('ap-password-save');
-    if (!btn) return;
+    var input = document.getElementById('ap-password');
+    var msg = document.getElementById('ap-password-msg');
+    if (!btn || !input) return;
     btn.addEventListener('click', async function () {
-      var input = document.getElementById('ap-password');
-      var msg = document.getElementById('ap-password-msg');
       var pw = (input.value || '').trim();
-      msg.textContent = 'Saving…';
+      if (msg) msg.textContent = 'Saving…';
+      btn.disabled = true;
       try {
         var res = await fetch('/api/settings/ap-password', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ password: pw }),
         });
-        var data = await res.json();
+        var data = await res.json().catch(function () { return null; });
         if (!res.ok) {
-          msg.textContent = data.detail || 'Could not save.';
+          if (msg) msg.textContent = (data && data.detail) || 'Could not save.';
           return;
         }
-        msg.textContent = data.open
-          ? 'Setup network is now open (no password).'
-          : 'Saved. Future setup sessions will ask for this password.';
+        if (msg) {
+          msg.textContent = data && data.open
+            ? 'Setup network is now open (no password).'
+            : 'Saved. Future setup sessions will ask for this password.';
+        }
         input.value = '';
       } catch (e) {
-        msg.textContent = 'Could not reach the device.';
+        if (msg) msg.textContent = 'Could not reach the device.';
+      } finally {
+        btn.disabled = false;
       }
     });
   })();
