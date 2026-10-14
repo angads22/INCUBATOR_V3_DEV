@@ -4,7 +4,7 @@
 # incubator.service — never pauses control. The OTA agent must NEVER restart
 # this unit; that is what keeps incubation running through an update.
 Description=Incubator v3 control loop (survives app updates)
-After=local-fs.target
+After=local-fs.target incubator-firstboot.service
 Wants=incubator-wifi-country.service
 
 [Service]
@@ -17,11 +17,19 @@ WatchdogSec=60
 User=root
 WorkingDirectory=__INSTALL_DIR__
 EnvironmentFile=/etc/incubator.env
+# Runtime dir for the published state file + command queue (tmpfs).
+ExecStartPre=+/bin/mkdir -p /run/incubator
 # Fail-safe is applied by the daemon on start and on clean stop.
 ExecStart=__INSTALL_DIR__/.venv/bin/python -m app.control
 Restart=always
 RestartSec=3
-SupplementaryGroups=gpio dialout
+# This loop must keep its 10 s cadence no matter what the web app or an OTA
+# pip install is doing: higher CPU priority, protected from the OOM killer,
+# and head of the best-effort I/O queue on a slow SD card.
+Nice=-5
+OOMScoreAdjust=-900
+IOSchedulingClass=best-effort
+IOSchedulingPriority=0
 
 [Install]
 WantedBy=multi-user.target

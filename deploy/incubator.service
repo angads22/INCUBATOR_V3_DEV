@@ -1,5 +1,5 @@
 [Unit]
-Description=Incubator v3 (Pi Zero 2W)
+Description=Incubator v3 web app
 # Start the app even if the network isn't fully up yet — it manages its own
 # Wi-Fi hotspot for onboarding, so it must not wait on network-online at first
 # boot (there is no network then). NetworkManager just needs to be present.
@@ -22,11 +22,17 @@ WatchdogSec=120
 User=root
 WorkingDirectory=__INSTALL_DIR__
 EnvironmentFile=/etc/incubator.env
-ExecStart=__INSTALL_DIR__/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info
+# Runtime dir for the control-state / command files and preview frames (tmpfs).
+# tmpfiles.d creates it at boot too; this covers a manual `systemctl start`.
+ExecStartPre=+/bin/mkdir -p /run/incubator
+# Single worker (512 MB-class boards), no per-request access log (SD-card
+# friendly, the journal is the log), short keep-alive so a phone that walks
+# away frees its socket quickly, proxy headers for a reverse proxy in front.
+ExecStart=__INSTALL_DIR__/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --no-access-log --timeout-keep-alive 5 --proxy-headers --log-level info
 Restart=always
 RestartSec=5
-# Allow GPIO and serial access
-SupplementaryGroups=gpio dialout video
+# The web UI yields CPU to the control daemon (Nice=-5) on a busy board.
+Nice=5
 
 [Install]
 WantedBy=multi-user.target

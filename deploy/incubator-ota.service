@@ -8,4 +8,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+ExecStartPre=+/bin/mkdir -p /run/incubator
 ExecStart=__INSTALL_DIR__/scripts/ota-agent.sh
+# Background job: a git fetch + pip install must never starve the control loop
+# or the web UI for CPU or SD-card bandwidth.
+Nice=10
+IOSchedulingClass=idle
