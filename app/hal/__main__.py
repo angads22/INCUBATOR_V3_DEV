@@ -1,5 +1,8 @@
 """``python -m app.hal`` — print what the HAL detects, as JSON. Never raises.
 
+``python -m app.hal --safe-outputs`` instead drives every relay/actuator line
+to its OFF level (used by incubator-gpio-safe.service at boot).
+
 Useful when porting to a new board: shows the board model, which GPIO backend
 would be used and the gpiochips it sees, the sensor found (with one reading),
 the status LED picked and the Wi-Fi interface(s) with AP capability.
@@ -89,16 +92,76 @@ def _wifi_report() -> dict[str, Any]:
     }
 
 
+def _app_settings() -> Any:
+    try:
+        from app.config import settings as app_settings
+
+        return app_settings
+    except Exception:
+        return None
+
+
+def safe_outputs(settings: Any = None) -> dict[str, Any]:
+    """Drive every relay/actuator line to its OFF level, then release it.
+
+    Run by ``incubator-gpio-safe.service`` early in boot on boards without a
+    firmware-level GPIO default (the Raspberry Pi gets the same guarantee from
+    the ``gpio=`` lines in config.txt). Relays are active-LOW by default, so
+    their OFF level is HIGH; the turner/candle/buzzer lines idle LOW. Never
+    raises: a failure is reported per line and the boot continues.
+    """
+    from .gpio import get_gpio_backend, parse_pin
+
+    if settings is None:
+        settings = _app_settings()
+    if settings is None:
+        return {"backend": None, "error": "app settings unavailable", "lines": {}}
+
+    active_low = bool(getattr(settings, "gpio_relay_active_low", True))
+    relay_off = bool(active_low)   # de-energised relay = HIGH when active-LOW
+    plan = {
+        "heater": (getattr(settings, "gpio_heater_pin", "17"), relay_off),
+        "fan": (getattr(settings, "gpio_fan_pin", "27"), relay_off),
+        "lock": (getattr(settings, "gpio_lock_pin", "12"), relay_off),
+        "door": (getattr(settings, "gpio_door_pin", "13"), relay_off),
+        "turner": (getattr(settings, "gpio_turner_pin", "22"), False),
+        "turner_dir": (getattr(settings, "gpio_turner_dir_pin", "23"), False),
+        "candle": (getattr(settings, "gpio_candle_pin", "24"), False),
+        "alarm": (getattr(settings, "gpio_alarm_pin", "25"), False),
+    }
+    report: dict[str, Any] = {"backend": None, "relay_active_low": active_low, "lines": {}}
+    backend_name = "mock" if getattr(settings, "gpio_mock", False) else getattr(settings, "gpio_backend", "auto")
+    try:
+        backend = get_gpio_backend(backend_name, getattr(settings, "gpio_chip", ""))
+    except Exception as exc:
+        report["error"] = f"{type(exc).__name__}: {exc}"
+        return report
+    report["backend"] = backend.name
+    try:
+        for name, (pin, level) in plan.items():
+            entry: dict[str, Any] = {"pin": str(pin), "level": "high" if level else "low"}
+            try:
+                line = backend.request_output(parse_pin(pin), initial=level, consumer="incubator-safe")
+                try:
+                    line.set(level)
+                finally:
+                    line.release()
+                entry["ok"] = True
+            except Exception as exc:
+                entry["ok"] = False
+                entry["error"] = f"{type(exc).__name__}: {exc}"
+            report["lines"][name] = entry
+    finally:
+        _safe(backend.close)
+    report["ok"] = all(e.get("ok") for e in report["lines"].values())
+    return report
+
+
 def build_report(settings: Any = None) -> dict[str, Any]:
     from .board import detect_board
 
     if settings is None:
-        try:
-            from app.config import settings as app_settings
-
-            settings = app_settings
-        except Exception:
-            settings = None
+        settings = _app_settings()
     gpio_backend = getattr(settings, "gpio_backend", "auto")
     gpio_chip = getattr(settings, "gpio_chip", "")
     led_spec = getattr(settings, "status_led", "auto")
@@ -117,8 +180,11 @@ def main(argv: list[str] | None = None) -> int:
     verbose = "-v" in argv or "--verbose" in argv
     logging.basicConfig(level=logging.DEBUG if verbose else logging.WARNING, stream=sys.stderr)
     try:
-        report = build_report()
-    except Exception as exc:  # pragma: no cover - build_report already guards each part
+        if "--safe-outputs" in argv:
+            report = safe_outputs()
+        else:
+            report = build_report()
+    except Exception as exc:  # pragma: no cover - both builders already guard each part
         report = {"error": f"{type(exc).__name__}: {exc}"}
     print(json.dumps(report, indent=2, default=str))
     return 0

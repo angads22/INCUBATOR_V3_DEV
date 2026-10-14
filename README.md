@@ -110,6 +110,8 @@ Or from a checkout: `sudo bash install.sh`. The installer:
   captive-portal DNS for the setup hotspot;
 * on a Pi, adds the I²C/RTC overlay and the **boot-safe GPIO levels** to
   `config.txt` so the heater relay is OFF from the moment power is applied;
+  on every other board an early-boot unit (`incubator-gpio-safe`) drives the
+  relay lines OFF before anything else starts;
 * applies SD-card-friendly tuning (`--no-tuning` to skip);
 * prints the LED/beep legend and starts the app. Re-running it is safe.
 

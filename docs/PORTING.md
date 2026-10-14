@@ -93,12 +93,16 @@ GPIO_RELAY_ACTIVE_LOW=true
 
 **Boot-time relay state.** On a Pi, `config.txt` drives the relay pins to
 their OFF level before the kernel loads. On other boards the pins float
-during boot and an active-LOW relay module may click ON for ~30 s. Fix it in
-hardware (a 10 kΩ pull-up from the relay input to VCC) or in the device tree
-(a `gpio-hog` node with `output-high` for the relay lines). The control
-daemon asserts OFF the moment it starts and re-asserts every cycle, and the
-thermal cutoff in [HARDWARE_SAFETY_ADDENDUM.md](HARDWARE_SAFETY_ADDENDUM.md)
-covers the rest.
+during the kernel boot and an active-LOW relay module may click ON for a few
+seconds. The installer enables `incubator-gpio-safe.service`, which runs
+`python -m app.hal --safe-outputs` as early as systemd can (before the control
+daemon and the web app) and drives every relay/actuator line to its OFF
+level; `journalctl -u incubator-gpio-safe` shows the per-line result. To close
+the remaining kernel-boot window, fix it in hardware (a 10 kΩ pull-up from the
+relay input to VCC) or in the device tree (a `gpio-hog` node with
+`output-high` for the relay lines). The control daemon asserts OFF the moment
+it starts and re-asserts every cycle, and the thermal cutoff in
+[HARDWARE_SAFETY_ADDENDUM.md](HARDWARE_SAFETY_ADDENDUM.md) covers the rest.
 
 ## 3. Sensor
 

@@ -8,6 +8,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# The Python updater reads CONTROL_DAEMON_ENABLED / CONTROL_STATE_PATH from the
+# env to gate the post-update health check on the control loop still running.
+EnvironmentFile=-/etc/incubator.env
 ExecStartPre=+/bin/mkdir -p /run/incubator
 ExecStart=__INSTALL_DIR__/scripts/ota-agent.sh
 # Background job: a git fetch + pip install must never starve the control loop

@@ -285,8 +285,11 @@ install_packages() {
                 if apt-cache show "$pkgname" >/dev/null 2>&1; then gpio_rt="$pkgname"; break; fi
             done
             [[ -n "$gpio_rt" ]] || warn "No libgpiod runtime package found — pip's gpiod wheel will be used."
+            # wpasupplicant + dnsmasq-base are only Recommends of network-manager; with
+            # --no-install-recommends they would be skipped and Wi-Fi/the hotspot would
+            # not work at all on plain Debian/Ubuntu.
             essential=(python3 python3-venv python3-pip python3-dev git curl ca-certificates
-                       network-manager dnsmasq-base)
+                       network-manager wpasupplicant dnsmasq-base)
             recommended=(rfkill iw wireless-regdb avahi-daemon python3-libgpiod i2c-tools
                          gcc build-essential libjpeg-dev zlib1g-dev rsync)
             [[ -n "$gpio_rt" ]] && recommended+=("$gpio_rt")
@@ -297,23 +300,23 @@ install_packages() {
             ;;
         dnf)
             essential=(python3 python3-pip python3-devel git curl ca-certificates NetworkManager)
-            recommended=(dnsmasq NetworkManager-wifi rfkill iw wireless-regdb avahi libgpiod
+            recommended=(dnsmasq NetworkManager-wifi wpa_supplicant rfkill iw wireless-regdb avahi libgpiod
                          python3-libgpiod i2c-tools gcc libjpeg-turbo-devel zlib-devel rsync)
             ;;
         pacman)
             pacman -Sy --noconfirm >/dev/null 2>&1 || warn "pacman -Sy failed (continuing)."
             essential=(python python-pip git curl ca-certificates networkmanager)
-            recommended=(dnsmasq iw wireless-regdb avahi libgpiod i2c-tools gcc libjpeg-turbo zlib rsync)
+            recommended=(dnsmasq wpa_supplicant iw wireless-regdb avahi libgpiod i2c-tools gcc libjpeg-turbo zlib rsync)
             ;;
         zypper)
             essential=(python3 python3-pip python3-devel git curl ca-certificates NetworkManager)
-            recommended=(dnsmasq rfkill iw wireless-regdb avahi libgpiod3 python3-libgpiod
+            recommended=(dnsmasq wpa_supplicant rfkill iw wireless-regdb avahi libgpiod3 python3-libgpiod
                          i2c-tools gcc libjpeg8-devel zlib-devel rsync)
             ;;
         apk)
             essential=(python3 py3-pip python3-dev git curl ca-certificates networkmanager
                        networkmanager-wifi networkmanager-cli)
-            recommended=(dnsmasq rfkill iw wireless-regdb avahi libgpiod py3-libgpiod i2c-tools
+            recommended=(dnsmasq wpa_supplicant rfkill iw wireless-regdb avahi libgpiod py3-libgpiod i2c-tools
                          gcc musl-dev libjpeg-turbo-dev zlib-dev rsync)
             ;;
         *)
@@ -486,15 +489,22 @@ stage_app() {
     else
         step "Deploying application to ${INSTALL_DIR}..."
         if command -v rsync >/dev/null 2>&1; then
+            # The excludes also PROTECT those paths on the receiver from --delete:
+            # a re-run must never wipe the production SQLite database, its daily
+            # snapshots or the control daemon's persisted state.
             rsync -a --delete \
                 --exclude='.git' --exclude='.venv' --exclude='*.pyc' --exclude='__pycache__' \
                 --exclude='captures' --exclude='dist' --exclude='.image-cache' \
+                --exclude='*.db' --exclude='*.db-wal' --exclude='*.db-shm' --exclude='*.db.corrupt-*' \
+                --exclude='database/backups' --exclude='database/control-persist.json' \
                 "${REPO_DIR}/" "${INSTALL_DIR}/"
         else
             # No rsync: copy everything except the excluded trees (no --delete).
             (cd "${REPO_DIR}" && tar --exclude='./.git' --exclude='./.venv' --exclude='*.pyc' \
                 --exclude='__pycache__' --exclude='./captures' --exclude='./dist' \
-                --exclude='./.image-cache' -cf - .) | (cd "${INSTALL_DIR}" && tar -xf -)
+                --exclude='./.image-cache' --exclude='*.db' --exclude='*.db-wal' --exclude='*.db-shm' \
+                --exclude='./database/backups' --exclude='./database/control-persist.json' \
+                -cf - .) | (cd "${INSTALL_DIR}" && tar -xf -)
         fi
     fi
     chmod +x "${INSTALL_DIR}"/scripts/*.sh "${INSTALL_DIR}/install.sh" 2>/dev/null || true
@@ -590,7 +600,7 @@ install_units() {
     }
     step "Installing systemd units..."
     local u
-    for u in incubator.service incubator-control.service incubator-ota.service incubator-firstboot.service; do
+    for u in incubator.service incubator-control.service incubator-ota.service incubator-firstboot.service incubator-gpio-safe.service; do
         [[ -f "${INSTALL_DIR}/deploy/${u}" ]] || { warn "deploy/${u} missing — skipped."; continue; }
         sed -e "s|__INSTALL_DIR__|${INSTALL_DIR}|g" -e "s|__DATA_DIR__|${DATA_DIR}|g" \
             "${INSTALL_DIR}/deploy/${u}" > "/etc/systemd/system/${u}"
@@ -603,9 +613,14 @@ install_units() {
     # hostname + root-fs expand, once, before the app. incubator-control: the
     # always-on control loop (idles until CONTROL_DAEMON_ENABLED=true).
     # incubator-ota.timer: GitHub Releases auto-update with rollback.
+    # incubator-gpio-safe: drives every relay/actuator line to its OFF level as
+    # early as systemd can, before the control daemon and the web app start. On
+    # a Pi the firmware already does this from power-on (config.txt gpio= lines);
+    # on every other board this unit is the only software-side boot-safe layer.
     enable_unit incubator.service
     enable_unit incubator-firstboot.service
     enable_unit incubator-control.service
+    enable_unit incubator-gpio-safe.service
     enable_unit incubator-ota.timer
 }
 

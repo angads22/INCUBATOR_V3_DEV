@@ -15,17 +15,11 @@
 @font-face { font-family: "Spectral"; font-style: normal; font-weight: 700; font-display: swap;
   src: url("/static/fonts/spectral-700.woff2") format("woff2"); }
 
-/* Hanken Grotesk — UI text */
-@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 400; font-display: swap;
-  src: url("/static/fonts/hanken-grotesk-400.woff2") format("woff2"); }
-@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 500; font-display: swap;
-  src: url("/static/fonts/hanken-grotesk-500.woff2") format("woff2"); }
-@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 600; font-display: swap;
-  src: url("/static/fonts/hanken-grotesk-600.woff2") format("woff2"); }
-@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 700; font-display: swap;
-  src: url("/static/fonts/hanken-grotesk-700.woff2") format("woff2"); }
-@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 800; font-display: swap;
-  src: url("/static/fonts/hanken-grotesk-800.woff2") format("woff2"); }
+/* Hanken Grotesk — UI text. One VARIABLE font file covers weights 400–800
+   (the five per-weight files shipped before were byte-identical copies of it,
+   so every cold page load fetched the same 139 KB five times). */
+@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url("/static/fonts/hanken-grotesk.woff2") format("woff2"); }
 
 /* IBM Plex Mono — sensor readouts */
 @font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap;

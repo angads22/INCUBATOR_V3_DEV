@@ -75,6 +75,11 @@ else
     echo "127.0.1.1	${NEW_HOSTNAME}" >> /etc/hosts
 fi
 _log "Hostname: ${NEW_HOSTNAME}"
+# avahi announces <hostname>.local — the address the setup wizard hands out —
+# from the name it read at start-up, so make it pick up the new one now.
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl try-restart avahi-daemon.service 2>/dev/null || true
+fi
 
 # ── Seed environment file ─────────────────────────────────────────────────
 INSTALL_DIR="$(cd "$(dirname "$0")/.." && pwd)"

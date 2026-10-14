@@ -414,9 +414,13 @@ mount_image() {
 install_app() {
     step "Staging application at /opt/incubator..."
     mkdir -p "${ROOT_MNT}/opt/incubator"
+    # Never bake a developer's local database (accounts, Wi-Fi, claimed state)
+    # into the image — a flashed unit would skip its own setup hotspot.
     rsync -a \
         --exclude='.git' --exclude='.venv' --exclude='__pycache__' --exclude='*.pyc' \
         --exclude='captures' --exclude='dist' --exclude='.image-cache' \
+        --exclude='*.db' --exclude='*.db-wal' --exclude='*.db-shm' --exclude='*.db.corrupt-*' \
+        --exclude='database/backups' --exclude='database/control-persist.json' \
         "${REPO_DIR}/" "${ROOT_MNT}/opt/incubator/"
 
     if [[ -n "$PI_HOSTNAME" ]]; then
@@ -587,15 +591,25 @@ verify_generic() {
     fi
 
     # Installed units: present, fully templated, and enabled.
-    for u in incubator.service incubator-firstboot.service incubator-control.service incubator-ota.service; do
+    for u in incubator.service incubator-firstboot.service incubator-control.service incubator-ota.service incubator-gpio-safe.service; do
         [[ -f "$r/etc/systemd/system/$u" ]] || { vfail "unit $u not installed"; continue; }
         grep -qE "__INSTALL_DIR__|__DATA_DIR__" "$r/etc/systemd/system/$u" \
             && vfail "unit $u still contains a template placeholder" || vpass "unit $u installed + templated"
     done
-    for u in incubator.service incubator-firstboot.service incubator-control.service; do
+    for u in incubator.service incubator-firstboot.service incubator-control.service incubator-gpio-safe.service; do
         [[ -L "$r/etc/systemd/system/multi-user.target.wants/$u" || -e "$r/etc/systemd/system/multi-user.target.wants/$u" ]] \
             && vpass "$u enabled" || vfail "$u not enabled (no multi-user.target.wants symlink)"
     done
+    # The control daemon entry point must exist, else the thermostat crash-loops.
+    [[ -f "$r/opt/incubator/app/control/__main__.py" ]] \
+        && vpass "control daemon entry point present (python -m app.control)" \
+        || vfail "app/control/__main__.py missing — incubator-control.service would crash-loop and never regulate temperature"
+    # No developer database baked into the image.
+    if find "$r/opt/incubator/database" -maxdepth 1 -name '*.db*' 2>/dev/null | grep -q .; then
+        vfail "a SQLite database is baked into /opt/incubator/database — every flashed unit would inherit its accounts/Wi-Fi"
+    else
+        vpass "no database baked into the image"
+    fi
     [[ -L "$r/etc/systemd/system/timers.target.wants/incubator-ota.timer" || \
        -e "$r/etc/systemd/system/timers.target.wants/incubator-ota.timer" ]] \
         && vpass "OTA timer enabled" || vfail "incubator-ota.timer not enabled — image would never auto-update"
